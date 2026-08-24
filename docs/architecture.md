@@ -61,14 +61,48 @@ Merchant request
                  tool request        ← a REQUEST, never a decision
                       │
                       ▼
-   ┌──────────────────────────────────────────┐
-   │              Tool Gateway                │
-   │        (five ordered gates, below)       │
-   └──────────────────┬───────────────────────┘
+ ══════════════════ TOOL GATEWAY ══════════════════════════════════════
+                      │
+   1. Registry lookup │
+      is this a registered tool?
+                      ├── no ──────────────► TOOL_UNAVAILABLE
+                      │                      no dynamic dispatch exists
+                      ▼
+   2. Argument validation
+      types · ranges · enums · unknown keys
+                      ├── invalid ─────────► TOOL_INVALID_ARGUMENT
+                      │                      MUST precede gate 3
+                      ▼
+   3. Policy engine   (deterministic; reads no model output)
+      ├─ permission ──────────────────────► DENY missing_permission
+      ├─ merchant ownership ──────────────► DENY merchant_isolation
+      ├─ risk classification  (from the registry, not the model)
+      ├─ amount / balance limits ─────────► DENY amount_limit_exceeded
+      │                                     DENY exceeds_refundable_balance
+      │                                     DENY payment_not_refundable
+      └─ duplicate-action guard ──────────► DENY duplicate_action
                       │
                       ▼
-              Tool execution                  LOW risk only from the loop
+   4. Approval gate   HIGH risk only
+                      ├── HIGH ───────────► HALT
+                      │                     approval record created,
+                      │                     loop stops, no external call.
+                      │                     Resumes only via a human calling
+                      │                     approve_and_execute()
+                      ▼
+   5. Execute         LOW risk only from the loop
+                      │
+                      ▼
+   6. Persist         tool_call row + audit events, every outcome
+ ═══════════════════════════════════════════════════════════════════════
+                      │
+                      ▼
+              Tool execution
 ```
+
+Every exit above is a *recorded* outcome, not a silent drop: each writes a
+`tool_calls` row with its error code and an audit event. A denial the trace cannot
+show is indistinguishable from a bug.
 
 Two placements in that diagram are load-bearing.
 
@@ -84,34 +118,7 @@ execution is reachable only through `approve_and_execute()`, which a human trigg
 and which re-runs every check server-side. `execute_read_tool` has no implementation
 for HIGH-risk tools either, so an erroneous `ALLOW` still could not perform one.
 
-### The five gates
-
-Everything that matters happens between the model's tool request and the tool running:
-
-```
-model emits tool_use
-        │
-        ▼
-  1. Is the tool registered?              unregistered → TOOL_UNAVAILABLE
-        │
-        ▼
-  2. Argument validation                  invalid → TOOL_INVALID_ARGUMENT
-        │                                 (MUST precede step 3 — see below)
-        ▼
-  3. Policy engine
-        ├─ permission check               → DENY missing_permission
-        ├─ merchant ownership             → DENY merchant_isolation
-        ├─ risk classification
-        ├─ amount / balance limits        → DENY amount_limit_exceeded
-        ├─ duplicate-action guard         → DENY duplicate_action
-        └─ HIGH risk                      → REQUIRE_APPROVAL (loop halts)
-        │
-        ▼
-  4. Execute (LOW risk only from the loop)
-        │
-        ▼
-  5. Persist tool_call + audit events
-```
+### Why the gate order matters
 
 **Why argument validation precedes policy.** The policy engine queries the database
 using the tool's arguments (payment ownership, refundable balance). Passing an
@@ -120,6 +127,21 @@ surface. This ordering was not in the original contract; it was found by scenari
 SEC-04, which passed `synthetic_payment_id: 12345` (an integer) and produced a
 `ProgrammingError` from PostgreSQL. The fix is recorded here because the ordering is
 load-bearing, not incidental.
+
+**Why the registry lookup is first.** It is what makes "the model cannot call an
+unregistered tool" a fact rather than an aspiration: there is no dynamic dispatch,
+no name-to-callable map built from model output, and nothing to fall through to. A
+tool that is not in `REGISTRY` has no execution path at all.
+
+**Why risk comes from the registry, not the request.** Each tool declares its own
+risk class. Nothing infers risk from what the model says it intends, so a request
+cannot describe itself into a lower tier.
+
+**Why the approval gate halts rather than branches.** Returning `REQUIRE_APPROVAL`
+ends the agent's turn. Execution is not a later branch of the same loop — it is a
+separate entry point (`approve_and_execute()`) that re-runs authentication, approval
+validity, expiry, full policy evaluation and the payment's preconditions before
+touching the provider.
 
 ## Data architecture
 

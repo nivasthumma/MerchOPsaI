@@ -81,6 +81,12 @@ MUTATIONS = [
         "    if True:  # MUTANT",
     ),
     (
+        "runtime: stop rejecting unregistered tools",
+        "app/agent/runtime.py",
+        "        if spec is None:",
+        "        if False:  # MUTANT",
+    ),
+    (
         "runtime: skip argument validation",
         "app/agent/runtime.py",
         "        ok, arg_err = validate_arguments(spec, req.arguments)",
@@ -109,6 +115,12 @@ MUTATIONS = [
         "app/verification/engine.py",
         "    delta = payment.amount_refunded_minor - refunded_before_minor",
         "    delta = expected_refund_minor  # MUTANT: pretend the payment moved",
+    ),
+    (
+        "actions: roll back the whole transaction on a duplicate action",
+        "app/tools/actions.py",
+        "        sp.rollback()",
+        "        session.rollback()  # MUTANT",
     ),
     (
         "audit: stop redacting secrets",

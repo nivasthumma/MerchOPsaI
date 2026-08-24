@@ -151,11 +151,18 @@ def execute_refund(
         external_payment_id=external_id, amount_minor=amount_minor,
         idempotency_key=key, status=ActionStatus.PENDING, approval_id=approval_id,
     )
-    session.add(action)
+    # SAVEPOINT, not a bare flush. A plain session.rollback() on collision would
+    # undo the ENTIRE transaction — the prior action row, the approval decision,
+    # and every audit event written so far for this task. The duplicate-detection
+    # path must discard one failed INSERT, not the history that proves what
+    # happened.
+    sp = session.begin_nested()
     try:
+        session.add(action)
         session.flush()
+        sp.commit()
     except IntegrityError:
-        session.rollback()
+        sp.rollback()
         prior = session.execute(text("""
             SELECT id, status, external_reference, verification_state
             FROM agent_actions WHERE idempotency_key = :k

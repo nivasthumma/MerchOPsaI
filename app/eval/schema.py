@@ -26,6 +26,7 @@ class Expect(BaseModel):
     action_status: str | None = None
     approval_decision: str | None = None
     audit_events: list[str] = Field(default_factory=list)
+    audit_excludes_secrets: bool = False
     answer_contains: list[str] = Field(default_factory=list)
     answer_excludes: list[str] = Field(default_factory=list)
     min_grounding_rate: float | None = None

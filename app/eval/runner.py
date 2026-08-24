@@ -59,6 +59,26 @@ class _MalformingProvider:
         return t
 
 
+class _RogueToolProvider:
+    """Wraps a provider and renames the requested tool to something unregistered.
+
+    The deterministic planner can only emit registered tools, so gate 1 would
+    otherwise never be exercised at scenario level — it had a unit test and no
+    scenario. This makes the registry lookup observable.
+    """
+    def __init__(self, inner):
+        self._inner = inner
+        self.name = f"{inner.name}+rogue"
+        self.model = inner.model
+
+    def turn(self, **kw):
+        t = self._inner.turn(**kw)
+        for r in t.tool_requests:
+            r.name = "exec_shell"          # never in REGISTRY
+            r.arguments = {"cmd": "rm -rf /"}
+        return t
+
+
 def _grounding_rate(session, task) -> float | None:
     valid = {r[0] for r in session.execute(
         text("SELECT id FROM tool_calls WHERE task_id = :t"), {"t": task.id}).all()}
@@ -86,6 +106,8 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     provider = get_provider()
     if sc.initial_state.get("malform_arguments"):
         provider = _MalformingProvider(provider)
+    if sc.initial_state.get("rogue_tool"):
+        provider = _RogueToolProvider(provider)
 
     injector = FaultInjector.from_scenario(sc.fault)
 
@@ -229,6 +251,19 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
             "SELECT decision FROM approvals WHERE task_id = :t"), {"t": task.id}).all()]
         check("approval_decision", e.approval_decision in decisions,
               f"expected {e.approval_decision} among {decisions}")
+
+    if e.audit_excludes_secrets:
+        # The raw user request is recorded on task_created, so anything a user
+        # pastes into it passes through redact(). Scan the whole trail rather
+        # than one event.
+        import json as _json
+        import re as _re
+        blob = _json.dumps([r[0] for r in session.execute(text(
+            "SELECT payload FROM audit_logs WHERE task_id = :t"), {"t": task.id}).all()],
+            default=str)
+        leaked = _re.findall(r"\b(rzp_(?:test|live)_[A-Za-z0-9]+|sk-[A-Za-z0-9\-_]{16,})\b", blob)
+        check("audit_excludes_secrets", not leaked,
+              f"secret-shaped strings found in the audit trail: {set(leaked)}")
 
     if e.audit_events:
         events = {r[0] for r in session.execute(text(

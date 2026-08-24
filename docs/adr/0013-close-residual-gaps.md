@@ -50,3 +50,35 @@ secret, which nothing does.
 Building scenarios for these would raise the scenario count without raising
 coverage. That is the same species of dishonesty as inflating a metric, and it is
 recorded here rather than quietly done.
+
+---
+
+## Addendum — the "not closed on purpose" section was wrong
+
+The section above argued that two mutants (idempotency-key derivation, audit
+redaction) were pure-function properties with no scenario-reachable path, and that
+building scenarios for them would be theatre.
+
+Both claims were wrong, and checking instead of reasoning about it is what showed it.
+
+**Audit redaction is reachable.** `runtime.py` records the raw user request on the
+`task_created` event, so anything a user pastes into a request passes through
+`redact()`. SEC-25 puts a secret in the request and asserts the trail is clean;
+with redaction disabled it fails.
+
+**The idempotency `UNIQUE` constraint is reachable**, but only after an attempt that
+leaves the refundable balance untouched — in the ordinary path the balance
+precondition fires first and the key is never consulted. `ACCEPTED_NOT_APPLIED`
+produces that state, and three integration tests now cover the branch, including one
+that swaps in a random key to prove the others measure the key and not some other
+guard.
+
+**Writing those tests found a real defect.** The duplicate-action handler called
+`session.rollback()`, which rolls back the *entire* transaction, not the one failed
+INSERT. On collision it would discard the prior action row, the approval decision,
+and every audit event written for that task — the safe path destroying the evidence
+that it had been taken. Fixed with a SAVEPOINT; added as a 15th mutation.
+
+The general lesson: "this is unreachable, so a test would be contrived" is a claim
+about the code, and it needs checking like any other. Here it was load-bearing —
+believing it left a transaction-scope bug sitting in the one branch nobody exercised.

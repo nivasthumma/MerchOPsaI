@@ -33,7 +33,7 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 104 scenarios + 13-mutation validation, gated in CI | Larger benchmark |
+| Evaluation | 106 scenarios + 13-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
 | UI | Streamlit | Next.js |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -70,30 +70,30 @@ numbers would measure something different and should be reported separately.
 From `make eval` — actual execution, not targets:
 
 ```
-104/104 scenarios passed      (critical: 57/57)
+106/106 scenarios passed      (critical: 59/59)
 
-  adversarial_security  23/23    payment_failure       12/12
+  adversarial_security  25/25    payment_failure       12/12
   duplicate_payment     14/14    refund_policy         25/25
   failure_unknown       18/18    revenue_investigation 12/12
 
-302 assertions · median task latency 39 ms · mean grounding rate 1.0
+310 assertions · median task latency 39 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-13/13 mutations caught
+15/15 mutations caught
 ```
 
-That run is what makes the 104/104 meaningful — and it is how three real gaps
+That run is what makes the 106/106 meaningful — and it is how three real gaps
 were found and closed (see below).
 
 Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **66 passed** (`make test`) across unit, security and integration.
+Test suite: **69 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -256,7 +256,7 @@ cp .env.example .env                     # optional; defaults work locally
 make setup                               # venv + dependencies
 make seed                                # deterministic dataset
 make test                                # 43 tests
-make eval                                # 104 scenarios, measured
+make eval                                # 106 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # enforce audit immutability, then verify it
 make ci                                  # what CI runs: seed + harden + test + eval
@@ -377,11 +377,10 @@ are different claims.
 
 ### Coverage limits
 
-9. **Two mutants are caught by unit tests only**, not by scenarios: idempotency-key
-   derivation and audit redaction. Both are properties of pure functions with no
-   scenario-reachable path — forcing a scenario would be theatre. They are covered by
-   `make test`. (A third, verification reporting SUCCESS on an unreadable state, was
-   closed by scenario UNK-18.)
+9. **None outstanding.** Every mutation is caught by at least one scenario. The three
+   that were once unit-test-only are closed by UNK-18, SEC-24 and SEC-25 — see
+   [`docs/evaluation.md`](docs/evaluation.md), which also records why the earlier
+   claim that two of them were unreachable was wrong.
 
 ---
 

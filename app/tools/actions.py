@@ -204,14 +204,14 @@ def execute_refund(
             # attribute it to THIS action. Claiming SUCCESS here would be
             # exactly the false verification CONTRACT §25 forbids.
             vr = type(vr)(VerificationState.UNKNOWN,
-                          f"{e}. The payment shows a refund, but no external reference "
+                          f"{str(e).rstrip('.')}. The payment shows a refund, but no external reference "
                           f"was received, so this action cannot be confirmed as its cause.",
                           vr.expected, vr.actual, None)
         elif e.submitted and vr.state is VerificationState.FAILED:
             # We could read state and it is unchanged, but the request may have
             # been in flight. Downgrade to UNKNOWN rather than assert failure.
             vr = type(vr)(VerificationState.UNKNOWN,
-                          f"{e}. State currently shows no refund, but the request may "
+                          f"{str(e).rstrip('.')}. State currently shows no refund, but the request may "
                           f"still be in flight. Refusing to report FAILED.",
                           vr.expected, vr.actual, None)
         action.verification_state = vr.state

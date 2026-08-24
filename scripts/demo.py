@@ -121,7 +121,7 @@ def main() -> None:
         a = r["action"]
         print(f"verification : {a.verification_state.value}  "
               f"(not SUCCESS, not FAILED — the honest answer)")
-        print(f"reason       : {a.verification_detail['reason'][:110]}")
+        print(f"reason       : {a.verification_detail['reason']}")
         rv = reverify(db, tid, OWNER)
         print(f"after re-verify: {rv['verification'].state.value}  "
               f"ref={rv['action'].external_reference}")

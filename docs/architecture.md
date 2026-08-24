@@ -29,6 +29,63 @@ Merchant request
 
 ## Request path in detail
 
+### Caller to execution
+
+```
+   Merchant
+      │
+      ▼
+   MerchantOps API
+      │   Authorization: Bearer <token>
+      │      ├─ verify HMAC signature      ──► 401 invalid token
+      │      ├─ resolve subject in the DB  ──► 401 unknown principal
+      │      └─ rate limit (per principal) ──► 429 too many requests
+      │
+      │   Identity is FIXED here, before the agent exists.
+      ▼
+   ┌──────────────────────────────────────────┐
+   │            Agent Runtime                 │
+   │                                          │
+   │  LLM provider   anthropic | deterministic│
+   │  System prompt  investigator-v1 (pinned) │
+   │  Tool defs      6 typed, strict schemas  │
+   │  Task context   request · tool results   │
+   │                 policy results · approval│
+   │                                          │
+   │  NOT in context: secrets, credentials,   │
+   │  unscoped merchant data, provider ids    │
+   │                                          │
+   │  Budget: 12 tool calls · 8 turns · 60s   │
+   └──────────────────┬───────────────────────┘
+                      │
+                 tool request        ← a REQUEST, never a decision
+                      │
+                      ▼
+   ┌──────────────────────────────────────────┐
+   │              Tool Gateway                │
+   │        (five ordered gates, below)       │
+   └──────────────────┬───────────────────────┘
+                      │
+                      ▼
+              Tool execution                  LOW risk only from the loop
+```
+
+Two placements in that diagram are load-bearing.
+
+**Authentication is upstream of the agent, not inside the gateway.** The principal is
+established at the API boundary and handed to `AgentRuntime` as a constructor
+argument. The agent *receives* an identity; it cannot supply, assert or influence
+one. Putting authentication downstream of the model would imply the tool request
+carries identity — which would make the model a participant in deciding who it is.
+
+**The approval gate terminates the loop.** For a HIGH-risk action there is no path
+from the agent to execution. Policy returns `REQUIRE_APPROVAL`, the loop halts, and
+execution is reachable only through `approve_and_execute()`, which a human triggers
+and which re-runs every check server-side. `execute_read_tool` has no implementation
+for HIGH-risk tools either, so an erroneous `ALLOW` still could not perform one.
+
+### The five gates
+
 Everything that matters happens between the model's tool request and the tool running:
 
 ```

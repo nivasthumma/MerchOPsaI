@@ -37,7 +37,7 @@ Contract (as amended by ADR-0008) versus what is implemented.
 |---|---|
 | Real Razorpay execution | No credentials; spike verdict `mock`. Disclosed in README. |
 | Model-backed reasoning metrics | No API key; deterministic planner used. Disclosed. |
-| Automatic UNKNOWN reconciliation | Needs a job runner; Celery cut by §52. Operator-driven instead. |
+| Always-on reconciliation worker | Would need Redis/Celery, cut by §52. Implemented as a cron-able sweep with an escalation queue instead. |
 | 100+ scenarios | §31 sets 25 for this release. |
 | Next.js, Redis, Celery, containers | §52 forbids them in the MVP. |
 | Real identity provider | Header-based stand-in; principal still resolved server-side. |

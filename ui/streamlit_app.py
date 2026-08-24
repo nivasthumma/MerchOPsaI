@@ -24,6 +24,7 @@ from app.audit.trace import trace_for
 from app.config import get_settings
 from app.db import session_scope
 from app.eval.runner import PRINCIPALS, load_scenarios
+from app.verification.reconciler import escalated_actions, reconcile
 from app.models import AgentAction, AgentTask, Approval
 
 st.set_page_config(page_title="MerchantOps Agent", layout="wide")
@@ -55,6 +56,29 @@ with st.sidebar:
     if S.resolved_llm_provider == "deterministic":
         st.info("Reasoning uses the deterministic planner, not a language model. "
                 "Results measure the control plane, not model intelligence.")
+
+    st.divider()
+    st.subheader("Unsettled actions")
+    st.caption("Actions left UNKNOWN or PARTIAL. Reconciliation re-reads external "
+               "state by idempotency key; it never retries the action.")
+    with session_scope() as _s:
+        _stuck = [a for a in escalated_actions(_s)
+                  if a["merchant_id"] == principal.merchant_id]
+    if _stuck:
+        st.error(f"{len(_stuck)} action(s) need human investigation")
+        for a in _stuck:
+            st.write(f"`{a['id']}` · {a['target_payment_id']} · "
+                     f"{a['verification_state']} · {a['verify_attempts']} attempts")
+    if st.button("Run reconciliation sweep", use_container_width=True):
+        with session_scope() as _s:
+            _rep = reconcile(_s, min_age_seconds=0)
+        st.session_state["reconcile_report"] = _rep.as_dict()
+    _rr = st.session_state.get("reconcile_report")
+    if _rr:
+        st.write(f"scanned **{_rr['scanned']}** · settled **{_rr['settled']}** · "
+                 f"unsettled **{_rr['still_unsettled']}** · escalated **{_rr['escalated']}**")
+        for d in _rr["details"]:
+            st.caption(f"{d['action_id']}: {d['from']} → {d['to']}")
 
 st.header("Investigate")
 

@@ -30,7 +30,7 @@ and what is architecture.
 | Approval | Server-side, expiring, re-checked at execution | Multi-party approval |
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
-| UNKNOWN | First-class, **resolvable** via idempotency-key reconciliation | Automatic background reconciliation |
+| UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only trail, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
 | Evaluation | 25 deterministic scenarios, measured | 100+ scenarios, CI regression |
@@ -84,7 +84,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages —
 at n=25, "4/4 blocked" is honest where "100%" is not.
 
-Test suite: **43 passed** (`make test`) across unit, security and integration.
+Test suite: **50 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -236,6 +236,8 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `POST /tasks/{id}/reject` | Reject; no external call |
 | `POST /tasks/{id}/reverify` | **Resolve an UNKNOWN action** |
 | `POST /tasks/{id}/replay?mode=` | `PLAYBACK` or `RE_REASON` |
+| `POST /actions/reconcile` | Settle unsettled actions (re-reads only) |
+| `GET /actions/escalated` | Operator queue: what reconciliation could not settle |
 | `GET /scenarios` · `POST /scenarios/{id}/run` | Evaluation suite |
 | `GET /health` | Reports active LLM provider and payment adapter |
 
@@ -263,6 +265,32 @@ Details: [`docs/evaluation.md`](docs/evaluation.md).
 
 ---
 
+## Reconciliation
+
+`UNKNOWN` is a pending safety state, and a pending state that nobody resolves is not
+safety — it is deferral. The sweep closes that gap:
+
+```bash
+make reconcile                       # or: .venv/bin/python scripts/reconcile.py
+*/5 * * * * cd /path && .venv/bin/python scripts/reconcile.py   # from cron
+```
+
+It **never retries the action**. It re-reads external state, reconciling by the
+action's own idempotency key — the only way to learn whether a lost-response refund
+actually landed. A blind retry of a financial action with an unknown outcome is the
+most dangerous thing this system could do, and the sweep cannot perform one.
+
+Three properties make it safe to run unattended:
+
+- **Min-age guard** — actions younger than 30s are skipped. A refund submitted
+  seconds ago may simply not have propagated; burning an attempt on it can escalate a
+  healthy action.
+- **Bounded attempts** — after 5 tries an action is *escalated*, not swept forever. It
+  appears in `GET /actions/escalated` and in the UI sidebar, and the CLI exits `2` so
+  a cron wrapper can alert.
+- **Settlement is a read** — verified by `test_sweep_settles_unknown_without_reissuing`,
+  which asserts the refund row count is unchanged.
+
 ## Known limitations
 
 1. **Payment execution is mocked in this build** — no credentials available. See
@@ -272,8 +300,11 @@ Details: [`docs/evaluation.md`](docs/evaluation.md).
 3. **`RE_REASON` replay consistency is untested against a real model.** With the
    deterministic planner it is trivially 1.0. Against `claude-opus-5` it would be a
    genuine measurement; that number has not been collected.
-4. **No background reconciliation.** `UNKNOWN` is resolvable but only operator-driven
-   (`POST /tasks/{id}/reverify`). Automatic retry needs a job runner, deliberately cut.
+4. **Reconciliation is a sweep, not a daemon.** `scripts/reconcile.py` settles
+   unsettled actions and escalates what it cannot settle; it runs on demand or from
+   cron. There is no always-on worker, because a queue would mean Redis/Celery, which
+   the MVP scope excludes. Actions are therefore settled at sweep cadence, not
+   instantly.
 5. **Only 5 payments are externally mapped.** Refunds outside that set are correctly
    rejected as `not_externally_mapped`.
 6. **Single-process, synchronous.** No queue, no horizontal scale.
@@ -292,9 +323,11 @@ Ordered by value, not by architectural impressiveness:
    payments; publish a second results table for real execution.
 2. Run the suite against `claude-opus-5` and publish model-vs-harness results side
    by side, including replay consistency.
-3. Background reconciliation for `UNKNOWN` actions.
+3. ~~Background reconciliation for `UNKNOWN` actions.~~ **Done** — sweep +
+   escalation queue, see below.
 4. Expand to 100 scenarios and wire the suite into CI as a regression gate.
 5. Per-merchant configurable policy.
+6. Replace the header-based principal with a real identity provider.
 
 ---
 

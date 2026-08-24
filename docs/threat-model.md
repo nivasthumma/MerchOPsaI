@@ -33,6 +33,8 @@ deterministic code before it has any effect.
 | T12 | False verification (API 200 ≠ business state) | Read back the payment, not the refund object; attribution required before SUCCESS | `test_verification_success_reads_the_payment`, `test_lost_response_yields_unknown_then_resolves` |
 | T13 | Runaway loop / cost exhaustion | 12 tool calls, 8 turns, 60s; terminates `ABORTED_BUDGET` | `test_budget_terminates_runaway_loop` |
 | T14 | Approval replay after conditions change | Approval TTL (15 min); full policy re-evaluation and precondition re-check at execution | `test_expired_approval_is_invalid` |
+| T16 | Unsettled action never resolved | Reconciliation sweep with bounded attempts; escalation queue surfaces what it cannot settle | `test_unsettleable_action_escalates_and_stops` |
+| T17 | Reconciliation re-issuing a financial action | Sweep re-reads state only; reconciles by idempotency key; no action path exists | `test_sweep_settles_unknown_without_reissuing` |
 | T15 | Financial side effect during replay | Runtime halts at approval; HIGH tools have no read-path implementation; outcome asserted | `test_re_reason_makes_no_financial_side_effect` |
 
 ## The injection claim, stated precisely
@@ -58,8 +60,10 @@ recorded.**
 - **No rate limiting.** Single-user local deployment.
 - **Audit is append-only by application convention**, not enforced by database
   permissions or WORM storage.
-- **`UNKNOWN` resolution is operator-driven.** Without a job runner, an action can sit
-  UNKNOWN indefinitely if nobody re-verifies. Detected and surfaced, not automated.
+- **`UNKNOWN` settles at sweep cadence, not instantly.** `scripts/reconcile.py`
+  settles unsettled actions and escalates what it cannot; with no always-on worker,
+  latency is the cron interval. An action can no longer sit unsettled unnoticed, but
+  it is not settled in real time.
 - **Mock adapter in the default build.** Its security properties are identical (same
   policy, approval, idempotency, verification) but it exercises no real TLS,
   authentication, or provider error surface.

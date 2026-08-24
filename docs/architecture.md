@@ -204,6 +204,35 @@ timeout → reconcile by idempotency key
 `POST /tasks/{id}/reverify` exposes this, and the UI surfaces a Re-verify control on
 every `UNKNOWN` result.
 
+### Reconciliation sweep
+
+Operator-driven resolution alone is insufficient: an action nobody looks at stays
+unsettled forever, which defeats the purpose of detecting ambiguity at all.
+`app/verification/reconciler.py` sweeps unsettled actions, and is a plain function
+over the database rather than a worker — a queue would mean Redis/Celery, excluded
+from this scope.
+
+```
+find UNKNOWN | PARTIAL, older than min_age, attempts < max
+        │
+        ▼
+  reverify_action  (reconcile by idempotency key — a READ, never a retry)
+        │
+        ├─ settled   → update action + owning task
+        └─ unsettled → attempt++; at the cap, ESCALATE to the operator queue
+```
+
+Three properties make it safe unattended:
+
+- **Min-age guard (30s)** — a refund submitted seconds ago may not have propagated;
+  burning an attempt on it can escalate a healthy action.
+- **Bounded attempts (5)** — then escalate rather than sweep forever, so a genuinely
+  stuck action becomes visible instead of being quietly re-polled. The CLI exits `2`
+  so cron can alert.
+- **Settlement is a read** — the sweep has no code path that issues a financial
+  action. `test_sweep_settles_unknown_without_reissuing` asserts the refund row count
+  is unchanged.
+
 ## Fault injection
 
 Timeout and UNKNOWN scenarios cannot be produced by seeding data — they are

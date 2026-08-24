@@ -16,6 +16,7 @@ from app.audit.trace import trace_for
 from app.config import get_settings
 from app.db import session_scope
 from app.eval.runner import load_scenarios, run_scenario
+from app.verification.reconciler import escalated_actions, reconcile
 from app.models import AgentAction, AgentTask, Approval
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
@@ -155,6 +156,26 @@ def replay_task(task_id: str, mode: str = "PLAYBACK",
         if mode.upper() == "RE_REASON":
             return re_reason(s, task_id, principal)
         return playback(s, task_id)
+
+
+@app.post("/actions/reconcile")
+def run_reconcile(min_age_seconds: int = 30, max_attempts: int = 5,
+                  principal: Principal = Depends(current_principal)):
+    """Settle actions left UNKNOWN/PARTIAL. Re-reads state only; never retries
+    the financial action."""
+    with session_scope() as s:
+        rep = reconcile(s, min_age_seconds=min_age_seconds, max_attempts=max_attempts)
+        return rep.as_dict()
+
+
+@app.get("/actions/escalated")
+def list_escalated(max_attempts: int = 5,
+                   principal: Principal = Depends(current_principal)):
+    """Actions automatic reconciliation could not settle — the operator queue."""
+    with session_scope() as s:
+        rows = escalated_actions(s, max_attempts=max_attempts)
+    # Merchant isolation applies here too.
+    return [r for r in rows if r["merchant_id"] == principal.merchant_id]
 
 
 @app.get("/scenarios")

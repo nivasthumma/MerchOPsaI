@@ -33,7 +33,7 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only trail, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 25 deterministic scenarios, measured | 100+ scenarios, CI regression |
+| Evaluation | 103 scenarios + 13-mutation validation | CI regression gate |
 | Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
 | UI | Streamlit | Next.js |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -70,19 +70,28 @@ numbers would measure something different and should be reported separately.
 From `make eval` — actual execution, not targets:
 
 ```
-25/25 scenarios passed        (critical: 15/15)
+103/103 scenarios passed      (critical: 56/56)
 
-  adversarial_security   5/5      payment_failure        5/5
-  duplicate_payment      4/4      refund_policy          4/4
-  failure_unknown        3/3      revenue_investigation  4/4
+  adversarial_security  23/23    payment_failure       12/12
+  duplicate_payment     14/14    refund_policy         25/25
+  failure_unknown       17/17    revenue_investigation 12/12
 
-median task latency   36 ms
-mean grounding rate   1.0
+299 assertions · median task latency 40 ms · mean grounding rate 1.0
 ```
 
+**A suite that passes everything proves nothing on its own.** `make mutants`
+deliberately breaks each core control and re-runs the suite:
+
+```
+13/13 mutations caught
+```
+
+That run is what makes the 103/103 meaningful — and it is how three real gaps
+were found and closed (see below).
+
 Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
-`dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages —
-at n=25, "4/4 blocked" is honest where "100%" is not.
+`dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
+Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
 Test suite: **50 passed** (`make test`) across unit, security and integration.
 
@@ -206,7 +215,8 @@ cp .env.example .env                     # optional; defaults work locally
 make setup                               # venv + dependencies
 make seed                                # deterministic dataset
 make test                                # 43 tests
-make eval                                # 25 scenarios, measured
+make eval                                # 103 scenarios, measured
+make mutants                             # prove the suite catches regressions
 make demo                                # full end-to-end walkthrough
 ```
 
@@ -311,7 +321,9 @@ Three properties make it safe to run unattended:
 7. **Header-based authentication** stands in for a real identity provider. The
    principal is derived server-side from the database, but there is no token
    verification.
-8. **25 scenarios is a small sample.** Results are reported as counts for that reason.
+8. **Three mutants are caught by unit tests only**, not by scenarios: verification
+   reporting SUCCESS on an unreadable state, idempotency-key reuse, and audit
+   redaction. They are covered, but by `make test` rather than `make eval`.
 
 ---
 
@@ -325,7 +337,8 @@ Ordered by value, not by architectural impressiveness:
    by side, including replay consistency.
 3. ~~Background reconciliation for `UNKNOWN` actions.~~ **Done** — sweep +
    escalation queue, see below.
-4. Expand to 100 scenarios and wire the suite into CI as a regression gate.
+4. ~~Expand to 100 scenarios.~~ **Done** — 103 scenarios + mutation testing.
+   Still to do: wire both into CI as a regression gate.
 5. Per-merchant configurable policy.
 6. Replace the header-based principal with a real identity provider.
 

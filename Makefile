@@ -8,6 +8,7 @@ ui:         ; PYTHONPATH=. .venv/bin/streamlit run ui/streamlit_app.py
 test:       ; PYTHONPATH=. $(PY) -m pytest tests -q
 eval:       ; $(PY) scripts/run_scenarios.py
 reconcile:  ; $(PY) scripts/reconcile.py
+mutants:    ; $(PY) scripts/mutation_test.py
 demo: seed  ; $(PY) scripts/demo.py
 
-.PHONY: setup seed spike api ui test eval reconcile demo
+.PHONY: setup seed spike api ui test eval reconcile mutants demo

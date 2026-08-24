@@ -19,6 +19,10 @@ class Fault(str, enum.Enum):
     PROVIDER_5XX = "PROVIDER_5XX"
     MALFORMED_RESPONSE = "MALFORMED_RESPONSE"
     SLOW_RESPONSE = "SLOW_RESPONSE"
+    # Provider issues a refund id but the payment's amount_refunded never moves.
+    # Exercises the verification predicate directly: trusting the API response
+    # would report SUCCESS, reading the payment back reports PARTIAL.
+    ACCEPTED_NOT_APPLIED = "ACCEPTED_NOT_APPLIED"
 
 
 class ProviderTimeout(Exception):
@@ -81,6 +85,8 @@ class FaultInjector:
             raise ProviderTimeout("Connection reset by peer.", submitted=True)
         if f is Fault.PROVIDER_5XX:
             raise ProviderError("Provider returned HTTP 503.", code="EXTERNAL_API_ERROR")
+        if f is Fault.ACCEPTED_NOT_APPLIED:
+            return f.value
         if f is Fault.MALFORMED_RESPONSE:
             return f.value      # adapter returns a deliberately malformed body
         if f is Fault.SLOW_RESPONSE:

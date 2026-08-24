@@ -19,7 +19,7 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | §25, §26 | Read-back verification; UNKNOWN resolvable | `test_lost_response_yields_unknown_then_resolves` |
 | §27, §39 | Append-only audit, secrets redacted | `app/audit/trace.py` |
 | §28 | Replay: PLAYBACK + RE_REASON, divergence classified | `app/agent/replay.py`, ADR-0006 |
-| §29–§32 | 25 scenarios grading observable behaviour | `data/scenarios/scenarios.yaml`, 25/25 |
+| §29–§32 | 103 scenarios grading observable behaviour | `data/scenarios/scenarios.yaml`, 103/103 |
 | §33 | All five required security scenarios | SEC-01…SEC-05 |
 | §34 | 15 classified failure codes | `app/models.py` |
 | §35A | Fault-injection seam | `app/integrations/razorpay/faults.py` |
@@ -38,7 +38,7 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | Real Razorpay execution | No credentials; spike verdict `mock`. Disclosed in README. |
 | Model-backed reasoning metrics | No API key; deterministic planner used. Disclosed. |
 | Always-on reconciliation worker | Would need Redis/Celery, cut by §52. Implemented as a cron-able sweep with an escalation queue instead. |
-| 100+ scenarios | §31 sets 25 for this release. |
+| CI regression gate | Suite and mutation test both run locally; not yet wired into CI. |
 | Next.js, Redis, Celery, containers | §52 forbids them in the MVP. |
 | Real identity provider | Header-based stand-in; principal still resolved server-side. |
 
@@ -60,8 +60,8 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | Duplicate execution prevented | ✅ |
 | Audit persisted | ✅ |
 | Replay without side effects | ✅ asserted, not assumed |
-| 25 scenarios executable | ✅ 25/25 |
-| Adversarial cases tested | ✅ 5/5 |
+| 100+ scenarios executable | ✅ 103/103, validated by 13/13 mutation testing |
+| Adversarial cases tested | ✅ 23/23 |
 | Actual evaluation results generated | ✅ measured, counts not percentages |
 | README distinguishes built vs designed | ✅ table near the top |
 | Demo completable in 5–7 minutes | ✅ `make demo` |

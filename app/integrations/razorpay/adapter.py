@@ -128,6 +128,13 @@ class MockAdapter(RazorpayAdapter):
             raise ProviderError("Malformed provider response: missing refund id.",
                                 code="EXTERNAL_API_ERROR")
 
+        if self.last_fault == Fault.ACCEPTED_NOT_APPLIED.value:
+            # A refund id is issued but no state moves. Verification must read
+            # the payment to notice; the response alone looks like success.
+            return ExternalRefund(id=rid, payment_id=external_payment_id,
+                                  amount_minor=amount_minor, status="pending",
+                                  created_at=datetime.now(timezone.utc).isoformat())
+
         # Apply the state change.
         self.session.execute(text("""
             INSERT INTO refunds (id, merchant_id, payment_id, amount_minor, status,

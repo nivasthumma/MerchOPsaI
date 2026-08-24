@@ -126,6 +126,19 @@ Seven steps, each printing what actually happened:
 ## Architecture
 
 ```
+    Synthetic dataset                  the analytical truth
+    customers · orders · payments      (revenue is COMPUTED from
+    failures · duplicate scenarios      payments — no revenue table)
+                    │
+                    ▼
+    ┌───────────────────────────────┐
+    │      PostgreSQL               │  business data
+    │                               │  + execution state: agent_tasks,
+    │                               │  tool_calls, agent_actions,
+    │                               │  approvals, audit_logs, evaluations
+    └───────────────┬───────────────┘
+                    │  ▲ every stage below reads and writes here
+                    ▼  │
                     ┌──────────────────┐
                     │   Streamlit UI   │
                     └────────┬─────────┘
@@ -138,30 +151,58 @@ Seven steps, each printing what actually happened:
                     │ Typed Tool Layer │  6 tools, strict schemas
                     └────────┬─────────┘
                              ▼
-              ┌──────────────────────────────┐
-              │  1. Argument validation      │
-              │  2. Policy engine            │  ← the authorization authority
-              │  3. Approval gate (HIGH)     │
-              └────────┬─────────────────────┘
-                       ▼
-      ┌────────────────┴────────────────┐
-      ▼                                 ▼
- Synthetic DB                    Mapping layer → Razorpay adapter
- (investigation)                 (execution: Test Mode | mock)
+        ┌────────────────────────────────────┐
+        │  1. Argument validation            │──► TOOL_INVALID_ARGUMENT
+        │  2. Policy engine                  │──► DENY      no external call
+        │  3. Approval gate (HIGH risk)      │──► REJECT    no external call
+        └────────┬───────────────────────────┘
+                 │              ← the authorization authority
+       ┌─────────┴─────────┐
+       ▼                   ▼
+  Synthetic DB      ┌─────────────────┐
+  (read tools)      │  Mapping layer  │  SYN_PAY_xxxx → pay_xxxx
+                    └────────┬────────┘  the ONLY synthetic→provider bridge
+                             ▼
+                     Razorpay adapter     Test Mode | mock
+                             ▼
+                    ┌──────────────────┐
+                    │   Verification   │  reads the PAYMENT back,
+                    │                  │  not the create response
+                    └────────┬─────────┘
+          ┌──────────┬───────┴───────┬──────────┐
+          ▼          ▼               ▼          ▼
+       SUCCESS    FAILED         PARTIAL    UNKNOWN
+                                     │          │
+                                     └────┬─────┘
                                           ▼
-                                 ┌──────────────────┐
-                                 │  Verification    │ SUCCESS/FAILED/
-                                 │  (reads back)    │ PARTIAL/UNKNOWN
-                                 └────────┬─────────┘
+                                  Reconciliation      cron / on demand
+                                  re-runs verification by idempotency key
+                                          │
+                              settled ────┴──── escalated to operator queue
+                                          │
                                           ▼
-                                  Audit  ·  Replay
+                                   Audit  ·  Replay
 ```
 
 The model requests; the deterministic application decides. It never sees a secret,
 never constructs a URL, never picks its own merchant scope, and cannot override a
 policy outcome.
 
-Full detail, including the end-to-end data flow and why there are no webhooks: [`docs/architecture.md`](docs/architecture.md).
+Four details in that diagram are load-bearing:
+
+- **Four terminal states, not three.** `PARTIAL` is reachable — a provider can accept
+  a refund while the payment's `amount_refunded` never moves.
+- **Verification precedes reconciliation.** Verification runs on every action;
+  reconciliation is a bounded retry loop around it, entered only for `UNKNOWN` and
+  `PARTIAL`.
+- **The mapping layer is on the critical path.** It is the only route from a synthetic
+  id to a provider id, so the agent can never name one.
+- **There are no webhooks, deliberately.** A webhook is something you are *told*;
+  verification reads state *back*. It would buy latency, not truth.
+
+Full detail — the request path gate by gate, the verification predicate, and the
+shape a webhook would take if one were added:
+[`docs/architecture.md`](docs/architecture.md).
 
 ---
 

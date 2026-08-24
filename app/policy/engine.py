@@ -187,7 +187,7 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
 
     # ---- 7. HIGH risk always requires human approval (CONTRACT §19) ------
     return PolicyResult(
-        Decision.ALLOW,  # MUTANT
+        Decision.REQUIRE_APPROVAL,
         "Financial state-changing action requires human approval.",
         "high_risk_requires_approval", risk, approval_required=True,
     )

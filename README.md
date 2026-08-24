@@ -161,7 +161,7 @@ The model requests; the deterministic application decides. It never sees a secre
 never constructs a URL, never picks its own merchant scope, and cannot override a
 policy outcome.
 
-Full detail: [`docs/architecture.md`](docs/architecture.md).
+Full detail, including the end-to-end data flow and why there are no webhooks: [`docs/architecture.md`](docs/architecture.md).
 
 ---
 

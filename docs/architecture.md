@@ -83,6 +83,101 @@ The mapping layer is the only bridge. `resolve_external_payment()` is the single
 function that converts a synthetic id to a provider id, and it enforces merchant
 ownership and mapping existence. The agent has no way to name a provider id.
 
+### End-to-end data flow
+
+```
+        Synthetic dataset                      the analytical truth
+   customers · orders · payments · failures
+   duplicate scenarios
+   (revenue is COMPUTED from payments —
+    there is no revenue table)
+                  │
+                  ▼
+       MerchantOps DB (PostgreSQL)
+   business data  +  execution state
+   agent_tasks · tool_calls · agent_actions
+   approvals · audit_logs · evaluation_results
+                  │
+                  ▼
+              AI Agent                         bounded loop, budget-capped
+                  │
+            Investigation                      read-only typed tools
+                  │
+            Recommendation                     typed Findings, each cited
+                  │
+              Policy Gate ──────────────────►  DENY      no external call
+                  │
+               Approval ─────────────────────►  REJECT    no external call
+                  │
+                  ▼
+          ┌─────────────────┐
+          │  Mapping layer  │  SYN_PAY_xxxx → pay_xxxx    ◄── REQUIRED (§6)
+          └────────┬────────┘
+                   ▼
+           Razorpay Adapter                    Test Mode | mock
+                   │
+                   ▼
+          Razorpay Test Mode
+          payments · refunds · orders
+                   │
+                   ▼
+             Verification                      reads the PAYMENT back,
+                   │                           not the create response
+     ┌─────────┬───┴─────┬──────────┐
+     ▼         ▼         ▼          ▼
+  SUCCESS   FAILED    PARTIAL    UNKNOWN
+                         │          │
+                         └────┬─────┘
+                              ▼
+                       Reconciliation          re-runs verification,
+                       cron / on demand        reconciling by
+                              │                idempotency key
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+                 settled          escalated to the
+                                  operator queue
+                              │
+                              ▼
+                       Audit  ·  Replay
+```
+
+### Four things this diagram is careful about
+
+**1. Four terminal states, not three.** `PARTIAL` is not decorative: the provider
+can accept a refund while the payment's `amount_refunded` never moves. Collapsing it
+into SUCCESS or FAILED puts a real state in the wrong bucket, which is exactly what
+the four-state model exists to prevent.
+
+**2. Verification precedes reconciliation.** Verification is the primitive and runs
+immediately after every action. Reconciliation is a bounded retry loop *around* it,
+entered only for `UNKNOWN` and `PARTIAL`. Drawing reconciliation first would imply an
+action can never settle promptly, which is wrong.
+
+**3. The mapping layer is on the critical path.** It is the only route from a
+synthetic id to a provider id, and it enforces merchant ownership. Drawing the agent
+straight through to the adapter would imply the agent can name provider ids — which
+the design forbids.
+
+**4. There are no webhooks, deliberately.** A webhook is *something you are told*.
+The verification thesis is *read the state back yourself* — which is why
+`verify_refund` reads `payment.amount_refunded` rather than trusting the refund-create
+response. A webhook belongs to the same class as that response: spoofable, replayable,
+reorderable, droppable. It would buy **latency, not truth**, and you would still have
+to verify.
+
+If webhooks are added later, the correct shape is a *trigger* sitting beside the cron
+trigger on reconciliation — never a source feeding verification:
+
+```
+   cron ────────┐
+                ├──► Reconciliation ──► Verification ──► state
+   webhook ─────┘        (trigger only; never trusted as evidence)
+```
+
+The cost of that path is a publicly reachable endpoint, signature verification, replay
+protection, out-of-order handling and idempotent processing — real work for a latency
+win, in a system whose stated limitation is already "settles at sweep cadence".
+
 ## Agent runtime
 
 One bounded agent. Not five.

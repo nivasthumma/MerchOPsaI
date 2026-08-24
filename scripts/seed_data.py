@@ -75,6 +75,13 @@ def reset_schema() -> None:
     eng = get_engine()
     Base.metadata.drop_all(eng)
     Base.metadata.create_all(eng)
+    # drop_all removes audit_logs and its immutability triggers with it, so the
+    # control must be re-applied on every schema creation. Leaving this to a
+    # separate manual step means the audit trail is silently mutable after any
+    # reseed -- which is exactly when nobody would notice.
+    from scripts.harden_db import harden
+    with session_scope() as s:
+        harden(s)
 
 
 def build() -> dict:

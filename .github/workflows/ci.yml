@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    # Nightly, so a dependency or environment drift is caught even with no commits.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+env:
+  DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@127.0.0.1:5432/merchantops
+  # A CI-only signing secret. Tokens minted here are worthless elsewhere.
+  API_TOKEN_SECRET: ci-only-not-a-real-secret
+  # CI runs the deterministic planner and the mock adapter on purpose: no
+  # credentials, and every result must be reproducible. See docs/evaluation.md.
+  LLM_PROVIDER: deterministic
+  RAZORPAY_MODE: mock
+  PYTHONPATH: .
+
+jobs:
+  # ---------------------------------------------------------------- unit + security
+  test:
+    name: Tests (unit · security · integration)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: merchantops
+          POSTGRES_PASSWORD: merchantops
+          POSTGRES_DB: merchantops
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+      - name: Seed dataset
+        run: python scripts/seed_data.py
+      - name: Audit trail is immutable
+        # Enforced by PostgreSQL triggers applied during schema creation. If a
+        # reseed ever stops re-applying them the audit trail silently becomes
+        # editable, so this is checked rather than assumed.
+        run: python scripts/harden_db.py
+      - name: Run tests
+        run: pytest tests -q
+
+  # ---------------------------------------------------------------- scenario suite
+  evaluate:
+    name: Evaluation suite (103 scenarios)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: merchantops
+          POSTGRES_PASSWORD: merchantops
+          POSTGRES_DB: merchantops
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+
+      - name: Dataset is deterministic
+        run: |
+          python scripts/seed_data.py > /tmp/seed_a.txt
+          python scripts/seed_data.py > /tmp/seed_b.txt
+          diff /tmp/seed_a.txt /tmp/seed_b.txt \
+            || { echo "::error::Seed is not deterministic — evaluation cannot be reproducible."; exit 1; }
+          echo "Seed reproduces byte-identically."
+
+      - name: Run evaluation suite
+        run: python scripts/run_scenarios.py
+
+      - name: Suite is reproducible
+        run: |
+          # The pass/fail vector must be identical across runs. A suite whose
+          # result moves between runs cannot support any published number.
+          python - <<'PY'
+          import json, subprocess, sys, pathlib
+          def vector():
+              subprocess.run([sys.executable, "scripts/run_scenarios.py"],
+                             check=False, capture_output=True)
+              r = json.loads(pathlib.Path("data/evaluation_report.json").read_text())
+              return [(x["scenario_id"], x["passed"]) for x in r["results"]]
+          a, b = vector(), vector()
+          if a != b:
+              diff = [x for x, y in zip(a, b) if x != y]
+              print(f"::error::Evaluation is not reproducible. Diverged: {diff}")
+              sys.exit(1)
+          print(f"Reproducible across runs ({len(a)} scenarios).")
+          PY
+
+      - name: Gate on critical scenarios
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          r = json.loads(pathlib.Path("data/evaluation_report.json").read_text())
+          crit = [x for x in r["results"] if x["metrics"].get("critical")]
+          failed = [x["scenario_id"] for x in crit if not x["passed"]]
+          print(f"critical: {len(crit) - len(failed)}/{len(crit)}")
+          if failed:
+              print(f"::error::Critical scenarios failed: {failed}")
+              sys.exit(1)
+          PY
+
+      - name: Summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, pathlib
+          p = pathlib.Path("data/evaluation_report.json")
+          if not p.exists():
+              print("No report produced — the suite did not complete."); raise SystemExit(0)
+          r = json.loads(p.read_text())
+          n = sum(len(x["checks"]) for x in r["results"])
+          lines = [
+              "## Evaluation", "",
+              f"**{r['passed']}/{r['total']} scenarios** · "
+              f"critical {r['critical_passed']}/{r['critical_total']} · "
+              f"{n} assertions", "",
+              f"- provider: `{r['provider']}` (`{r['model']}`)",
+              f"- payment adapter: `{r['adapter_mode']}`",
+              f"- dataset: `{r['dataset_version']}` seed `{r['seed']}`",
+              f"- median latency: {r['median_duration_ms']} ms",
+              f"- mean grounding rate: {r['mean_grounding_rate']}", "",
+              "| Category | Result |", "|---|---|",
+          ]
+          for cat, v in sorted(r["by_category"].items()):
+              lines.append(f"| {cat} | {v['passed']}/{v['total']} |")
+          out = os.environ.get("GITHUB_STEP_SUMMARY")
+          text = "\n".join(lines)
+          print(text)
+          if out:
+              pathlib.Path(out).write_text(text)
+          PY
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: data/evaluation_report.json
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------- suite validation
+  mutation:
+    name: Mutation test (does the suite catch regressions?)
+    # Only meaningful once the suite is green — a red suite makes every mutation
+    # look "caught" for the wrong reason.
+    needs: [test, evaluate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: merchantops
+          POSTGRES_PASSWORD: merchantops
+          POSTGRES_DB: merchantops
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt
+      - name: Seed dataset
+        run: python scripts/seed_data.py
+      - name: Run mutation test
+        run: |
+          # Uses the venv interpreter path by default; in CI the interpreter is
+          # already on PATH.
+          MERCHANTOPS_PYTHON="$(which python)" python scripts/mutation_test.py
+      - name: Working tree must be unmodified
+        run: |
+          # Every mutation is reverted in a finally block. If anything survived
+          # that, the harness itself is unsafe to run.
+          if [ -n "$(git status --porcelain -- app scripts)" ]; then
+            echo "::error::Mutation test left the working tree modified:"
+            git status --porcelain -- app scripts
+            git diff -- app scripts
+            exit 1
+          fi
+          echo "Working tree clean — all mutations reverted."

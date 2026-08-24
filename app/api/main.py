@@ -5,13 +5,14 @@ frontend is never the authority (CONTRACT §20, §41).
 """
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, Principal
+from app.api.security import DEV_SECRET_IN_USE, current_principal
 from app.audit.trace import trace_for
 from app.config import get_settings
 from app.db import session_scope
@@ -22,19 +23,9 @@ from app.models import AgentAction, AgentTask, Approval
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
 
-# --------------------------------------------------------------------------
-# Authentication. A header-based stand-in for a real IdP; the point is that the
-# principal is derived server-side from the users table, never trusted from the
-# request body (CONTRACT §11).
-# --------------------------------------------------------------------------
-def current_principal(x_user_id: str = Header(default="USR_A_OWNER")) -> Principal:
-    with session_scope() as s:
-        row = s.execute(text("""
-            SELECT id, merchant_id, role, permissions FROM users WHERE id = :u
-        """), {"u": x_user_id}).mappings().first()
-    if row is None:
-        raise HTTPException(401, "Unknown user.")
-    return Principal(row["id"], row["merchant_id"], row["role"], list(row["permissions"]))
+# Authentication and rate limiting live in app/api/security.py. The caller
+# presents a signed bearer token it cannot forge; permissions are still read
+# from the database on every request, never carried in the token (CONTRACT §11).
 
 
 class TaskRequest(BaseModel):
@@ -90,6 +81,8 @@ def health():
                      else "deterministic-planner-v1",
         "payment_adapter": s.resolved_razorpay_mode,
         "razorpay_execution_is_real": s.resolved_razorpay_mode == "live_test_mode",
+        "auth": "bearer_hmac",
+        "auth_secret_is_development_default": DEV_SECRET_IN_USE,
     }
 
 

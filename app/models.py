@@ -5,7 +5,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, Integer,
+    BigInteger, func, Boolean, DateTime, Enum, ForeignKey, Index, Integer,
     JSON, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -270,7 +270,10 @@ class AuditLog(Base):
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # server_default: an append-only audit trail must not depend on the
+    # application for its timestamps. The database stamps every row.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True)
 
 
 class EvaluationResult(Base):

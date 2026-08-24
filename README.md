@@ -31,9 +31,9 @@ and what is architecture.
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
-| Audit | Append-only trail, secrets redacted | Distributed tracing |
+| Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 103 scenarios + 13-mutation validation | CI regression gate |
+| Evaluation | 104 scenarios + 13-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
 | UI | Streamlit | Next.js |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -70,13 +70,13 @@ numbers would measure something different and should be reported separately.
 From `make eval` — actual execution, not targets:
 
 ```
-103/103 scenarios passed      (critical: 56/56)
+104/104 scenarios passed      (critical: 57/57)
 
   adversarial_security  23/23    payment_failure       12/12
   duplicate_payment     14/14    refund_policy         25/25
-  failure_unknown       17/17    revenue_investigation 12/12
+  failure_unknown       18/18    revenue_investigation 12/12
 
-299 assertions · median task latency 40 ms · mean grounding rate 1.0
+302 assertions · median task latency 39 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
@@ -86,14 +86,14 @@ deliberately breaks each core control and re-runs the suite:
 13/13 mutations caught
 ```
 
-That run is what makes the 103/103 meaningful — and it is how three real gaps
+That run is what makes the 104/104 meaningful — and it is how three real gaps
 were found and closed (see below).
 
 Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **50 passed** (`make test`) across unit, security and integration.
+Test suite: **66 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -215,8 +215,10 @@ cp .env.example .env                     # optional; defaults work locally
 make setup                               # venv + dependencies
 make seed                                # deterministic dataset
 make test                                # 43 tests
-make eval                                # 103 scenarios, measured
+make eval                                # 104 scenarios, measured
 make mutants                             # prove the suite catches regressions
+make harden                              # enforce audit immutability, then verify it
+make ci                                  # what CI runs: seed + harden + test + eval
 make demo                                # full end-to-end walkthrough
 ```
 
@@ -303,27 +305,42 @@ Three properties make it safe to run unattended:
 
 ## Known limitations
 
-1. **Payment execution is mocked in this build** — no credentials available. See
-   disclosure above.
-2. **Reasoning is a deterministic planner by default** — metrics measure the control
-   plane, not agent intelligence.
+These are split by *why* they exist, because "we chose not to" and "we could not"
+are different claims.
+
+### Blocked on credentials — cannot be closed here
+
+1. **Payment execution is mocked in this build.** No Razorpay credentials were
+   available; `make spike` returned verdict `mock`. Supply credentials and the same
+   code path executes real Test Mode refunds.
+2. **Reasoning is a deterministic planner.** No `ANTHROPIC_API_KEY`. Published
+   metrics therefore measure the control plane, not agent intelligence.
 3. **`RE_REASON` replay consistency is untested against a real model.** With the
-   deterministic planner it is trivially 1.0. Against `claude-opus-5` it would be a
-   genuine measurement; that number has not been collected.
-4. **Reconciliation is a sweep, not a daemon.** `scripts/reconcile.py` settles
-   unsettled actions and escalates what it cannot settle; it runs on demand or from
-   cron. There is no always-on worker, because a queue would mean Redis/Celery, which
-   the MVP scope excludes. Actions are therefore settled at sweep cadence, not
-   instantly.
-5. **Only 5 payments are externally mapped.** Refunds outside that set are correctly
-   rejected as `not_externally_mapped`.
-6. **Single-process, synchronous.** No queue, no horizontal scale.
-7. **Header-based authentication** stands in for a real identity provider. The
-   principal is derived server-side from the database, but there is no token
-   verification.
-8. **Three mutants are caught by unit tests only**, not by scenarios: verification
-   reporting SUCCESS on an unreadable state, idempotency-key reuse, and audit
-   redaction. They are covered, but by `make test` rather than `make eval`.
+   deterministic planner it is trivially 1.0, so it is not published as a meaningful
+   number. Against `claude-opus-5` it would be a genuine measurement.
+
+### Deliberate scope decisions
+
+4. **Reconciliation is a sweep, not a daemon.** An always-on worker means Redis or
+   Celery, which the MVP scope excludes. Actions settle at sweep cadence, not
+   instantly — bounded, escalated, and visible, but not real time.
+5. **Single-process, synchronous.** No queue, no horizontal scale.
+6. **Rate limiting is per-worker.** The counter is in-process, so with several
+   workers the limit is approximate. A shared counter needs Redis.
+7. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
+   unforgeable and permissions are read from the database on every request, but
+   there is no expiry, rotation, revocation list, or audience binding.
+8. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
+   correctly rejected as `not_externally_mapped` — that is the mapping layer working,
+   not a defect.
+
+### Coverage limits
+
+9. **Two mutants are caught by unit tests only**, not by scenarios: idempotency-key
+   derivation and audit redaction. Both are properties of pure functions with no
+   scenario-reachable path — forcing a scenario would be theatre. They are covered by
+   `make test`. (A third, verification reporting SUCCESS on an unreadable state, was
+   closed by scenario UNK-18.)
 
 ---
 
@@ -337,8 +354,8 @@ Ordered by value, not by architectural impressiveness:
    by side, including replay consistency.
 3. ~~Background reconciliation for `UNKNOWN` actions.~~ **Done** — sweep +
    escalation queue, see below.
-4. ~~Expand to 100 scenarios.~~ **Done** — 103 scenarios + mutation testing.
-   Still to do: wire both into CI as a regression gate.
+4. ~~Expand to 100 scenarios and wire into CI.~~ **Done** — 104 scenarios,
+   mutation testing, GitHub Actions gate.
 5. Per-merchant configurable policy.
 6. Replace the header-based principal with a real identity provider.
 

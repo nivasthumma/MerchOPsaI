@@ -26,18 +26,18 @@ Running the same suite against `claude-opus-5` would measure something different
 (agent reasoning quality) and must be reported separately. That number has not been
 collected; the README says so.
 
-## Suite composition (103)
+## Suite composition (104)
 
 | Category | Count | What it exercises |
 |---|---|---|
 | refund_policy | 25 | Approval gate, rejection, expiry, cross-merchant approver, refundable-balance and amount-limit boundaries, unmapped payments, duplicate guard |
 | adversarial_security | 23 | Four injection surfaces, permission matrix, isolation matrix, malformed arguments, budget exhaustion |
-| failure_unknown | 17 | Six fault types, UNKNOWN vs PARTIAL vs FAILED, re-verification, reconciliation |
+| failure_unknown | 18 | Six fault types, UNKNOWN vs PARTIAL vs FAILED, re-verification, reconciliation |
 | duplicate_payment | 14 | Pair/triple detection, window boundary, computed confidence, per-merchant scoping |
 | payment_failure | 12 | Method isolation, hourly concentration, error attribution, no-action guarantee |
 | revenue_investigation | 12 | Period comparison, method ranking, grounding, no-action guarantee |
 
-56 are marked `critical: true`. A critical failure is a stop condition.
+57 are marked `critical: true`. A critical failure is a stop condition.
 
 **The counts are deliberately uneven.** `refund_policy` and `adversarial_security`
 are large because the action path has genuinely many distinct boundaries — a payment
@@ -50,7 +50,7 @@ inflating a metric.
 
 ## Mutation testing — does the suite actually work?
 
-A suite reporting 103/103 proves nothing on its own. It may simply not be asserting
+A suite reporting 104/104 proves nothing on its own. It may simply not be asserting
 anything. `scripts/mutation_test.py` (`make mutants`) breaks each core control in
 turn, re-runs the suite, and reports which scenarios caught the break:
 
@@ -85,14 +85,23 @@ than the pass count.
 
 ### Known coverage limits
 
-Three mutants are caught by **unit tests only**, not by any scenario:
+Two mutants are caught by **unit tests only**, not by any scenario:
 
-- verification reporting SUCCESS when external state is unreadable
 - idempotency-key derivation returning a fresh key each call
 - audit redaction being disabled
 
-They are covered by `make test`, not `make eval`. Stated here so the scenario count is
-not read as covering more than it does.
+Both are properties of pure functions with no scenario-reachable path. A fresh key
+per call is only observable if one approval is executed twice, which the approval
+state machine already prevents; redaction is only observable if something logs a
+secret, which nothing does. Inventing scenarios for these would be theatre — a
+contrived path built so a number could be reported as complete. They are covered by
+`make test`.
+
+A third — verification reporting SUCCESS when external state is unreadable — *was* a
+genuine gap and is now closed by **UNK-18**, which fails the read-back itself and
+requires the result to be UNKNOWN.
+
+Stated here so the scenario count is not read as covering more than it does.
 
 ## Grounding rate — mechanical, not judged
 
@@ -129,13 +138,13 @@ run configuration : llm_provider=deterministic (deterministic-planner-v1)
                     payment_adapter=mock
                     dataset=synthetic-v1, seed=20260825
 
-103/103 scenarios passed      critical: 56/56
+104/104 scenarios passed      critical: 57/57
 
   adversarial_security  23/23    payment_failure       12/12
   duplicate_payment     14/14    refund_policy         25/25
-  failure_unknown       17/17    revenue_investigation 12/12
+  failure_unknown       18/18    revenue_investigation 12/12
 
-299 assertions
+302 assertions
 median task latency   40 ms
 mean grounding rate   1.0
 suite runtime         ~26 s

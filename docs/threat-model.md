@@ -7,8 +7,10 @@ request one financial action (refund) that executes only after human approval.
 
 ```
 UNTRUSTED   model output · customer/order/product free text · tool result text
+            · the caller's claimed identity (verified before use)
 TRUSTED     authenticated principal · database facts · policy engine · adapter
-SECRET      provider credentials · API keys   (never enter model context)
+SECRET      provider credentials · API keys · API_TOKEN_SECRET
+            (never enter model context)
 ```
 
 The single most important boundary: **model output is untrusted input to the
@@ -34,6 +36,10 @@ deterministic code before it has any effect.
 | T13 | Runaway loop / cost exhaustion | 12 tool calls, 8 turns, 60s; terminates `ABORTED_BUDGET` | `test_budget_terminates_runaway_loop` |
 | T14 | Approval replay after conditions change | Approval TTL (15 min); full policy re-evaluation and precondition re-check at execution | `test_expired_approval_is_invalid` |
 | T16 | Unsettled action never resolved | Reconciliation sweep with bounded attempts; escalation queue surfaces what it cannot settle | `test_unsettleable_action_escalates_and_stops` |
+| T18 | Caller impersonating another user | HMAC bearer token; the signature covers the subject, so lifting it onto another identity fails | `test_cannot_swap_the_subject_and_keep_the_signature` |
+| T19 | Token carrying elevated permissions | Permissions read from the database per request, never from the token | `test_permissions_come_from_the_database_not_the_token` |
+| T20 | Request flooding exhausting the agent loop | Per-principal, per-class limits; authentication runs first so anonymous floods cannot spend a real user's budget | `test_action_class_is_rate_limited`, `test_unauthenticated_requests_cannot_consume_a_principal_budget` |
+| T21 | Audit history being rewritten | PostgreSQL triggers on `audit_logs` + server-side timestamps, re-applied on every schema creation | `scripts/harden_db.py`, verified in CI |
 | T17 | Reconciliation re-issuing a financial action | Sweep re-reads state only; reconciles by idempotency key; no action path exists | `test_sweep_settles_unknown_without_reissuing` |
 | T15 | Financial side effect during replay | Runtime halts at approval; HIGH tools have no read-path implementation; outcome asserted | `test_re_reason_makes_no_financial_side_effect` |
 
@@ -55,15 +61,29 @@ recorded.**
 
 ## Residual risks (accepted)
 
-- **Authentication is a header stand-in.** The principal is resolved server-side from
-  the users table, but there is no token verification. Production needs a real IdP.
-- **No rate limiting.** Single-user local deployment.
-- **Audit is append-only by application convention**, not enforced by database
-  permissions or WORM storage.
+- **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
+  unforgeable and the subject is re-resolved from the database on every request, so
+  a token cannot carry stale or elevated authority. But there is no expiry, no
+  rotation, no revocation list, and no audience binding. Rotating
+  `API_TOKEN_SECRET` invalidates every outstanding token — that is the only
+  revocation mechanism. Production needs a real IdP.
+- **Rate limiting is per-worker.** The counter is in-process, so with several
+  workers the effective limit is approximate. A shared counter needs Redis, which
+  the MVP scope excludes.
 - **`UNKNOWN` settles at sweep cadence, not instantly.** `scripts/reconcile.py`
   settles unsettled actions and escalates what it cannot; with no always-on worker,
   latency is the cron interval. An action can no longer sit unsettled unnoticed, but
   it is not settled in real time.
 - **Mock adapter in the default build.** Its security properties are identical (same
   policy, approval, idempotency, verification) but it exercises no real TLS,
-  authentication, or provider error surface.
+  provider authentication, or genuine provider error surface.
+
+## Closed since the first draft
+
+- ~~Audit is append-only by application convention.~~ Now enforced by PostgreSQL
+  BEFORE UPDATE/DELETE triggers on `audit_logs`, re-applied on every schema creation
+  and verified in CI (`scripts/harden_db.py`). Timestamps are server-side, so the
+  application cannot backdate an entry either.
+- ~~Authentication is a header stand-in.~~ The caller no longer asserts its own
+  identity; it presents a signed token it cannot forge.
+- ~~No rate limiting.~~ Per-principal, per-class fixed-window limits.

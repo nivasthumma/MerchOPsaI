@@ -1093,3 +1093,19 @@
   reconcile: true
   expect:
     audit_events: [reconciliation_attempt]
+
+- id: UNK-18
+  category: failure_unknown
+  critical: true
+  description: >
+    The refund is accepted, but the verification read-back itself fails. The
+    system cannot see the resulting business state, so it must report UNKNOWN.
+    Reporting SUCCESS here — on the strength of the create response alone — is
+    the false verification the whole design exists to prevent.
+  request: "Find the duplicate payment and refund it."
+  approve: true
+  fault: {fault: CONNECTION_ERROR, on_operation: get_payment}
+  expect:
+    verification_state: UNKNOWN
+    failure_code: EXTERNAL_STATE_UNKNOWN
+    answer_contains: ["UNKNOWN"]

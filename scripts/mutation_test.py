@@ -11,6 +11,7 @@ cannot leave the working tree modified.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,7 +19,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-PY = str(ROOT / ".venv" / "bin" / "python")
+def _interpreter() -> str:
+    """Resolve the interpreter for child processes.
+
+    Local runs use the repo venv; CI has python on PATH and no venv. Hardcoding
+    `.venv/bin/python` silently breaks CI, so it is only a fallback.
+    """
+    override = os.environ.get("MERCHANTOPS_PYTHON")
+    if override:
+        return override
+    venv = ROOT / ".venv" / "bin" / "python"
+    return str(venv) if venv.exists() else sys.executable
+
+
+PY = _interpreter()
 
 # (label, file, find, replace)
 MUTATIONS = [
@@ -116,7 +130,8 @@ def run_suite() -> tuple[int, int, list[str]]:
     # mid-run — and a stale file can never be misread as this run's result.
     report.unlink(missing_ok=True)
     subprocess.run([PY, "scripts/run_scenarios.py"], cwd=ROOT,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True,
+                   env={**os.environ, "PYTHONPATH": str(ROOT)})
     if not report.exists():
         return 0, 0, ["<suite crashed mid-run>"]
     rep = json.loads(report.read_text())
@@ -125,9 +140,11 @@ def run_suite() -> tuple[int, int, list[str]]:
 
 
 def run_tests() -> tuple[bool, str]:
+    # Inherit the environment. Replacing it wholesale drops DATABASE_URL and a
+    # PATH the interpreter may need, which fails anywhere but a local dev box.
     r = subprocess.run([PY, "-m", "pytest", "tests", "-q", "--no-header", "-x"],
                        cwd=ROOT, capture_output=True, text=True,
-                       env={"PYTHONPATH": str(ROOT), "PATH": "/usr/bin:/bin"})
+                       env={**os.environ, "PYTHONPATH": str(ROOT)})
     line = [l for l in r.stdout.splitlines() if "passed" in l or "failed" in l]
     return r.returncode == 0, (line[-1] if line else "no output")
 

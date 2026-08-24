@@ -6,3 +6,4 @@ venv/
 *.log
 .pytest_cache/
 data/evaluation_report.json
+.mutation-in-progress

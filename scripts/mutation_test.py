@@ -149,10 +149,25 @@ def run_tests() -> tuple[bool, str]:
     return r.returncode == 0, (line[-1] if line else "no output")
 
 
+LOCK = ROOT / ".mutation-in-progress"
+
+
 def main() -> int:
     print("=" * 78)
     print("Mutation test — breaking each control to prove the suite catches it")
     print("=" * 78)
+    print()
+    print("!! Source files under app/ are REWRITTEN while this runs.")
+    print("!! Do not commit, branch, or stash until it finishes.")
+    print(f"!! Lock file: {LOCK.name}")
+    print()
+
+    if LOCK.exists():
+        print("A mutation run is already in progress (or a previous run was "
+              "killed). Verify the tree with 'git status' and remove "
+              f"{LOCK.name} before retrying.")
+        return 1
+    LOCK.write_text("Mutation test in progress. Source files are being rewritten.\n")
 
     baseline_pass, baseline_total, baseline_failed = run_suite()
     print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass")
@@ -196,6 +211,8 @@ def main() -> int:
         if who:
             print(f"{'':<52} {'':<10} {who}")
 
+    LOCK.unlink(missing_ok=True)
+
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
     print(f"RESULT: {caught_n}/{len(MUTATIONS)} mutations caught")
@@ -208,5 +225,26 @@ def main() -> int:
     return 0
 
 
+def _verify_tree_restored() -> None:
+    """Every mutation is reverted in a finally block, but if the process is
+    killed between write and revert a mutant is left on disk. Say so loudly
+    rather than leaving a broken working tree looking clean."""
+    r = subprocess.run(["git", "diff", "--name-only", "--", "app", "scripts"],
+                       cwd=ROOT, capture_output=True, text=True)
+    dirty = [f for f in r.stdout.split() if f]
+    if dirty:
+        print("\n" + "!" * 78)
+        print("MUTATION ARTIFACTS LEFT ON DISK — do not commit:")
+        for f in dirty:
+            print(f"  {f}")
+        print("Restore with:  git checkout -- " + " ".join(dirty))
+        print("!" * 78)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        code = main()
+    finally:
+        LOCK.unlink(missing_ok=True)
+        _verify_tree_restored()
+    raise SystemExit(code)

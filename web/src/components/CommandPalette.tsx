@@ -36,6 +36,15 @@ export function CommandPalette({ extra = [] }: { extra?: Command[] }) {
       if (next) { root.setAttribute("data-theme", next); localStorage.setItem("merchantops.theme", next); }
       else { root.removeAttribute("data-theme"); localStorage.removeItem("merchantops.theme"); }
     } },
+    { id: "density", label: "Toggle density", hint: "comfortable or compact", run: () => {
+      const root = document.documentElement;
+      const compact = root.getAttribute("data-density") === "compact";
+      root.setAttribute("data-density", compact ? "comfortable" : "compact");
+      try {
+        if (compact) localStorage.removeItem("merchantops.density");
+        else localStorage.setItem("merchantops.density", "compact");
+      } catch { /* preference will not survive a reload */ }
+    } },
     ...extra,
   ], [nav, extra]);
 

@@ -3,7 +3,7 @@
 // without the identity the server authorises against. Those are the tests.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError, getToken, setToken } from "./client";
+import { activity, api, ApiError, getToken, setToken } from "./client";
 
 const fetchMock = vi.fn();
 
@@ -144,5 +144,32 @@ describe("replay", () => {
     await api.replay("TASK_1", "RE_REASON");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/tasks/TASK_1/replay?mode=RE_REASON");
     expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  });
+});
+
+describe("activity counter", () => {
+  it("counts a request as in flight for exactly as long as it is", async () => {
+    setToken("t");
+    let release: (r: Response) => void = () => {};
+    fetchMock.mockReturnValue(new Promise<Response>((res) => { release = res; }));
+
+    const seen: number[] = [];
+    const stop = activity.subscribe((n) => seen.push(n));
+    const call = api.getTask("TASK_1");
+    expect(activity.pending).toBe(1);
+
+    release(jsonResponse({ id: "TASK_1" }));
+    await call;
+    expect(activity.pending).toBe(0);
+    // Rose and fell, rather than being reported by a timer.
+    expect(seen).toContain(1);
+    stop();
+  });
+
+  it("stops counting a request that failed", async () => {
+    setToken("t");
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await rejection(api.getTask("TASK_1"));
+    expect(activity.pending).toBe(0);
   });
 });

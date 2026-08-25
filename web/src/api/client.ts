@@ -13,6 +13,26 @@ import type {
 const BASE = "/api";
 const TOKEN_KEY = "merchantops.token";
 
+// In-flight request count, so the progress indicator reflects real work rather
+// than a timer pretending to be one. A bar that finishes before the request
+// does is worse than no bar: it teaches people the app is done when it is not.
+let pending = 0;
+const listeners = new Set<(n: number) => void>();
+
+function setPending(n: number) {
+  pending = n;
+  for (const l of listeners) l(pending);
+}
+
+export const activity = {
+  get pending() { return pending; },
+  subscribe(fn: (n: number) => void) {
+    listeners.add(fn);
+    fn(pending);
+    return () => { listeners.delete(fn); };
+  },
+};
+
 export function getToken(): string {
   try {
     return localStorage.getItem(TOKEN_KEY) ?? "";
@@ -69,12 +89,17 @@ async function request<T>(
   }
 
   let res: Response;
+  setPending(pending + 1);
   try {
     res = await fetch(`${BASE}${path}`, { ...init, headers });
   } catch (e) {
     // A network-level failure is almost always "the API is not running", which
     // is worth saying plainly rather than surfacing "Failed to fetch".
     throw new ApiError(0, `Cannot reach the API. Is it running on :8000? (${String(e)})`);
+  } finally {
+    // One decrement, on both paths. Reading the body below is fast enough that
+    // counting it would only make the indicator linger after the work is done.
+    setPending(pending - 1);
   }
 
   const text = await res.text();

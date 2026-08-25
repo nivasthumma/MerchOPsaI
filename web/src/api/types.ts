@@ -15,6 +15,11 @@ export interface Finding {
   claim: string;
   kind: "OBSERVED" | "INFERRED" | "RECOMMENDATION" | string;
   evidence_refs?: string[];
+  /** Present on measured findings. `value` is whatever the tool produced — a
+   *  number, a formatted string, or a list (e.g. the worst-performing hours) —
+   *  so it is never rendered without going through a formatter. */
+  metric?: string | null;
+  value?: unknown;
 }
 
 export interface Approval {

@@ -5,7 +5,7 @@
 
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EscalatedAction, ReconcileReport } from "../api/types";
 import Operations from "./Operations";
@@ -23,8 +23,12 @@ const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const ESCALATED = escalatedFixture as unknown as EscalatedAction[];
 const REPORT = reconcileFixture as unknown as ReconcileReport;
 
+function LocationProbe() {
+  return <div data-testid="location">{useLocation().search}</div>;
+}
+
 function renderOps() {
-  return render(<MemoryRouter><Operations /></MemoryRouter>);
+  return render(<MemoryRouter><Operations /><LocationProbe /></MemoryRouter>);
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -180,5 +184,40 @@ describe("an operator working the queue", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Run sweep" }));
     expect(mocked.reconcile).toHaveBeenCalledWith({ minAgeSeconds: 0 });
+  });
+});
+
+describe("following up on what the sweep did", () => {
+  it("links a swept action to its task", async () => {
+    // "ACT_x settled UNKNOWN -> SUCCESS" is a statement an operator cannot act
+    // on without the task. The reconciler knew it; the report did not carry it.
+    mocked.escalated.mockResolvedValue([]);
+    mocked.reconcile.mockResolvedValue({
+      ...REPORT,
+      details: [{ ...REPORT.details[0], task_id: "TASK_ABC123" }],
+    });
+    renderOps();
+    await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
+    const link = await screen.findByRole("link", { name: REPORT.details[0].action_id });
+    expect(link).toHaveAttribute("href", "/tasks/TASK_ABC123");
+  });
+
+  it("still renders a row whose task is unknown", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    mocked.reconcile.mockResolvedValue({
+      ...REPORT, details: [{ ...REPORT.details[0], task_id: null }] });
+    renderOps();
+    await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
+    expect(await screen.findByText(REPORT.details[0].action_id)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: REPORT.details[0].action_id })).toBeNull();
+  });
+
+  it("puts the queue scope in the URL, like every other view in the app", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    renderOps();
+    await screen.findByText(/Nothing escalated/);
+    await userEvent.click(screen.getByRole("button", { name: "All unsettled" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("scope=all");
+    expect(mocked.escalated).toHaveBeenLastCalledWith(0);
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { EscalatedAction, ReconcileReport } from "../api/types";
 import {
@@ -12,7 +12,14 @@ export default function Operations() {
   const [rows, setRows] = useState<EscalatedAction[] | null>(null);
   const [report, setReport] = useState<ReconcileReport | null>(null);
   const [busy, setBusy] = useState(false);
-  const [escalatedOnly, setEscalatedOnly] = useState(true);
+  const [params, setParams] = useSearchParams();
+  const escalatedOnly = params.get("scope") !== "all";
+  const setScope = (scope: "escalated" | "all") => {
+    const next = new URLSearchParams(params);
+    if (scope === "all") next.set("scope", "all");
+    else next.delete("scope");
+    setParams(next, { replace: true });
+  };
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [live, setLive] = useState(true);
   const [minAge, setMinAge] = useState(30);
@@ -152,7 +159,13 @@ export default function Operations() {
                     <tbody>
                       {report.details.map((d, i) => (
                         <tr key={`${d.action_id}-${i}`}>
-                          <td className="mono">{d.action_id}</td>
+                          <td className="mono">
+                            {d.task_id
+                              ? <Link to={`/tasks/${d.task_id}`} title="Open the task">
+                                  {d.action_id}
+                                </Link>
+                              : d.action_id}
+                          </td>
                           <td>{d.from ?? "—"}</td>
                           <td>
                             {isVerificationState(d.to)
@@ -184,10 +197,10 @@ export default function Operations() {
                   : <span className="pill neutral" style={{ marginLeft: 8 }}>paused</span>}
           </span>
           <div className="filters" style={{ margin: 0 }}>
-            <button aria-pressed={escalatedOnly} onClick={() => setEscalatedOnly(true)}>
+            <button aria-pressed={escalatedOnly} onClick={() => setScope("escalated")}>
               Escalated
             </button>
-            <button aria-pressed={!escalatedOnly} onClick={() => setEscalatedOnly(false)}>
+            <button aria-pressed={!escalatedOnly} onClick={() => setScope("all")}>
               All unsettled
             </button>
           </div>

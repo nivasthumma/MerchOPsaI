@@ -6,6 +6,8 @@ import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   StatusPill, VerificationPill, When,
 } from "../components/Bits";
+import { Stepper } from "../components/Stepper";
+import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
 
 export default function TaskDetail() {
@@ -15,6 +17,7 @@ export default function TaskDetail() {
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [replay, setReplay] = useState<{ mode: string; result: ReplayResult } | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     try {
@@ -28,14 +31,26 @@ export default function TaskDetail() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function act(name: string, fn: () => Promise<unknown>) {
+  async function act<T>(
+    name: string, fn: () => Promise<T>, announce?: (r: T) => [string, string],
+  ) {
     setBusy(name);
     setError(null);
     try {
-      await fn();
+      const result = await fn();
+      if (announce) {
+        const [title, body] = announce(result);
+        toast({ tone: "ok", title, body });
+      }
       await load();
     } catch (e) {
-      setError(e as ApiError);
+      const err = e as ApiError;
+      setError(err);
+      // A refusal is announced as well as written into the page. It does not
+      // auto-dismiss — see ToastHost.
+      toast({ tone: err.isConflict ? "warn" : "danger",
+              title: err.isConflict ? "Refused by the server" : "Request failed",
+              body: `${err.code ? `${err.code} — ` : ""}${err.message}` });
     } finally {
       setBusy(null);
     }
@@ -67,6 +82,8 @@ export default function TaskDetail() {
         <p className="request">{task.request}</p>
       </div>
 
+      <Stepper task={task} />
+
       <StatStrip items={[
         ["Tool calls", task.tool_calls ?? 0],
         ["LLM turns", task.llm_turns ?? 0],
@@ -84,8 +101,13 @@ export default function TaskDetail() {
       {pending ? (
         <ApprovalGate
           approval={pending} busy={busy}
-          onApprove={() => act("approve", () => api.approve(task.id))}
-          onReject={() => act("reject", () => api.reject(task.id))}
+          onApprove={() => act("approve", () => api.approve(task.id), (t2) => {
+            const v = t2.actions[t2.actions.length - 1]?.verification_state;
+            return ["Approved and executed",
+                    v ? `Independent verification: ${v}` : "Verification pending"];
+          })}
+          onReject={() => act("reject", () => api.reject(task.id),
+                              () => ["Rejected", "No external call was made."])}
         />
       ) : null}
 
@@ -150,7 +172,9 @@ export default function TaskDetail() {
               re-issues the action.
               <div className="row" style={{ marginTop: 10 }}>
                 <button disabled={!!busy} aria-busy={busy === "reverify"}
-                        onClick={() => act("reverify", () => api.reverify(task.id))}>
+                        onClick={() => act("reverify", () => api.reverify(task.id),
+                          (r) => ["Re-read external state",
+                                  `Now ${String((r.verification as { state?: string }).state ?? "unchanged")} — state was read, not re-issued.`])}>
                   {busy === "reverify" ? "Re-reading…" : "Re-verify"}
                 </button>
               </div>
@@ -201,13 +225,17 @@ export default function TaskDetail() {
         </p>
         <div className="row">
           <button disabled={!!busy} aria-busy={busy === "PLAYBACK"}
-                  onClick={() => act("PLAYBACK", async () =>
-                    setReplay({ mode: "PLAYBACK", result: await api.replay(task.id, "PLAYBACK") }))}>
+                  onClick={() => act("PLAYBACK",
+                    () => api.replay(task.id, "PLAYBACK"),
+                    (r) => { setReplay({ mode: "PLAYBACK", result: r });
+                             return ["Replayed (PLAYBACK)", `${r.external_calls} external calls`]; })}>
             PLAYBACK
           </button>
           <button disabled={!!busy} aria-busy={busy === "RE_REASON"}
-                  onClick={() => act("RE_REASON", async () =>
-                    setReplay({ mode: "RE_REASON", result: await api.replay(task.id, "RE_REASON") }))}>
+                  onClick={() => act("RE_REASON",
+                    () => api.replay(task.id, "RE_REASON"),
+                    (r) => { setReplay({ mode: "RE_REASON", result: r });
+                             return ["Replayed (RE_REASON)", `${r.external_calls} external calls`]; })}>
             RE_REASON
           </button>
           {busy === "PLAYBACK" || busy === "RE_REASON" ? <Busy /> : null}

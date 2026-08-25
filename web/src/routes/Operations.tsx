@@ -6,12 +6,14 @@ import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   VerificationPill, When,
 } from "../components/Bits";
+import { useToast } from "../components/Toast";
 
 export default function Operations() {
   const [rows, setRows] = useState<EscalatedAction[] | null>(null);
   const [report, setReport] = useState<ReconcileReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     try {
@@ -27,10 +29,20 @@ export default function Operations() {
     setBusy(true);
     setError(null);
     try {
-      setReport(await api.reconcile());
+      const r = await api.reconcile();
+      setReport(r);
+      toast({
+        tone: r.escalated > 0 ? "warn" : "ok",
+        title: r.scanned === 0 ? "Nothing to sweep" : `Swept ${r.scanned} action(s)`,
+        body: r.scanned === 0
+          ? "Every action is settled, or too recent to re-read."
+          : `${r.settled} settled · ${r.still_unsettled} still unsettled · ${r.escalated} escalated. State was read, never re-issued.`,
+      });
       await load();
     } catch (e) {
-      setError(e as ApiError);
+      const err = e as ApiError;
+      setError(err);
+      toast({ tone: "danger", title: "Sweep failed", body: err.message });
     } finally {
       setBusy(false);
     }

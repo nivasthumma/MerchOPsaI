@@ -435,7 +435,11 @@ docs/           CONTRACT.md, architecture (+ assumptions), threat model, evaluat
 
 ## License / disclaimer
 
+Licensed under the MIT License — see [`LICENSE`](LICENSE).
+
 Independent developer project, provided as-is for demonstration purposes. Uses
 Razorpay Test Mode APIs where applicable. Not affiliated with, sponsored by, or
 endorsed by Razorpay. No real-money transactions are performed anywhere in this
 codebase.
+
+Security reports: [`SECURITY.md`](SECURITY.md).

@@ -167,7 +167,10 @@ def escalated_actions(session, *, max_attempts: int = 5) -> list[dict]:
     rows = session.execute(text("""
         SELECT id, task_id, merchant_id, target_payment_id, external_payment_id,
                amount_minor, external_reference, verification_state,
-               verify_attempts, updated_at
+               verify_attempts, updated_at,
+               -- Why it is stuck. Without this the queue lists identifiers and
+               -- an operator has to open every task to learn what happened.
+               verification_detail
         FROM agent_actions
         WHERE verification_state IN ('UNKNOWN', 'PARTIAL')
           AND verify_attempts >= :n

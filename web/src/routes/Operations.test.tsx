@@ -3,7 +3,7 @@
 // `action_type` column — the type used to claim it did, and the UI rendered an
 // always-empty cell without anything complaining.
 
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -124,5 +124,61 @@ describe("sweep details", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
     const row = (await screen.findByText(REPORT.details[0].action_id)).closest<HTMLElement>("tr")!;
     expect(within(row).getByText("SOMETHING_NEW")).toBeInTheDocument();
+  });
+});
+
+describe("an operator working the queue", () => {
+  const STUCK = {
+    ...ESCALATED[0],
+    verification_detail: {
+      state: "UNKNOWN" as const,
+      reason: "Connection lost after the request was submitted. The provider may or may not have applied it.",
+    },
+  };
+
+  it("says why an action is stuck, on the row", async () => {
+    // A queue of identifiers is a lookup exercise: without this an operator
+    // opens every task to find out what happened.
+    mocked.escalated.mockResolvedValue([STUCK]);
+    renderOps();
+    expect(await screen.findByText(/Connection lost after the request was submitted/))
+      .toBeInTheDocument();
+  });
+
+  it("keeps itself current, and says when it last read", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mocked.escalated.mockResolvedValue([STUCK]);
+    renderOps();
+    await screen.findByText(STUCK.task_id);
+    expect(screen.getByText("live")).toBeInTheDocument();
+
+    const before = mocked.escalated.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(31000); });
+    // This list changes without anyone touching the tab — a cron sweep, another
+    // operator. Stale is worse than empty, because stale looks current.
+    expect(mocked.escalated.mock.calls.length).toBeGreaterThan(before);
+    vi.useRealTimers();
+  });
+
+  it("uses the endpoint's own guard by default", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    mocked.reconcile.mockResolvedValue(REPORT);
+    renderOps();
+    await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
+    expect(mocked.reconcile).toHaveBeenCalledWith({ minAgeSeconds: 30 });
+  });
+
+  it("marks the guard as relaxed when it is lowered", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    mocked.reconcile.mockResolvedValue(REPORT);
+    renderOps();
+    await userEvent.click(await screen.findByText(/Minimum age/));
+    await userEvent.click(screen.getByRole("button", { name: "0s" }));
+    // Lowering it burns attempts on healthy actions; that should never be a
+    // silent setting.
+    expect(screen.getByText("guard relaxed")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Run sweep" }));
+    expect(mocked.reconcile).toHaveBeenCalledWith({ minAgeSeconds: 0 });
   });
 });

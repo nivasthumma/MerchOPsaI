@@ -155,6 +155,9 @@ export interface EscalatedAction {
   verification_state: VerificationState | null;
   verify_attempts: number;
   updated_at: string;
+  /** Why it is unsettled. A queue of identifiers is a lookup exercise; the
+   *  reason belongs on the row. */
+  verification_detail: VerificationDetail | null;
 }
 
 /** One line of the sweep's working: what it re-read, and what changed. */

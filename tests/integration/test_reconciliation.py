@@ -125,3 +125,28 @@ def test_successful_action_is_never_swept(db, owner):
     assert r["action"].verification_state is VerificationState.SUCCESS
     rep = reconcile(db, min_age_seconds=0)
     assert rep.scanned == 0
+
+
+def test_escalated_rows_carry_the_reason(db, owner):
+    """The operator queue is a work list. Identifiers alone make it a lookup
+    exercise: the reason an action is unsettled belongs on the row."""
+    from sqlalchemy import text
+    from app.agent.approval import approve_and_execute
+    from app.agent.runtime import AgentRuntime
+    from app.integrations.razorpay.faults import Fault, FaultInjector
+    from app.verification.reconciler import escalated_actions
+
+    out = AgentRuntime(db, owner).run(
+        "Refund the duplicate payment SYN_PAY_0002 amount 499900.")
+    assert out.approval is not None
+    r = approve_and_execute(db, out.task.id, owner,
+                            injector=FaultInjector(fault=Fault.TIMEOUT_AFTER_SUBMIT))
+    action = r["action"]
+    assert action.verification_state.value == "UNKNOWN"
+    db.execute(text("UPDATE agent_actions SET verify_attempts = 5 WHERE id = :i"),
+               {"i": action.id})
+
+    rows = escalated_actions(db, max_attempts=5)
+    row = next(x for x in rows if x["id"] == action.id)
+    assert row["verification_detail"], "the queue must say why, not only which"
+    assert "reason" in row["verification_detail"]

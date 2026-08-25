@@ -156,7 +156,16 @@ export const api = {
     request<ReplayResult>(
       `/tasks/${encodeURIComponent(id)}/replay?mode=${mode}`, { method: "POST" }),
 
-  reconcile: () => request<ReconcileReport>("/actions/reconcile", { method: "POST" }),
+  /** `minAgeSeconds` guards against racing the request that created an action;
+   *  `maxAttempts` is the escalation line. Both are the endpoint's own
+   *  defaults unless a caller deliberately overrides them. */
+  reconcile: (opts: { minAgeSeconds?: number; maxAttempts?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.minAgeSeconds !== undefined) q.set("min_age_seconds", String(opts.minAgeSeconds));
+    if (opts.maxAttempts !== undefined) q.set("max_attempts", String(opts.maxAttempts));
+    const suffix = q.toString() ? `?${q}` : "";
+    return request<ReconcileReport>(`/actions/reconcile${suffix}`, { method: "POST" });
+  },
 
   /** `maxAttempts` is the endpoint's own threshold: rows are unsettled actions
    *  with at least that many verify attempts. The default of 5 is the

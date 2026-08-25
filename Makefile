@@ -18,6 +18,7 @@ demo: seed  ; $(PY) scripts/demo.py
 web-setup:  ; cd web && npm install
 web:        ; cd web && npm run dev
 web-build:  ; cd web && npm run build
+web-test:   ; cd web && npm test
 
 .PHONY: setup seed spike api ui test eval reconcile mutants harden token ci demo \
-        web-setup web web-build
+        web-setup web web-build web-test

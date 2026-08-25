@@ -94,9 +94,6 @@ describe("running one", () => {
   });
 
   it("reports the verdict with the measurements behind it", async () => {
-    // The captured run is a genuine failure: run_one() does not reseed, so
-    // REF-01's duplicate had already been refunded by earlier activity. Kept as
-    // the fixture precisely because that is what this endpoint really returns.
     mocked.runScenario.mockResolvedValue({ ...RUN, passed: true });
     renderPage();
     const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
@@ -186,6 +183,9 @@ describe("working through a run", () => {
   });
 
   it("survives a reload without losing a long run", async () => {
+    // State the polarity rather than inheriting it from whichever run the
+    // fixture happened to capture.
+    mocked.runScenario.mockResolvedValue({ ...RUN, passed: false });
     const { unmount } = renderPage();
     const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
     await userEvent.click(within(row).getByRole("button", { name: "Run" }));
@@ -199,6 +199,7 @@ describe("working through a run", () => {
   });
 
   it("floats failures to the top, where they get seen", async () => {
+    mocked.runScenario.mockResolvedValue({ ...RUN, passed: false });
     renderPage();
     const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
     await userEvent.click(within(row).getByRole("button", { name: "Run" }));
@@ -207,5 +208,45 @@ describe("working through a run", () => {
     const ids = screen.getAllByRole("row").slice(1)
       .map((r) => r.querySelector("td")?.textContent ?? "");
     expect(ids[0]).toContain(RUN.scenario_id);
+  });
+});
+
+describe("acting on a result", () => {
+  it("links to the task a run produced", async () => {
+    // A failing scenario used to be a verdict with no route to the trace: the
+    // endpoint knew the task id and simply did not return it.
+    renderPage();
+    const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Run" }));
+    const link = await within(row).findByRole("link", { name: /Open the task/ });
+    expect(link).toHaveAttribute("href", `/tasks/${RUN.task_id}`);
+  });
+
+  it("phrases the link differently when the scenario failed", async () => {
+    mocked.runScenario.mockResolvedValue({ ...RUN, passed: false });
+    renderPage();
+    const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Run" }));
+    expect(await within(row).findByRole("link", { name: /Open the task to see why/ }))
+      .toBeInTheDocument();
+  });
+
+  it("marks a run that used a language model", async () => {
+    // An owner can switch providers at runtime. A run under a model is not
+    // comparable to the published suite, and must not look identical to one.
+    mocked.runScenario.mockResolvedValue({
+      ...RUN, provider: "anthropic", model: "claude-opus-5" });
+    renderPage();
+    const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Run" }));
+    expect(await within(row).findByText("ran on claude-opus-5")).toBeInTheDocument();
+  });
+
+  it("says nothing extra when the run used the planner", async () => {
+    renderPage();
+    const row = (await screen.findByText(RUN.scenario_id)).closest<HTMLElement>("tr")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Run" }));
+    await within(row).findByRole("link", { name: /Open the task/ });
+    expect(within(row).queryByText(/ran on/)).toBeNull();
   });
 });

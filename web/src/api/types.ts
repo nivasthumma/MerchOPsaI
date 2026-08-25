@@ -156,6 +156,11 @@ export interface ScenarioResult {
   passed: boolean;
   checks: ScenarioCheck[];
   metrics: ScenarioMetrics;
+  /** The task the scenario produced. A verdict with no route to the trace is
+   *  a verdict nobody can act on. */
+  task_id: string | null;
+  provider: string;
+  model: string;
 }
 
 /** Exactly the columns `escalated_actions()` selects. It does *not* return

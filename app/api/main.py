@@ -317,7 +317,20 @@ def run_one(scenario_id: str):
     if scenario_id not in scen:
         raise HTTPException(404, "Unknown scenario.")
     import uuid
+    settings = get_settings()
     with session_scope() as s:
         res = run_scenario(s, scen[scenario_id], f"RUN_{uuid.uuid4().hex[:8].upper()}")
-        return {"scenario_id": res.scenario_id, "passed": res.passed,
-                "checks": res.checks, "metrics": res.metrics}
+        return {
+            "scenario_id": res.scenario_id, "passed": res.passed,
+            "checks": res.checks, "metrics": res.metrics,
+            # The task the scenario produced. Without it a failing scenario is
+            # a verdict with no way to see how it was reached — the trace, the
+            # policy decisions and the evidence all hang off this id.
+            "task_id": res.task_id,
+            # Which provider produced it. An owner can switch providers at
+            # runtime, and a run under a language model is not comparable to
+            # the published suite even before its live-state caveat.
+            "provider": settings.resolved_llm_provider,
+            "model": settings.llm_model if settings.resolved_llm_provider == "anthropic"
+                     else "deterministic-planner-v1",
+        }

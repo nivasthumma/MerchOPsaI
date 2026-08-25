@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Scenario, ScenarioResult } from "../api/types";
 import { Busy, ErrorBanner, SectionHead, Skeleton, StatStrip } from "../components/Bits";
@@ -137,6 +137,9 @@ export default function Scenarios() {
             ["Critical", all.filter((s) => s.critical).length],
             ["Categories", Object.keys(counts).length],
             ["Run here", ran.length],
+            ["Ran on", ran.length
+              ? [...new Set(ran.map((r) => r.provider ?? "?"))].join(", ")
+              : "—"],
             ["Failed", failed.length === 0 && ran.length > 0
               ? <span className="pill ok">none</span>
               : <span className={failed.length ? "pill danger" : ""}>{failed.length}</span>],
@@ -268,6 +271,9 @@ function Row(
               <span className={`pill ${result.passed ? "ok" : "danger"}`}>
                 {result.passed ? "pass" : "fail"}
               </span>
+              {result.provider && result.provider !== "deterministic" ? (
+                <div><span className="pill warn">ran on {result.model}</span></div>
+              ) : null}
               {m ? (
                 <div className="muted metrics" style={{ fontSize: 12, marginTop: 4 }}>
                   {m.final_status} · {m.tool_calls} tools · {m.duration_ms} ms
@@ -278,6 +284,13 @@ function Row(
                   {m.verification_states.length ? (
                     <div>verification: {m.verification_states.join(", ")}</div>
                   ) : null}
+                </div>
+              ) : null}
+              {result.task_id ? (
+                <div style={{ marginTop: 6 }}>
+                  <Link to={`/tasks/${result.task_id}`}>
+                    {result.passed ? "Open the task" : "Open the task to see why"} →
+                  </Link>
                 </div>
               ) : null}
               <details>

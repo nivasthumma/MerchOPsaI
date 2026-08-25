@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { EvidenceToolCall, Finding, Task } from "../api/types";
 import {
@@ -10,6 +10,9 @@ import { EvidencePanel } from "../components/Evidence";
 import {
   PolicyOutcome, policyDecisions, type PolicyDecision,
 } from "../components/PolicyOutcome";
+// The list itself is rendered by the task rail in the app shell; this page only
+// writes to it. See recent.ts for why it is a module and not component state.
+import { remember } from "../recent";
 
 const EXAMPLES = [
   "Why did revenue drop this week?",
@@ -17,29 +20,6 @@ const EXAMPLES = [
   "Which payment method is failing most?",
   "Show me order SYN_ORD_0042",
 ];
-
-const RECENT_KEY = "merchantops.recent";
-
-function readRecent(): { id: string; request: string }[] {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
-function remember(task: Task) {
-  // There is no "list my tasks" endpoint — by design, since a task belongs to
-  // the merchant rather than to a browser. Keeping the last few locally is a
-  // navigation convenience, not a record; the audit trail is server-side.
-  try {
-    const next = [{ id: task.id, request: task.request },
-                  ...readRecent().filter((r) => r.id !== task.id)].slice(0, 5);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    /* nothing to do */
-  }
-}
 
 export default function Investigate() {
   // The question lives in the URL so a prepared one can be sent to someone, and
@@ -60,8 +40,16 @@ export default function Investigate() {
   const [task, setTask] = useState<Task | null>(null);
   const [decisions, setDecisions] = useState<PolicyDecision[]>([]);
   const [evidence, setEvidence] = useState<EvidenceToolCall[]>([]);
-  const [recent, setRecent] = useState(readRecent);
   const nav = useNavigate();
+
+  // Arriving from the rail's "New investigation" means the next thing you want
+  // is to type. Focus only on that signal — stealing focus on every visit would
+  // fight anyone who came here to read a previous result.
+  const location = useLocation();
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if ((location.state as { focus?: boolean } | null)?.focus) box.current?.focus();
+  }, [location.key, location.state]);
 
   async function submit() {
     setBusy(true);
@@ -73,7 +61,6 @@ export default function Investigate() {
       const t = await api.createTask(request.trim());
       setTask(t);
       remember(t);
-      setRecent(readRecent());
       // What policy decided is the most important thing that happened, and the
       // task payload does not carry it. An analyst asking for a refund gets a
       // COMPLETED task and a tidy report; without this, nothing on the page
@@ -100,31 +87,44 @@ export default function Investigate() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Ask the agent</h1>
-        <p className="request">
-          It investigates with typed tools over synthetic merchant data. Anything that
-          moves money stops at the policy engine first — and waits for you.
-        </p>
-      </div>
-
-      <div className="card">
-        <textarea
-          value={request}
-          placeholder="Why did revenue drop this week?"
-          aria-label="Your question"
-          onChange={(e) => setRequest(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
-        />
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="primary" onClick={submit} disabled={busy || !request.trim()}
-                  aria-busy={busy}>
-            {busy ? "Investigating…" : "Investigate"}
-          </button>
-          <span className="muted"><kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>↵</kbd></span>
+      {/* The composer. The glow sits outside the surface and the text sits on an
+          opaque panel, so its contrast is a fixed number rather than a function
+          of whatever is behind it. It is the only place in the app that uses
+          any of this — below here nothing is translucent. */}
+      <div className="ask">
+        <div className="ask-label">
+          Ask the agent
+          <span className="ask-note">typed tools · synthetic data · writes stop at policy</span>
         </div>
-        <h3>Try one of these</h3>
-        <div className="examples">
+        <div className="ask-wrap">
+          <div className="ask-box">
+            <textarea
+              ref={box}
+              value={request}
+              placeholder="Why did revenue drop this week? · Find the duplicate payment and refund it"
+              aria-label="Your question"
+              onChange={(e) => setRequest(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
+            />
+            <div className="ask-foot">
+              <button className="primary" onClick={submit} disabled={busy || !request.trim()}
+                      aria-busy={busy}>
+                {busy ? "Investigating…" : "Investigate"}
+                {/* Decorative: the shortcut is announced by the hint text below,
+                    and folding it into the button's accessible name renames the
+                    button to "Investigate ⌘↵". */}
+                <span className="kbd-hint" aria-hidden="true">⌘↵</span>
+              </button>
+              <button onClick={() => setRequest("")} disabled={busy || !request.trim()}>
+                Clear
+              </button>
+              <span className="ask-hint">
+                Anything that moves money stops at the policy engine first — and waits for you.
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="examples" aria-label="Example questions">
           {EXAMPLES.map((x) => (
             <button key={x} onClick={() => setRequest(x)} disabled={busy}>{x}</button>
           ))}
@@ -139,23 +139,6 @@ export default function Investigate() {
 
       {task ? <Result task={task} decisions={decisions} evidence={evidence} /> : null}
 
-      {recent.length ? (
-        <div className="card">
-          <SectionHead title="Recent in this browser" count={`${recent.length}`} />
-          <p className="sub">
-            Local navigation only. Tasks belong to the merchant and live server-side; this
-            list is not the record.
-          </p>
-          <ul>
-            {recent.map((r) => (
-              <li key={r.id}>
-                <Link to={`/tasks/${r.id}`}>{r.id}</Link>{" "}
-                <span className="muted">— {r.request}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </>
   );
 }

@@ -11,13 +11,14 @@ import type { Health } from "./api/types";
 
 vi.mock("./api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/client")>();
-  return { ...actual, api: { health: vi.fn(), me: vi.fn(), setProvider: vi.fn() } };
+  return { ...actual, api: { health: vi.fn(), me: vi.fn(), setProvider: vi.fn(),
+                           metrics: vi.fn() } };
 });
 
 const { api } = await import("./api/client");
 const health = api.health as unknown as ReturnType<typeof vi.fn>;
 const me = api.me as unknown as ReturnType<typeof vi.fn>;
-const setProvider = api.setProvider as unknown as ReturnType<typeof vi.fn>;
+const metrics = api.metrics as unknown as ReturnType<typeof vi.fn>;
 
 const OWNER = {
   user_id: "USR_A_OWNER", merchant_id: "MERCH_A", role: "owner",
@@ -50,6 +51,11 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   me.mockResolvedValue(OWNER);
+  metrics.mockResolvedValue({
+    window_hours: 24, gated: 1, approved: 2, rejected: 0, moved_minor: 499900,
+    tool_calls: 9, tool_errors: 0, tool_error_rate: 0, p50_duration_ms: 21,
+    signing_secret_is_development_default: false,
+  });
 });
 
 describe("run configuration", () => {
@@ -138,53 +144,57 @@ describe("acting identity", () => {
   });
 });
 
-describe("reasoning provider control", () => {
+describe("the task rail", () => {
   beforeEach(() => localStorage.setItem("merchantops.token", "t"));
 
-  it("offers the switch to an owner", async () => {
+  it("keeps recently opened tasks one click away from every page", async () => {
     health.mockResolvedValue(OK);
+    localStorage.setItem("merchantops.recent", JSON.stringify(
+      [{ id: "TASK_A", request: "Why did revenue drop this week?", status: "COMPLETED" }]));
     renderApp();
-    expect(await screen.findByText("Reasoning provider")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "anthropic" })).toBeEnabled();
+    const link = await screen.findByRole("link", { name: /TASK_A/ });
+    expect(link).toHaveAttribute("href", "/tasks/TASK_A");
+    expect(screen.getByText("Why did revenue drop this week?")).toBeInTheDocument();
   });
 
-  it("never offers a field for a credential", async () => {
-    // CONTRACT §37 keeps provider secrets in the environment. A browser form is
-    // neither an environment variable nor an appropriate secret mechanism.
+  it("says the list is local rather than letting its placement imply a record", async () => {
+    // A rail pinned beside every page looks authoritative. This one is not: the
+    // audit trail is server-side, and the rail has to say so itself.
     health.mockResolvedValue(OK);
+    localStorage.setItem("merchantops.recent", JSON.stringify(
+      [{ id: "TASK_A", request: "anything" }]));
     renderApp();
-    await screen.findByText("Reasoning provider");
-    expect(screen.getByText(/there is no field for a key here/)).toBeInTheDocument();
-    const inputs = screen.queryAllByRole("textbox");
-    expect(inputs.every((i) => !/key|secret|token/i.test(i.getAttribute("aria-label") ?? "")))
-      .toBe(true);
+    expect(await screen.findByText(/the audit trail is server-side/)).toBeInTheDocument();
   });
 
-  it("tells an analyst it is not theirs to change", async () => {
+  it("is absent before sign-in, when there is nothing to navigate to", async () => {
+    localStorage.removeItem("merchantops.token");
     health.mockResolvedValue(OK);
-    me.mockResolvedValue(ANALYST);
     renderApp();
-    expect(await screen.findByText(/Changing it requires the owner role/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "anthropic" })).toBeNull();
+    await screen.findByLabelText(/Mint one with/);
+    expect(screen.queryByRole("complementary", { name: "Recent tasks" })).toBeNull();
+  });
+});
+
+describe("starting the next investigation", () => {
+  beforeEach(() => localStorage.setItem("merchantops.token", "t"));
+
+  it("offers a way to start one from the rail, on every page", async () => {
+    // It used to be a trip back through the top nav from a task page, which is
+    // the page you are most likely to be on when you want the next one.
+    health.mockResolvedValue(OK);
+    localStorage.setItem("merchantops.recent", JSON.stringify(
+      [{ id: "TASK_A", request: "anything", status: "COMPLETED" }]));
+    renderApp();
+    const link = await screen.findByRole("link", { name: /New investigation/ });
+    expect(link).toHaveAttribute("href", "/");
   });
 
-  it("surfaces the server's refusal when no credential is configured", async () => {
+  it("offers it even when nothing has been run yet", async () => {
     health.mockResolvedValue(OK);
-    setProvider.mockRejectedValue(
-      new Error("No Anthropic credential is configured on the server."));
+    localStorage.removeItem("merchantops.recent");
     renderApp();
-    await userEvent.click(await screen.findByRole("button", { name: "anthropic" }));
-    expect(await screen.findByText(/No Anthropic credential is configured/))
-      .toBeInTheDocument();
-  });
-
-  it("warns that published metrics were not measured on a model", async () => {
-    health.mockResolvedValue({ ...OK, llm_provider: "anthropic",
-                               llm_provider_source: "runtime",
-                               llm_model: "claude-opus-5",
-                               llm_credential_source: "api_key" });
-    renderApp();
-    expect(await screen.findByText(/Published metrics were measured on the deterministic planner/))
+    expect(await screen.findByRole("link", { name: /New investigation/ }))
       .toBeInTheDocument();
   });
 });

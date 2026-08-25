@@ -216,13 +216,15 @@ describe("result framing", () => {
     expect(answer).toHaveClass("answer");
   });
 
-  it("keeps recent tasks reachable after a run", async () => {
+  it("keeps a finished run reachable afterwards", async () => {
     renderPage();
     await investigate();
     await screen.findByText(/Revenue moved/);
-    // The list used to vanish the moment a result appeared, stranding anyone
-    // wanting to go back to an earlier task.
-    expect(screen.getByText("Recent in this browser")).toBeInTheDocument();
+    // The list itself is the task rail in the app shell now; this page's job is
+    // to make sure a completed run is still in it. It used to vanish the moment
+    // a result appeared, stranding anyone wanting to go back to an earlier task.
+    const recent = JSON.parse(localStorage.getItem("merchantops.recent")!);
+    expect(recent.map((r: { id: string }) => r.id)).toContain(TASK.id);
   });
 });
 

@@ -191,7 +191,7 @@ export default function Operations() {
 
       <div className="card">
         <SectionHead title="Operator queue" count={rows ? `${rows.length}` : undefined}>
-          <span className="muted" style={{ fontSize: 12, marginRight: 10 }}>
+          <span className="muted" style={{ fontSize: 12 }}>
             {fetchedAt ? <>read <When iso={fetchedAt} /></> : null}
             {live ? <span className="pill ok" style={{ marginLeft: 8 }}>live</span>
                   : <span className="pill neutral" style={{ marginLeft: 8 }}>paused</span>}

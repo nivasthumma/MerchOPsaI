@@ -6,7 +6,7 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
-  EscalatedAction, Health, ReconcileReport, ReplayResult, Scenario,
+  EscalatedAction, Health, Metrics, ReconcileReport, ReplayResult, Scenario,
   Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
@@ -131,6 +131,9 @@ export const api = {
   health: () => request<Health>("/health", {}, { auth: false }),
 
   me: () => request<Principal>("/me"),
+
+  /** Counts for the operations strip. Authenticated: see types.Metrics. */
+  metrics: () => request<Metrics>("/metrics"),
 
   /** Selects among providers the server can already reach. It never carries a
    *  credential — CONTRACT §37 keeps those in the environment. */

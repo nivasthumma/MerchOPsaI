@@ -284,3 +284,27 @@ describe("trace controls", () => {
     expect(screen.queryByText("llm_turn")).toBeNull();
   });
 });
+
+describe("what policy decided, on the task page too", () => {
+  it("states a refusal above the answer, not only inside the trace", async () => {
+    // This page holds the whole trace and was showing a DENY as one row in a
+    // filterable list — less visible than on the page with less data.
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] }, [
+      { id: 1, at: new Date().toISOString(), event: "policy_decision",
+        payload: { tool: "request_refund", decision: "DENY", rule: "missing_permission",
+                   reason: "User lacks permission action:refund." } },
+    ]);
+    expect(await screen.findByText(/Refused: request_refund/)).toBeInTheDocument();
+    // The reason is also inside the trace payload; assert on the banner.
+    const banner = document.querySelector<HTMLElement>(".banner.danger")!;
+    expect(within(banner).getByText(/User lacks permission/)).toBeInTheDocument();
+  });
+
+  it("wraps the answer rather than scrolling prose sideways", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [],
+               final_answer: "Revenue moved -6.29% period-over-period." });
+    const answer = await screen.findByText(/Revenue moved -6.29%/);
+    expect(answer.tagName).not.toBe("PRE");
+    expect(answer).toHaveClass("answer");
+  });
+});

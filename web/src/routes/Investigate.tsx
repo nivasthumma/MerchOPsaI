@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { Finding, Task, TraceEvent } from "../api/types";
+import type { Finding, Task } from "../api/types";
 import {
   Busy, CopyId, ErrorBanner, SectionHead, StatStrip, StatusPill,
 } from "../components/Bits";
 import { ChangeChart, RankChart, type ChangePoint, type RankPoint } from "../components/Charts";
+import {
+  PolicyOutcome, policyDecisions, type PolicyDecision,
+} from "../components/PolicyOutcome";
 
 const EXAMPLES = [
   "Why did revenue drop this week?",
@@ -184,42 +187,6 @@ function worstHours(findings: Finding[]): RankPoint[] {
     const m = /^(\d{1,2}:\d{2})\s*\(([\d.]+)%\s*failed\)$/.exec(String(v));
     return m ? [{ label: m[1], value: Number(m[2]) }] : [];
   });
-}
-
-interface PolicyDecision {
-  tool: string;
-  decision: string;
-  rule?: string;
-  reason?: string;
-}
-
-/** Every policy outcome that was not a plain ALLOW. */
-function policyDecisions(trace: TraceEvent[]): PolicyDecision[] {
-  return trace
-    .filter((e) => e.event === "policy_decision")
-    .map((e) => e.payload as unknown as PolicyDecision)
-    .filter((d) => d && d.decision && d.decision !== "ALLOW");
-}
-
-function PolicyOutcome({ decisions }: { decisions: PolicyDecision[] }) {
-  if (!decisions.length) return null;
-  return (
-    <>
-      {decisions.map((d, i) => (
-        <div key={i} className={`banner ${d.decision === "DENY" ? "danger" : "warn"}`}>
-          <strong>
-            {d.decision === "DENY" ? "Refused" : "Held for approval"}: {d.tool}
-          </strong>{" "}
-          {d.reason ?? ""}
-          {d.rule ? <> <code>{d.rule}</code></> : null}
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
-            The decision was made outside the model, and no external call was made. The
-            answer below is what the agent could still do without it.
-          </div>
-        </div>
-      ))}
-    </>
-  );
 }
 
 function Result({ task, decisions }: { task: Task; decisions: PolicyDecision[] }) {

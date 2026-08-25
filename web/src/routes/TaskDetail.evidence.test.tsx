@@ -2,7 +2,7 @@
 // captured live. The seeded order carries a prompt injection in its notes, so
 // this is also where the quarantine is pinned.
 
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -72,5 +72,24 @@ describe("approving with evidence in view", () => {
     expect(mocked.approve).not.toHaveBeenCalled();
     await userEvent.click(btn);
     expect(mocked.approve).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a task that is no longer waiting", () => {
+  it("still shows what the agent read", async () => {
+    // The evidence was fetched on every poll and rendered only inside the
+    // approval gate, so a completed task loaded it and threw it away.
+    // The file's beforeEach has already rendered the halted task; this case
+    // needs a completed one, so clear the first render rather than stacking.
+    cleanup();
+    mocked.getTask.mockResolvedValue({ ...TASK, status: "COMPLETED", approvals: [] });
+    const { unmount } = render(
+      <MemoryRouter initialEntries={[`/tasks/${TASK.id}`]}>
+        <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Evidence the agent read")).toBeInTheDocument();
+    expect(screen.getByText(/SYSTEM OVERRIDE/)).toBeInTheDocument();
+    unmount();
   });
 });

@@ -18,6 +18,14 @@ import taskFixture from "../test-fixtures/task.json";
 import traceFixture from "../test-fixtures/trace.json";
 import evidenceFixture from "../test-fixtures/evidence.json";
 
+/** The task screen is one pane deck now: trace, evidence, actions, approvals,
+ *  replay. Anything not in the open pane is reached the way a person reaches
+ *  it — by clicking the tab. */
+async function openPane(name: RegExp) {
+  await userEvent.click(await screen.findByRole("tab", { name }));
+}
+
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
@@ -57,6 +65,7 @@ describe("a real completed task", () => {
 
   it("shows the verification verdict with the sentence behind it", async () => {
     await screen.findByText("COMPLETED");
+    await openPane(/Actions/);
     const action = document.querySelector<HTMLElement>(".action-card")!;
     expect(within(action).getByText("SUCCESS")).toBeInTheDocument();
     expect(within(action).getByText(/amount_refunded increased by 499900 minor units/))
@@ -67,6 +76,7 @@ describe("a real completed task", () => {
   it("keeps the decided approval on the record", async () => {
     // A page that forgets who approved a refund the moment it executes is
     // missing the part an auditor came for.
+    await openPane(/Approvals/);
     expect(await screen.findByText("Approval history")).toBeInTheDocument();
     expect(screen.getByText("APPROVED")).toBeInTheDocument();
   });

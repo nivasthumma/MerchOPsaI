@@ -11,6 +11,14 @@ import TaskDetail from "./TaskDetail";
 import haltedFixture from "../test-fixtures/halted.json";
 import evidenceFixture from "../test-fixtures/evidence.json";
 
+/** The task screen is one pane deck now: trace, evidence, actions, approvals,
+ *  replay. Anything not in the open pane is reached the way a person reaches
+ *  it — by clicking the tab. */
+async function openPane(name: RegExp) {
+  await userEvent.click(await screen.findByRole("tab", { name }));
+}
+
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
@@ -70,7 +78,11 @@ describe("approving with evidence in view", () => {
     const btn = await screen.findByRole("button", { name: /Approve and execute/ });
     expect(btn).toBeEnabled();
     expect(mocked.approve).not.toHaveBeenCalled();
+    // Arming is not approving: the first click must not reach the server.
     await userEvent.click(btn);
+    expect(mocked.approve).not.toHaveBeenCalled();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Confirm — this moves money/ }));
     expect(mocked.approve).toHaveBeenCalledTimes(1);
   });
 });
@@ -88,7 +100,10 @@ describe("a task that is no longer waiting", () => {
         <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Evidence the agent read")).toBeInTheDocument();
+    // One heading now, whether or not an approval is pending: the evidence
+    // section moved out of the gate and took §21's wording with it.
+    await openPane(/Evidence/);
+    expect(await screen.findByText("Evidence this rests on")).toBeInTheDocument();
     expect(screen.getByText(/SYSTEM OVERRIDE/)).toBeInTheDocument();
     unmount();
   });

@@ -7,3 +7,5 @@ venv/
 .pytest_cache/
 data/evaluation_report.json
 .mutation-in-progress
+.vercel
+.vercel_python_packages/

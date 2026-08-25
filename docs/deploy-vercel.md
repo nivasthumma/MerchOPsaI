@@ -29,7 +29,7 @@ Set these in **Project → Settings → Environment Variables**.
 | `RAZORPAY_MODE` | `mock` | No outbound financial call. Set to `live_test_mode` with keys only if you mean it. |
 
 > **Do not set `ANTHROPIC_API_KEY` on this deployment unless you also add
-> `anthropic` to `requirements-vercel.txt`.** Provider selection is `auto` by
+> `anthropic` to `api/requirements.txt`.** Provider selection is `auto` by
 > default: it picks `anthropic` the moment it detects a credential, and the
 > provider then imports the SDK on first use. With the key set and the package
 > absent, every task fails at request time with a `ModuleNotFoundError` that

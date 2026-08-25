@@ -1182,11 +1182,13 @@ tbody.action-card tr:nth-child(even) { background: transparent; }
 .shell:has(.task-layout) .card.cta .kv { gap: 2px 16px; font-size: 13px; }
 .shell:has(.task-layout) .card.cta .row { margin-top: 12px !important; }
 
-/* ── pages that are not the task screen ────────────────────────────────────
-   The task screen wants the full width for its three columns. Everything else
-   is prose and forms, and a form stretched to 1500px is a form nobody can
-   scan — cap the measure. */
-.frame > .shell:not(:has(.task-layout)) { max-width: 1080px; }
+/* ── page width ────────────────────────────────────────────────────────────
+   Every page fills the column beside the rail. Capping only some of them left
+   the task screen running to the edge while Investigate stopped 228px short,
+   and inside Investigate the notice and the composer had different right edges
+   — a ragged margin that reads as a broken layout rather than as a measure.
+   Line length is controlled where it matters, on the prose itself (`.sub` is
+   78ch), not by narrowing whole pages. */
 
 /* ── the investigate empty state ───────────────────────────────────────────
    Before a run there is genuinely nothing to show. Centring the composer in
@@ -1195,8 +1197,7 @@ tbody.action-card tr:nth-child(even) { background: transparent; }
 .shell:has(.ask) { display: flex; flex-direction: column; }
 .shell:has(.ask) .route { display: flex; flex-direction: column; flex: 1 1 auto; }
 .shell:has(.ask) .route > .ask:only-child { margin-top: min(12vh, 90px); }
-.ask { max-width: 820px; }
-.ask .examples { max-width: 820px; }
+/* Aligned with everything else in the column, including the notice above it. */
 
 /* A disabled primary is not a faded primary. At 45% a forest fill turns into a
    muddy grey-green that reads as broken rather than as unavailable. */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
   Approval, EvidenceToolCall, PlaybackResult, Principal, ReplayResult, ReReasonResult, Task,
@@ -10,6 +10,7 @@ import {
   StatusPill, VerificationPill, When,
 } from "../components/Bits";
 import { EvidencePanel } from "../components/Evidence";
+import { forgetOne } from "../recent";
 import { PolicyOutcome, policyDecisions } from "../components/PolicyOutcome";
 import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
@@ -28,6 +29,7 @@ export default function TaskDetail() {
   // Optional-chained: the route also renders in tests that mount it bare, with
   // no outlet context above it.
   const me = useOutletContext<{ me: Principal | null } | null>()?.me ?? null;
+  const nav = useNavigate();
   const [task, setTask] = useState<Task | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [evidence, setEvidence] = useState<EvidenceToolCall[]>([]);
@@ -117,10 +119,30 @@ export default function TaskDetail() {
   }
 
   if (error && !task) {
+    // A 404 here usually means the rail is pointing at something the server no
+    // longer has: the list lives in this browser, the record lives in the
+    // database, and a reseed separates them. Saying "Unknown task" and stopping
+    // leaves a dead link in the rail forever.
+    const gone = error.status === 404;
     return (
       <div className="card">
         <ErrorBanner error={error} />
-        <button onClick={() => { setError(null); void load(); }}>Try again</button>
+        {gone ? (
+          <p className="sub" style={{ marginTop: 12 }}>
+            This task is not on the server. Recent tasks are remembered in this
+            browser only — the authoritative record is server-side, so reseeding
+            the database leaves entries here pointing at nothing.
+          </p>
+        ) : null}
+        <div className="row" style={{ marginTop: 12 }}>
+          <button onClick={() => { setError(null); void load(); }}>Try again</button>
+          {gone ? (
+            <button className="primary"
+                    onClick={() => { forgetOne(taskId); nav("/"); }}>
+              Remove from list
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }

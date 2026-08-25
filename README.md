@@ -75,7 +75,7 @@ and what is architecture.
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
 | Evaluation | 106 scenarios + 15-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
-| UI | Streamlit | Next.js |
+| UI | Streamlit **and** a React SPA (`web/`) | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
 
 Nothing in the right column is claimed as implemented.
@@ -314,6 +314,19 @@ make api      # FastAPI on :8000  (docs at /docs)
 make ui       # Streamlit on :8501
 ```
 
+Or the React SPA, which talks to the same API:
+
+```bash
+make web-setup                    # npm install (once)
+make api                          # in one terminal
+make web                          # Vite dev server on :5173
+make token USER_ID=USR_A_OWNER    # paste the token into the app
+```
+
+The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
+see [ADR-0015](docs/adr/0015-react-spa-frontend.md). It is verified by hand, not by
+tests; the Streamlit UI remains the contract-conformant surface.
+
 Before trusting real payment execution:
 
 ```bash
@@ -467,6 +480,7 @@ app/
   eval/         scenario schema + runner
   api/          FastAPI surface
 ui/             Streamlit app
+web/            React SPA — Vite + TypeScript (ADR-0015)
 data/           106 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
 tests/          unit · security · integration  (81 tests)

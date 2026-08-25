@@ -14,4 +14,10 @@ token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
 ci:         ; $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
-.PHONY: setup seed spike api ui test eval reconcile mutants harden token ci demo
+# --- React SPA (web/) — see ADR-0015 -------------------------------------
+web-setup:  ; cd web && npm install
+web:        ; cd web && npm run dev
+web-build:  ; cd web && npm run build
+
+.PHONY: setup seed spike api ui test eval reconcile mutants harden token ci demo \
+        web-setup web web-build

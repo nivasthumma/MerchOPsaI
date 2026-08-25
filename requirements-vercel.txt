@@ -1,0 +1,14 @@
+# Runtime dependencies for the Vercel Python function.
+#
+# Deliberately not `requirements.txt`: that file also carries the test runner,
+# Streamlit and the Anthropic SDK. A serverless bundle has a size limit and a
+# cold start, and shipping pytest to production is how a 30-second cold start
+# happens. The reasoning provider on a deployment like this is `deterministic`
+# (no credential, no outbound call), so the Anthropic SDK is not needed either
+# — add it back here and set ANTHROPIC_API_KEY if you want the model path.
+fastapi>=0.141.1
+sqlalchemy>=2.0.52
+psycopg2-binary>=2.9.12
+pydantic>=2.13.4
+pydantic-settings>=2.15.0
+pyyaml>=6.0.3

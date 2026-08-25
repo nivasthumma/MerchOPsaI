@@ -99,7 +99,16 @@ describe("unsettled actions", () => {
       target_payment_id: "SYN_PAY_0002", external_payment_id: "pay_test_002",
       amount_minor: 499900, external_reference: null,
       verification_state: "UNKNOWN",
-      verification_detail: "Connection lost after the request was submitted.",
+      // The real shape: agent_actions.verification_detail is a JSON column, not
+      // a string. An earlier fixture here said "string" because that is what the
+      // type claimed, so the test agreed with the bug instead of catching it.
+      verification_detail: {
+        state: "UNKNOWN",
+        reason: "Connection lost after the request was submitted.",
+        expected: { external_payment_id: "pay_test_002", refund_amount_minor: 499900 },
+        actual: { amount_refunded_minor: 499900, refund_status: "full" },
+        external_reference: null,
+      },
       verify_attempts: 1,
     }],
   };
@@ -116,9 +125,29 @@ describe("unsettled actions", () => {
     expect(await screen.findByText(/never\s+re-issues the action/)).toBeInTheDocument();
   });
 
+  it("renders the verification reason, not the object it lives in", async () => {
+    // Regression: `verification_detail` is a dict, and rendering it directly
+    // threw "Objects are not valid as a React child" — a whole-page crash on
+    // the one screen that reports whether money moved.
+    renderAt(unknown);
+    expect(await screen.findByText(/Connection lost after the request was submitted/))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/\[object Object\]/)).toBeNull();
+  });
+
+  it("keeps the expected-vs-actual evidence available", async () => {
+    renderAt(unknown);
+    expect(await screen.findByText("expected vs actual")).toBeInTheDocument();
+  });
+
   it("offers no re-verify button once everything is settled", async () => {
     renderAt({ ...unknown, actions: [{ ...unknown.actions[0],
-      verification_state: "SUCCESS", external_reference: "rfnd_MOCK1" }] });
+      verification_state: "SUCCESS", external_reference: "rfnd_MOCK1",
+      verification_detail: {
+        state: "SUCCESS",
+        reason: "Confirmed: amount_refunded increased by 499900 minor units.",
+        external_reference: "rfnd_MOCK1",
+      } }] });
     expect(await screen.findByText("SUCCESS")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Re-verify/ })).toBeNull();
   });

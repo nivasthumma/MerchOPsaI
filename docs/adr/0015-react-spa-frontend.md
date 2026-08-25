@@ -80,6 +80,25 @@ Two things the exercise turned up, both worth keeping:
   explicit `afterEach(cleanup)`, renders accumulated across tests and queries began
   finding several of everything — a failure mode that looks like a component bug.
 
+### And then the tests agreed with a bug
+
+Within minutes of the tests landing, the task screen crashed in a browser with
+"Objects are not valid as a React child". `agent_actions.verification_detail` is a JSON
+column carrying `{state, reason, expected, actual, external_reference}`; `types.ts`
+declared it `string`, and the component rendered it directly.
+
+The tests did not catch it because **the fixture was written from the type, not from the
+API** — it used a string, so it agreed with the bug. What caught it was a person opening
+the page. Correcting the type made `tsc` reject the fixture immediately, which is the
+useful part: the type is now the thing that fails, not the render.
+
+Two consequences taken: the fixture is copied from a real row rather than invented, and
+every other field the SPA renders was checked against a live response (all scalars or
+arrays of strings; `verification_detail` was the only mismatch). The general shape is
+familiar from ADR-0013 — a claim written from intent rather than from the run — and it
+is worth noticing that a test suite can inherit an assumption as easily as a document
+can.
+
 The CI gap stands. `web/` is still outside `.github/workflows/ci.yml` by request, so
 these tests gate a developer's machine and nothing else. A merge can still break the
 SPA without anything going red.

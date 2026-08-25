@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { Finding, Task } from "../api/types";
+import type { EvidenceToolCall, Finding, Task } from "../api/types";
 import {
   Busy, CopyId, ErrorBanner, SectionHead, StatStrip, StatusPill,
 } from "../components/Bits";
 import { ChangeChart, RankChart, type ChangePoint, type RankPoint } from "../components/Charts";
+import { EvidencePanel } from "../components/Evidence";
 import {
   PolicyOutcome, policyDecisions, type PolicyDecision,
 } from "../components/PolicyOutcome";
@@ -41,11 +42,24 @@ function remember(task: Task) {
 }
 
 export default function Investigate() {
-  const [request, setRequest] = useState("");
+  // The question lives in the URL so a prepared one can be sent to someone, and
+  // so a reload does not discard what was typed. It is a *draft* only: this page
+  // never submits from the URL. A link that could create a task would be a link
+  // that could attempt a refund, and no link should be able to do that.
+  const [params, setParams] = useSearchParams();
+  const [request, setRequestState] = useState(params.get("q") ?? "");
+  const setRequest = (value: string) => {
+    setRequestState(value);
+    const next = new URLSearchParams(params);
+    if (value.trim()) next.set("q", value);
+    else next.delete("q");
+    setParams(next, { replace: true });
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [task, setTask] = useState<Task | null>(null);
   const [decisions, setDecisions] = useState<PolicyDecision[]>([]);
+  const [evidence, setEvidence] = useState<EvidenceToolCall[]>([]);
   const [recent, setRecent] = useState(readRecent);
   const nav = useNavigate();
 
@@ -54,6 +68,7 @@ export default function Investigate() {
     setError(null);
     setTask(null);
     setDecisions([]);
+    setEvidence([]);
     try {
       const t = await api.createTask(request.trim());
       setTask(t);
@@ -66,6 +81,12 @@ export default function Investigate() {
       void api.getTrace(t.id)
         .then((tr) => setDecisions(policyDecisions(tr.trace)))
         .catch(() => setDecisions([]));
+      // The same evidence the task page shows, including merchant-supplied text
+      // under quarantine. An injected note is worth seeing wherever the finding
+      // that rests on it is shown.
+      void api.getEvidence(t.id)
+        .then((ev) => setEvidence(ev.tool_calls))
+        .catch(() => setEvidence([]));
       // An approval gate is the interesting case, and it lives on the task page
       // with the payload and the evidence. Go there rather than making the
       // operator find it.
@@ -116,7 +137,7 @@ export default function Investigate() {
         <div className="card"><Busy>running the agent loop</Busy></div>
       ) : null}
 
-      {task ? <Result task={task} decisions={decisions} /> : null}
+      {task ? <Result task={task} decisions={decisions} evidence={evidence} /> : null}
 
       {recent.length ? (
         <div className="card">
@@ -189,7 +210,10 @@ function worstHours(findings: Finding[]): RankPoint[] {
   });
 }
 
-function Result({ task, decisions }: { task: Task; decisions: PolicyDecision[] }) {
+function Result(
+  { task, decisions, evidence }:
+  { task: Task; decisions: PolicyDecision[]; evidence: EvidenceToolCall[] },
+) {
   const findings = task.findings ?? [];
   const measured = groupMeasured(findings);
   const observed = findings.filter((f) => f.kind === "OBSERVED");
@@ -291,6 +315,20 @@ function Result({ task, decisions }: { task: Task; decisions: PolicyDecision[] }
             ))}
           </ul>
         </>
+      ) : null}
+
+      {evidence.some((c) => c.evidence.length) ? (
+        <details style={{ marginTop: 16 }}>
+          <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>
+            Evidence the agent read ·{" "}
+            {evidence.filter((c) => c.evidence.length).length} tool calls
+          </summary>
+          <p className="sub" style={{ marginTop: 10 }}>
+            What the tools returned, with merchant-supplied text quarantined as it was
+            when the agent saw it.
+          </p>
+          <EvidencePanel calls={evidence} />
+        </details>
       ) : null}
 
       <div className="row" style={{ marginTop: 18 }}>

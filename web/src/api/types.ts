@@ -167,12 +167,48 @@ export interface ReconcileReport {
   details: ReconcileDetail[];
 }
 
-export interface ReplayResult {
-  mode?: string;
-  steps?: string[];
-  external_calls: number;
-  reasoning_diverged?: boolean;
-  divergence_kind?: string | null;
-  note?: string;
-  [k: string]: unknown;
+/** The two replay modes return genuinely different shapes, and both count
+ *  external calls in `external_calls_made` — not `external_calls`. Typing that
+ *  field wrongly made the UI read `undefined`, fail its `=== 0` check, and
+ *  report a clean replay as a defect. */
+export interface PlaybackStep {
+  seq: number;
+  tool: string;
+  arguments: Record<string, unknown>;
+  success: boolean;
+  risk_level: string;
+  policy_decision: string;
+  duration_ms: number;
+  error_code: string | null;
 }
+
+export interface PlaybackResult {
+  mode: "PLAYBACK";
+  task_id: string;
+  request: string;
+  status: string;
+  final_answer: string | null;
+  steps: PlaybackStep[];
+  trace: unknown[];
+  external_calls_made: number;
+  note?: string;
+}
+
+export interface ReReasonResult {
+  mode: "RE_REASON";
+  replayed_from: string;
+  replay_task_id: string;
+  diverged: boolean;
+  reasoning_diverged: boolean;
+  policy_diverged: boolean;
+  policy_divergence_cause: string | null;
+  diff: Record<string, unknown>;
+  original_tool_sequence: string[];
+  replay_tool_sequence: string[];
+  final_answer: string | null;
+  external_calls_made: number;
+  original_actions_unchanged: boolean;
+  note?: string;
+}
+
+export type ReplayResult = PlaybackResult | ReReasonResult;

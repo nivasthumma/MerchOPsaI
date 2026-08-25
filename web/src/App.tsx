@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { api, getToken, setToken } from "./api/client";
 import type { Health } from "./api/types";
+import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
 import { ToastHost } from "./components/Toast";
 
@@ -39,12 +40,17 @@ export default function App() {
             <NavLink to="/scenarios">Scenarios</NavLink>
             <NavLink to="/operations">Operations</NavLink>
           </nav>
+          <button className="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
+                  onClick={() => window.dispatchEvent(
+                    new KeyboardEvent("keydown", { key: "k", metaKey: true }))}>⌘</button>
           <ThemeToggle />
           {token ? (
             <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
           ) : null}
         </div>
       </header>
+
+      <CommandPalette />
 
       <div className="shell">
         <RunConfig health={health} />

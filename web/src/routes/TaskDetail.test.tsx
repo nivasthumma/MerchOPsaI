@@ -3,7 +3,7 @@
 // behaviours ADR-0015 claims: the button is never gated client-side, a refusal
 // is shown with its reason, and an unsettled action is shown as unsettled.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastHost } from "../components/Toast";
@@ -11,6 +11,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import type { Task } from "../api/types";
 import TaskDetail from "./TaskDetail";
+import playbackFixture from "../test-fixtures/playback.json";
+import rereasonFixture from "../test-fixtures/rereason.json";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -182,14 +184,41 @@ describe("unsettled actions", () => {
 });
 
 describe("replay", () => {
-  it("calls a zero-external-call replay correct, and a non-zero one a defect", async () => {
+  // Regression: the count lives in `external_calls_made`. Reading
+  // `external_calls` yielded undefined, failed the `=== 0` check, and reported
+  // a clean replay as "a defect — replay must never move money".
+  it("reads the count from the field the API actually sends", async () => {
     renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
-    mocked.replay.mockResolvedValue({ external_calls: 0, steps: ["get_order"] });
-    await userEvent.click(await screen.findByRole("button", { name: "PLAYBACK" }));
-    expect(await screen.findByText(/No financial side effect/)).toBeInTheDocument();
+    mocked.replay.mockResolvedValue(rereasonFixture);
+    await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
+    expect(await screen.findByText(/RE_REASON: 0 external calls/)).toBeInTheDocument();
+    expect(screen.getByText(/No financial side effect/)).toBeInTheDocument();
+    expect(screen.queryByText(/This is a defect/)).toBeNull();
+  });
 
-    mocked.replay.mockResolvedValue({ external_calls: 1 });
-    await userEvent.click(screen.getByRole("button", { name: "RE_REASON" }));
+  it("still calls a real external call a defect", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    mocked.replay.mockResolvedValue({ ...rereasonFixture, external_calls_made: 1 });
+    await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
     expect(await screen.findByText(/This is a defect/)).toBeInTheDocument();
+  });
+
+  it("shows the divergence verdicts and the sequence comparison", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    mocked.replay.mockResolvedValue(rereasonFixture);
+    await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
+    expect(await screen.findByText("reasoning identical")).toBeInTheDocument();
+    expect(screen.getByText("policy identical")).toBeInTheDocument();
+    expect(screen.getByText("original actions unchanged")).toBeInTheDocument();
+    expect(screen.getByText(/same tools in the same order/)).toBeInTheDocument();
+  });
+
+  it("shows each replayed step with the policy decision it got", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    mocked.replay.mockResolvedValue(playbackFixture);
+    await userEvent.click(await screen.findByRole("button", { name: "PLAYBACK" }));
+    const row = (await screen.findByText("get_revenue_summary")).closest<HTMLElement>("tr")!;
+    expect(within(row).getByText("ALLOW")).toBeInTheDocument();
+    expect(within(row).getByText("LOW")).toBeInTheDocument();
   });
 });

@@ -121,7 +121,8 @@ def reconcile(session, *, min_age_seconds: int = 30, max_attempts: int = 5,
             session.flush()
             report.still_unsettled += 1
             report.details.append({
-                "action_id": action.id, "from": before.value if before else None,
+                "action_id": action.id, "task_id": action.task_id,
+                "from": before.value if before else None,
                 "to": before.value if before else None, "error": str(exc)[:200],
             })
             if task is not None:
@@ -132,6 +133,10 @@ def reconcile(session, *, min_age_seconds: int = 30, max_attempts: int = 5,
 
         entry = {
             "action_id": action.id,
+            # The task this action belongs to. The sweep reports what it read;
+            # without this, "ACT_x settled UNKNOWN -> SUCCESS" is a statement an
+            # operator cannot follow up on.
+            "task_id": action.task_id,
             "from": before.value if before else None,
             "to": vr.state.value,
             "attempt": action.verify_attempts,

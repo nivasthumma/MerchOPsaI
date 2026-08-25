@@ -185,6 +185,8 @@ export interface EscalatedAction {
 /** One line of the sweep's working: what it re-read, and what changed. */
 export interface ReconcileDetail {
   action_id: string;
+  /** The task the action belongs to, so a swept row can be followed up. */
+  task_id: string | null;
   from: string | null;
   to: string | null;
   attempt?: number;

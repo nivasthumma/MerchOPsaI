@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { Finding, Task } from "../api/types";
-import { Busy, CopyId, ErrorBanner, SectionHead, StatStrip } from "../components/Bits";
+import type { Finding, Task, TraceEvent } from "../api/types";
+import {
+  Busy, CopyId, ErrorBanner, SectionHead, StatStrip, StatusPill,
+} from "../components/Bits";
 import { ChangeChart, RankChart, type ChangePoint, type RankPoint } from "../components/Charts";
 
 const EXAMPLES = [
@@ -40,6 +42,7 @@ export default function Investigate() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [task, setTask] = useState<Task | null>(null);
+  const [decisions, setDecisions] = useState<PolicyDecision[]>([]);
   const [recent, setRecent] = useState(readRecent);
   const nav = useNavigate();
 
@@ -47,11 +50,19 @@ export default function Investigate() {
     setBusy(true);
     setError(null);
     setTask(null);
+    setDecisions([]);
     try {
       const t = await api.createTask(request.trim());
       setTask(t);
       remember(t);
       setRecent(readRecent());
+      // What policy decided is the most important thing that happened, and the
+      // task payload does not carry it. An analyst asking for a refund gets a
+      // COMPLETED task and a tidy report; without this, nothing on the page
+      // says the refund was refused.
+      void api.getTrace(t.id)
+        .then((tr) => setDecisions(policyDecisions(tr.trace)))
+        .catch(() => setDecisions([]));
       // An approval gate is the interesting case, and it lives on the task page
       // with the payload and the evidence. Go there rather than making the
       // operator find it.
@@ -102,9 +113,9 @@ export default function Investigate() {
         <div className="card"><Busy>running the agent loop</Busy></div>
       ) : null}
 
-      {task ? <Result task={task} /> : null}
+      {task ? <Result task={task} decisions={decisions} /> : null}
 
-      {!task && recent.length ? (
+      {recent.length ? (
         <div className="card">
           <SectionHead title="Recent in this browser" count={`${recent.length}`} />
           <p className="sub">
@@ -175,7 +186,43 @@ function worstHours(findings: Finding[]): RankPoint[] {
   });
 }
 
-function Result({ task }: { task: Task }) {
+interface PolicyDecision {
+  tool: string;
+  decision: string;
+  rule?: string;
+  reason?: string;
+}
+
+/** Every policy outcome that was not a plain ALLOW. */
+function policyDecisions(trace: TraceEvent[]): PolicyDecision[] {
+  return trace
+    .filter((e) => e.event === "policy_decision")
+    .map((e) => e.payload as unknown as PolicyDecision)
+    .filter((d) => d && d.decision && d.decision !== "ALLOW");
+}
+
+function PolicyOutcome({ decisions }: { decisions: PolicyDecision[] }) {
+  if (!decisions.length) return null;
+  return (
+    <>
+      {decisions.map((d, i) => (
+        <div key={i} className={`banner ${d.decision === "DENY" ? "danger" : "warn"}`}>
+          <strong>
+            {d.decision === "DENY" ? "Refused" : "Held for approval"}: {d.tool}
+          </strong>{" "}
+          {d.reason ?? ""}
+          {d.rule ? <> <code>{d.rule}</code></> : null}
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>
+            The decision was made outside the model, and no external call was made. The
+            answer below is what the agent could still do without it.
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function Result({ task, decisions }: { task: Task; decisions: PolicyDecision[] }) {
   const findings = task.findings ?? [];
   const measured = groupMeasured(findings);
   const observed = findings.filter((f) => f.kind === "OBSERVED");
@@ -194,8 +241,16 @@ function Result({ task }: { task: Task }) {
   return (
     <div className="card">
       <SectionHead title="Result">
-        <CopyId value={task.id} label="task id" />
+        <span className="row" style={{ gap: 8 }}>
+          <StatusPill status={task.status} />
+          {task.failure_code ? (
+            <span className="pill danger">{task.failure_code}</span>
+          ) : null}
+          <CopyId value={task.id} label="task id" />
+        </span>
       </SectionHead>
+
+      <PolicyOutcome decisions={decisions} />
 
       <StatStrip items={[
         ["Tool calls", task.tool_calls ?? 0],
@@ -207,7 +262,7 @@ function Result({ task }: { task: Task }) {
 
       {answer ? (
         <>
-          <pre>{answer}</pre>
+          <div className="answer">{answer}</div>
           {conclusion?.evidence_refs?.length ? (
             <p className="muted mono" style={{ fontSize: 12, marginTop: 8 }}>
               {conclusion.kind.toLowerCase()} · grounded in {conclusion.evidence_refs.join(", ")}

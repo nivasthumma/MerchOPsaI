@@ -13,7 +13,7 @@ import taskFixture from "../test-fixtures/investigate.json";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { createTask: vi.fn() } };
+  return { ...actual, api: { createTask: vi.fn(), getTrace: vi.fn() } };
 });
 
 const { api } = await import("../api/client");
@@ -33,6 +33,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mocked.createTask.mockResolvedValue(TASK);
+  mocked.getTrace.mockResolvedValue({ task_id: TASK.id, trace: [] });
 });
 
 describe("asking", () => {
@@ -143,5 +144,75 @@ describe("charts", () => {
     expect(within(chart).getByText("20:00")).toBeInTheDocument();
     expect(within(chart).getByText("75%")).toBeInTheDocument();
     expect(within(chart).queryByText(/failed\)/)).toBeNull();
+  });
+});
+
+describe("what policy decided", () => {
+  const DENIED = {
+    id: 3, at: new Date().toISOString(), event: "policy_decision",
+    payload: {
+      tool: "request_refund", decision: "DENY", rule: "missing_permission",
+      reason: "User lacks permission action:refund.",
+    },
+  };
+
+  it("says the refund was refused, rather than only answering the easy part", async () => {
+    // An analyst asking "find the duplicate and refund it" gets a COMPLETED
+    // task and a tidy report about duplicates. Without this, nothing on the
+    // page says the refund itself was refused.
+    mocked.getTrace.mockResolvedValue({ task_id: TASK.id, trace: [DENIED] });
+    renderPage();
+    await investigate();
+    expect(await screen.findByText(/Refused: request_refund/)).toBeInTheDocument();
+    expect(screen.getByText(/User lacks permission action:refund/)).toBeInTheDocument();
+    expect(screen.getByText("missing_permission")).toBeInTheDocument();
+  });
+
+  it("says the decision was made outside the model and nothing was called", async () => {
+    mocked.getTrace.mockResolvedValue({ task_id: TASK.id, trace: [DENIED] });
+    renderPage();
+    await investigate();
+    expect(await screen.findByText(/decision was made outside the model/))
+      .toBeInTheDocument();
+  });
+
+  it("stays quiet when every decision was an ALLOW", async () => {
+    mocked.getTrace.mockResolvedValue({ task_id: TASK.id, trace: [{
+      id: 1, at: new Date().toISOString(), event: "policy_decision",
+      payload: { tool: "get_order", decision: "ALLOW", rule: "low_risk_authorized" },
+    }] });
+    renderPage();
+    await investigate();
+    await screen.findByText(/Revenue moved/);
+    expect(screen.queryByText(/Refused/)).toBeNull();
+  });
+});
+
+describe("result framing", () => {
+  it("shows the task status, so a failure cannot read as a success", async () => {
+    mocked.createTask.mockResolvedValue({
+      ...TASK, status: "ABORTED_BUDGET", failure_code: "BUDGET_EXCEEDED" });
+    renderPage();
+    await investigate();
+    expect(await screen.findByText("ABORTED BUDGET")).toBeInTheDocument();
+    expect(screen.getByText("BUDGET_EXCEEDED")).toBeInTheDocument();
+  });
+
+  it("wraps the answer instead of scrolling it sideways", async () => {
+    renderPage();
+    await investigate();
+    const answer = await screen.findByText(/Revenue moved -6.29%/);
+    // It used to be a <pre>, which does not wrap prose.
+    expect(answer.tagName).not.toBe("PRE");
+    expect(answer).toHaveClass("answer");
+  });
+
+  it("keeps recent tasks reachable after a run", async () => {
+    renderPage();
+    await investigate();
+    await screen.findByText(/Revenue moved/);
+    // The list used to vanish the moment a result appeared, stranding anyone
+    // wanting to go back to an earlier task.
+    expect(screen.getByText("Recent in this browser")).toBeInTheDocument();
   });
 });

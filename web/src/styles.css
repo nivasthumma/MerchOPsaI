@@ -683,3 +683,15 @@ ul.asserts li { margin-bottom: 3px; color: var(--text-2); }
 :root[data-density="compact"] textarea { min-height: 76px; }
 :root[data-density="compact"] .page-head { margin-bottom: 14px; }
 :root[data-density="compact"] .kv { gap: 3px 14px; }
+
+/* The agent's answer is prose, and prose must wrap. It lived in a <pre>, which
+   defaults to white-space: pre — a 366-character paragraph became one
+   horizontally scrolling line, worst of all on a phone. JSON keeps the <pre>
+   and its horizontal scroll, where scanning a long line is the point. */
+.answer {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r); padding: 14px 16px; margin: 0;
+  white-space: pre-wrap; word-break: break-word;
+  font-size: 14.5px; line-height: 1.65; max-width: 78ch;
+}

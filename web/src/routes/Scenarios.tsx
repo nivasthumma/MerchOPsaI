@@ -121,7 +121,9 @@ export default function Scenarios() {
       <div role="alert" aria-live="assertive"><ErrorBanner error={error} /></div>
 
       <div className="banner warn">
-        <strong>Runs here are not the published suite.</strong> <code>make eval</code>
+        {/* JSX drops the newline between an element and the text after it, so
+            without the explicit space this rendered as "make evalreseeds". */}
+        <strong>Runs here are not the published suite.</strong> <code>make eval</code>{" "}
         reseeds the database before <em>every</em> scenario, which is what makes 106/106
         reproducible. This endpoint runs against the database as it stands right now, so a
         scenario can fail here for a reason that has nothing to do with the code — a

@@ -28,6 +28,14 @@ Set these in **Project → Settings → Environment Variables**.
 | `LLM_PROVIDER` | `deterministic` | Explicit, so the deployment cannot silently become a model deployment if a credential ever appears in the environment. |
 | `RAZORPAY_MODE` | `mock` | No outbound financial call. Set to `live_test_mode` with keys only if you mean it. |
 
+> **Do not set `ANTHROPIC_API_KEY` on this deployment unless you also add
+> `anthropic` to `requirements-vercel.txt`.** Provider selection is `auto` by
+> default: it picks `anthropic` the moment it detects a credential, and the
+> provider then imports the SDK on first use. With the key set and the package
+> absent, every task fails at request time with a `ModuleNotFoundError` that
+> looks nothing like a configuration mistake. Setting `LLM_PROVIDER=deterministic`
+> as above closes that door; adding the package opens it deliberately.
+
 Generate a secret with:
 
     python -c "import secrets; print(secrets.token_urlsafe(48))"

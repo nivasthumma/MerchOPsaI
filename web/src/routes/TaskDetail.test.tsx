@@ -362,3 +362,39 @@ describe("the pane deck", () => {
     }
   });
 });
+
+describe("a task the server does not have", () => {
+  // The rail lives in this browser; the record lives in the database. A reseed
+  // separates them, and the page used to answer with a bare "Unknown task" and
+  // no way to clear the dead entry.
+  it("explains the drift and offers to drop the entry", async () => {
+    localStorage.setItem("merchantops.recent", JSON.stringify(
+      [{ id: BASE.id, request: BASE.request }]));
+    mocked.getTask.mockRejectedValue(new ApiError(404, "Unknown task."));
+    render(
+      <MemoryRouter initialEntries={[`/tasks/${BASE.id}`]}>
+        <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/Unknown task/)).toBeInTheDocument();
+    expect(screen.getByText(/remembered in this\s+browser only/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Remove from list/ }));
+    expect(JSON.parse(localStorage.getItem("merchantops.recent")!)).toEqual([]);
+  });
+
+  it("does not offer to drop the entry when the server merely failed", async () => {
+    // A 500 says nothing about whether the task exists. Removing it would throw
+    // away a working link because the database hiccupped.
+    localStorage.setItem("merchantops.recent", JSON.stringify(
+      [{ id: BASE.id, request: BASE.request }]));
+    mocked.getTask.mockRejectedValue(new ApiError(500, "Boom."));
+    render(
+      <MemoryRouter initialEntries={[`/tasks/${BASE.id}`]}>
+        <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/Boom/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove from list/ })).toBeNull();
+  });
+});

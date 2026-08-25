@@ -45,6 +45,18 @@ export function remember(task: { id: string; request: string; status?: string })
   }
 }
 
+/** Drop one entry — used when the server says that task no longer exists.
+ *  The list is local and the record is server-side, so the two can drift; a
+ *  dead link that cannot be cleared is a rail that gets worse over time. */
+export function forgetOne(id: string) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(readRecent().filter((r) => r.id !== id)));
+  } catch {
+    /* nothing to do */
+  }
+  listeners.forEach((fn) => fn(readRecent()));
+}
+
 export function forgetRecent() {
   try {
     localStorage.removeItem(KEY);

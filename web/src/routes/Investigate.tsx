@@ -38,25 +38,30 @@ export default function Investigate() {
 
   return (
     <>
-      <div className="card">
-        <h2>Ask the agent</h2>
-        <p className="sub">
+      <div className="page-head">
+        <h1>Ask the agent</h1>
+        <p className="request">
           It investigates with typed tools over synthetic merchant data. Anything that
-          moves money stops at the policy engine first.
+          moves money stops at the policy engine first — and waits for you.
         </p>
+      </div>
+
+      <div className="card">
         <textarea
           value={request}
           placeholder="Why did revenue drop this week?"
           onChange={(e) => setRequest(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(); }}
         />
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="primary" onClick={submit} disabled={busy || !request.trim()}>
+        <div className="row" style={{ marginTop: 14 }}>
+          <button className="primary" onClick={submit} disabled={busy || !request.trim()}
+                  aria-busy={busy}>
             {busy ? "Investigating…" : "Investigate"}
           </button>
-          <span className="muted">⌘/Ctrl + Enter</span>
+          <span className="muted"><kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>↵</kbd></span>
         </div>
-        <div className="row" style={{ marginTop: 14 }}>
+        <h3>Try one of these</h3>
+        <div className="examples">
           {EXAMPLES.map((x) => (
             <button key={x} onClick={() => setRequest(x)} disabled={busy}>{x}</button>
           ))}

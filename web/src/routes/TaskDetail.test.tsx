@@ -6,6 +6,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ToastHost } from "../components/Toast";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import type { Task } from "../api/types";
@@ -46,9 +47,11 @@ function renderAt(task: Task, trace: unknown[] = []) {
   mocked.getTask.mockResolvedValue(task);
   mocked.getTrace.mockResolvedValue({ task_id: task.id, trace });
   return render(
-    <MemoryRouter initialEntries={[`/tasks/${task.id}`]}>
-      <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
-    </MemoryRouter>,
+    <ToastHost>
+      <MemoryRouter initialEntries={[`/tasks/${task.id}`]}>
+        <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
+      </MemoryRouter>
+    </ToastHost>,
   );
 }
 
@@ -87,7 +90,32 @@ describe("pending approval", () => {
       new ApiError(409, "Approval has expired.", "APPROVAL_EXPIRED"));
     await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
     expect(await screen.findByText("APPROVAL_EXPIRED")).toBeInTheDocument();
-    expect(screen.getByText(/Approval has expired/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Approval has expired/).length).toBeGreaterThan(0);
+  });
+
+  it("announces the refusal as well as writing it into the page", async () => {
+    // Announced *and* written. The toast is a courtesy; the banner is the record.
+    renderAt(BASE);
+    mocked.approve.mockRejectedValue(
+      new ApiError(409, "Approval has expired.", "APPROVAL_EXPIRED"));
+    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    expect(await screen.findByText("Refused by the server")).toBeInTheDocument();
+    expect(document.querySelector(".banner.warn")).toBeInTheDocument();
+  });
+
+  it("announces an approval with the verification state it produced", async () => {
+    renderAt(BASE);
+    mocked.approve.mockResolvedValue({
+      ...BASE, status: "COMPLETED", approvals: [],
+      actions: [{ id: "ACT_1", action_type: "request_refund", status: "CONFIRMED",
+                  target_payment_id: "SYN_PAY_0002", external_payment_id: "pay_test_002",
+                  amount_minor: 499900, external_reference: "rfnd_MOCK1",
+                  verification_state: "SUCCESS", verification_detail: null,
+                  verify_attempts: 1 }],
+    });
+    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    expect(await screen.findByText("Approved and executed")).toBeInTheDocument();
+    expect(screen.getByText(/Independent verification: SUCCESS/)).toBeInTheDocument();
   });
 });
 

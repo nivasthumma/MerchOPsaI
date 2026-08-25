@@ -25,7 +25,7 @@ and what is architecture.
 | Area | Built and running | Designed, not built |
 |---|---|---|
 | Agent | One bounded agent, 6 typed tools | Specialised multi-agent orchestration |
-| Reasoning | Provider abstraction: Anthropic (`claude-opus-5`) **or** a deterministic planner | Model routing, cost-aware selection |
+| Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources | Model routing, cost-aware selection |
 | Policy | Deterministic engine: RBAC, merchant isolation, risk, amount limits, duplicate guard | Per-merchant configurable policy, approval chains |
 | Approval | Server-side, expiring, re-checked at execution | Multi-party approval |
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
@@ -33,7 +33,7 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 106 scenarios + 13-mutation validation, gated in CI | Larger benchmark |
+| Evaluation | 106 scenarios + 15-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
 | UI | Streamlit | Next.js |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -55,13 +55,17 @@ paths** — only the outbound HTTP call differs. Supply `RAZORPAY_KEY_ID` /
 `RAZORPAY_KEY_SECRET`, re-run the spike, and the same code executes real Test Mode
 refunds. The health endpoint and the UI both report which path is active.
 
-**2. Reported metrics measure the harness, not model intelligence.** With no
-`ANTHROPIC_API_KEY`, the agent runs on `DeterministicProvider` — a rule-based planner,
-not a language model. This is deliberate: it makes the evaluation suite reproducible
-and isolates *what* is being measured. A failing scenario is a defect in policy,
-verification, idempotency or isolation — not model variance. Set an API key and
-`LLM_PROVIDER=anthropic` to run the same scenarios against `claude-opus-5`; those
+**2. Reported metrics measure the harness, not model intelligence.** No Anthropic
+credential of any kind is present here — not an API key, an auth token, an
+`ant auth login` profile, or workload identity — so the agent runs on
+`DeterministicProvider`, a rule-based planner rather than a language model. This is
+deliberate: it makes the evaluation suite reproducible and isolates *what* is being
+measured. A failing scenario is a defect in policy, verification, idempotency or
+isolation — not model variance. Supply any of those credentials (or set
+`LLM_PROVIDER=anthropic`) to run the same scenarios against `claude-opus-5`; those
 numbers would measure something different and should be reported separately.
+`/health` reports which credential source was found, so `deterministic` is never
+ambiguous between "chosen" and "nothing was detected".
 
 ---
 
@@ -93,7 +97,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **69 passed** (`make test`) across unit, security and integration.
+Test suite: **81 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -217,13 +221,13 @@ Razorpay Test Mode →  execution + state verification  (the action surface)
 
 A test-mode account contains no organic revenue trend, no UPI failure pattern and no
 naturally occurring duplicate payments. Treating it as an analytics source would be
-dishonest. The two worlds are joined by an explicit **mapping layer**: five synthetic
+dishonest. The two worlds are joined by an explicit **mapping layer**: 21 synthetic
 payments carry an `external_payment_id`, and the action layer resolves synthetic → external
 through it. **The agent can never invent a provider id.**
 
 Dataset (`seed 20260825`, byte-identical every run): 2 merchants, 200 customers,
-30 products, 571 orders, 573 payments, 18 refunds, 5 externally mapped payments,
-4 prompt-injection sites.
+30 products, 581 orders, 589 payments, 20 refunds, 21 externally mapped payments,
+6 prompt-injection sites.
 
 ---
 
@@ -255,7 +259,7 @@ createdb merchantops                     # or use the DATABASE_URL of your choic
 cp .env.example .env                     # optional; defaults work locally
 make setup                               # venv + dependencies
 make seed                                # deterministic dataset
-make test                                # 43 tests
+make test                                # 81 tests
 make eval                                # 106 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # enforce audit immutability, then verify it
@@ -354,8 +358,13 @@ are different claims.
 1. **Payment execution is mocked in this build.** No Razorpay credentials were
    available; `make spike` returned verdict `mock`. Supply credentials and the same
    code path executes real Test Mode refunds.
-2. **Reasoning is a deterministic planner.** No `ANTHROPIC_API_KEY`. Published
-   metrics therefore measure the control plane, not agent intelligence.
+2. **Reasoning is a deterministic planner.** No Anthropic credential is present in
+   any form the SDK accepts. Published metrics therefore measure the control plane,
+   not agent intelligence. A consequence worth stating plainly: **the Anthropic
+   provider has never executed against the API in this build.** Its wire translation
+   and prompt caching are unit-tested, not end-to-end verified — and writing those
+   tests is what surfaced a request-shaping bug that would have failed every
+   tool-using task on its second turn (ADR-0014).
 3. **`RE_REASON` replay consistency is untested against a real model.** With the
    deterministic planner it is trivially 1.0, so it is not published as a meaningful
    number. Against `claude-opus-5` it would be a genuine measurement.
@@ -377,10 +386,14 @@ are different claims.
 
 ### Coverage limits
 
-9. **None outstanding.** Every mutation is caught by at least one scenario. The three
-   that were once unit-test-only are closed by UNK-18, SEC-24 and SEC-25 — see
-   [`docs/evaluation.md`](docs/evaluation.md), which also records why the earlier
-   claim that two of them were unreachable was wrong.
+9. **Three of the 15 mutants are caught by unit tests only** — no scenario
+   distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
+   and the key-name branch of audit redaction. Each is reachable in principle but
+   sits behind a guard that fires first in every path a scenario can drive. Two more
+   (registry lookup, argument validation) are detected as a *crash* rather than a
+   graded failure — the suite dies on `spec is None` instead of reporting SEC-24 red.
+   Counted honestly: 10 of 15 produce a graded scenario failure. See
+   [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
 
 ---
 
@@ -394,7 +407,7 @@ Ordered by value, not by architectural impressiveness:
    by side, including replay consistency.
 3. ~~Background reconciliation for `UNKNOWN` actions.~~ **Done** — sweep +
    escalation queue, see below.
-4. ~~Expand to 100 scenarios and wire into CI.~~ **Done** — 104 scenarios,
+4. ~~Expand to 100 scenarios and wire into CI.~~ **Done** — 106 scenarios,
    mutation testing, GitHub Actions gate.
 5. Per-merchant configurable policy.
 6. Replace the header-based principal with a real identity provider.
@@ -414,10 +427,10 @@ app/
   eval/         scenario schema + runner
   api/          FastAPI surface
 ui/             Streamlit app
-data/           seed + 25 scenarios
+data/           106 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (43 tests)
-docs/           CONTRACT.md, architecture, threat model, evaluation, ADRs
+tests/          unit · security · integration  (81 tests)
+docs/           CONTRACT.md, architecture (+ assumptions), threat model, evaluation, 14 ADRs
 ```
 
 ## License / disclaimer

@@ -77,6 +77,10 @@ def health():
     return {
         "status": "ok",
         "llm_provider": s.resolved_llm_provider,
+        # The source, not the credential. Without it a `deterministic` reading
+        # is ambiguous: deliberately configured, or no credentials found?
+        "llm_credential_source": s.anthropic_credential_source,
+        "llm_provider_is_explicit": s.llm_provider != "auto",
         "llm_model": s.llm_model if s.resolved_llm_provider == "anthropic"
                      else "deterministic-planner-v1",
         "payment_adapter": s.resolved_razorpay_mode,

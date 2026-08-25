@@ -54,8 +54,13 @@ with st.sidebar:
         st.warning("Refunds execute against a **mock adapter**, not Razorpay. "
                    "Policy, approval and verification are unchanged.")
     if S.resolved_llm_provider == "deterministic":
-        st.info("Reasoning uses the deterministic planner, not a language model. "
-                "Results measure the control plane, not model intelligence.")
+        why = ("no Anthropic credentials found" if S.anthropic_credential_source is None
+               else f"LLM_PROVIDER={S.llm_provider}")
+        st.info("Reasoning uses the deterministic planner, not a language model "
+                f"({why}). Results measure the control plane, not model "
+                "intelligence.")
+    else:
+        st.caption(f"Authenticated via `{S.anthropic_credential_source}`.")
 
     st.divider()
     st.subheader("Unsettled actions")

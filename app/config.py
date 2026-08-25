@@ -2,9 +2,62 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Credential sources the Anthropic SDK resolves, in the order it resolves them.
+# An unset ANTHROPIC_API_KEY does NOT mean "no credentials": a zero-argument
+# `anthropic.Anthropic()` also picks up an auth token, an `ant auth login`
+# profile, or workload-identity federation. Testing only for the key made
+# `LLM_PROVIDER=auto` fall back to the deterministic planner on a machine that
+# could in fact reach the model — a silent downgrade, and the evaluation report
+# would have said `deterministic` with no indication that a choice was made.
+_WIF_REQUIRED = (
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+)
+
+
+def _cli_profile_is_active() -> bool:
+    """True when `ant auth status` reports a usable credential.
+
+    Shelling out is the only honest check — the profile store's location and
+    format are the CLI's business, not ours. It is cached, guarded by a
+    `which`, and bounded by a timeout, so a missing or wedged CLI costs one
+    failed probe and never blocks a request.
+    """
+    if os.getenv("MERCHANTOPS_NO_CLI_AUTH_PROBE"):
+        return False
+    if shutil.which("ant") is None:
+        return False
+    try:
+        return subprocess.run(["ant", "auth", "status"], capture_output=True,
+                              timeout=3.0).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@lru_cache(maxsize=8)
+def detect_anthropic_credentials(explicit_key: str | None = None) -> str | None:
+    """Which credential source the SDK would use, or None if it has none.
+
+    Returned rather than a bare bool so `/health` and the evaluation report can
+    say *why* a provider was selected instead of leaving the reader to guess.
+    """
+    if explicit_key or os.getenv("ANTHROPIC_API_KEY"):
+        return "api_key"
+    if os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return "auth_token"
+    if all(os.getenv(v) for v in _WIF_REQUIRED) and (
+            os.getenv("ANTHROPIC_IDENTITY_TOKEN_FILE") or os.getenv("ANTHROPIC_IDENTITY_TOKEN")):
+        return "workload_identity"
+    if _cli_profile_is_active():
+        return "cli_profile"
+    return None
 
 
 class Settings(BaseSettings):
@@ -37,11 +90,18 @@ class Settings(BaseSettings):
     prompt_version: str = "investigator-v1"
 
     @property
+    def anthropic_credential_source(self) -> str | None:
+        """`api_key` | `auth_token` | `workload_identity` | `cli_profile` | None."""
+        return detect_anthropic_credentials(self.anthropic_api_key)
+
+    @property
     def resolved_llm_provider(self) -> str:
+        # An explicit setting is never second-guessed: `deterministic` must stay
+        # selectable on a machine that has credentials, or the evaluation suite
+        # could not be run reproducibly there.
         if self.llm_provider != "auto":
             return self.llm_provider
-        key = self.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY")
-        return "anthropic" if key else "deterministic"
+        return "anthropic" if self.anthropic_credential_source else "deterministic"
 
     @property
     def resolved_razorpay_mode(self) -> str:

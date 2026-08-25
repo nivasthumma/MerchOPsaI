@@ -9,3 +9,7 @@ data/evaluation_report.json
 .mutation-in-progress
 .vercel
 .vercel_python_packages/
+.env*
+
+# Vite's local transform cache.
+web/.vite/

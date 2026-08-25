@@ -1,0 +1,27 @@
+[project]
+name = "merchantops-agent"
+version = "0.1.0"
+description = "Control plane for an AI payments agent: policy, approval, verification."
+requires-python = ">=3.12"
+
+# These must live here, not only in api/requirements.txt. Vercel treats a
+# pyproject.toml as the dependency source once it exists, so declaring the
+# entrypoint below without declaring dependencies installed nothing and the
+# function died on `import starlette` — a file added to fix routing broke
+# packaging instead. Kept deliberately narrow: no pytest, no Streamlit, no
+# Anthropic SDK. A serverless bundle pays for every one of them at cold start.
+dependencies = [
+  "fastapi>=0.141.1",
+  "sqlalchemy>=2.0.52",
+  "psycopg2-binary>=2.9.12",
+  "pydantic>=2.13.4",
+  "pydantic-settings>=2.15.0",
+  "pyyaml>=6.0.3",
+]
+
+# Vercel detects this repository as a FastAPI backend-framework project and
+# needs to be told which ASGI callable to serve. Without it the build fails
+# with "No FastAPI entrypoint found in default locations" — it can see several
+# `app` variables (including the ones in tests) and refuses to guess.
+[tool.vercel]
+entrypoint = "api.index:app"

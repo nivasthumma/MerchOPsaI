@@ -1,5 +1,9 @@
 # Runtime dependencies for the Vercel Python function.
 #
+# This path is not decorative: @vercel/python installs from the requirements
+# file beside the entrypoint. Named anything else, the root requirements.txt
+# is used instead and the bundle silently gains pytest and Streamlit.
+#
 # Deliberately not `requirements.txt`: that file also carries the test runner,
 # Streamlit and the Anthropic SDK. A serverless bundle has a size limit and a
 # cold start, and shipping pytest to production is how a 30-second cold start

@@ -1,13 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Scenario, ScenarioResult } from "../api/types";
 import { Busy, ErrorBanner, SectionHead, Skeleton, StatStrip } from "../components/Bits";
+import { assertions, conditions } from "./scenario-language";
 
 export default function Scenarios() {
   const [all, setAll] = useState<Scenario[] | null>(null);
-  const [category, setCategory] = useState("all");
-  const [criticalOnly, setCriticalOnly] = useState(false);
-  const [results, setResults] = useState<Record<string, ScenarioResult>>({});
+  const [params, setParams] = useSearchParams();
+  const category = params.get("category") ?? "all";
+  const criticalOnly = params.get("critical") === "1";
+  const query = params.get("q") ?? "";
+  const setParam = (patch: Record<string, string>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v && v !== "all") next.set(k, v);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+  };
+
+  // A run-all over a filtered set takes minutes, because each scenario reseeds
+  // the database server-side. Losing that to a reload would be its own reason
+  // not to use the page.
+  const [results, setResults] = useState<Record<string, ScenarioResult>>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("merchantops.scenarioRuns") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("merchantops.scenarioRuns", JSON.stringify(results));
+    } catch {
+      /* results simply will not survive a reload */
+    }
+  }, [results]);
   const [running, setRunning] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -23,8 +53,23 @@ export default function Scenarios() {
     return c;
   }, [all]);
 
-  const shown = (all ?? []).filter(
-    (s) => (category === "all" || s.category === category) && (!criticalOnly || s.critical));
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = (all ?? []).filter((s) =>
+      (category === "all" || s.category === category)
+      && (!criticalOnly || s.critical)
+      && (!q || s.id.toLowerCase().includes(q)
+              || s.description.toLowerCase().includes(q)
+              || s.request.toLowerCase().includes(q)
+              || JSON.stringify(s.expect).toLowerCase().includes(q)));
+    // After a run, failures come first: a red result at the bottom of a
+    // hundred-row table is a result nobody sees.
+    return [...rows].sort((a, b) => {
+      const ra = results[a.id], rb = results[b.id];
+      const rank = (r?: ScenarioResult) => (r ? (r.passed ? 1 : 0) : 2);
+      return rank(ra) - rank(rb);
+    });
+  }, [all, category, criticalOnly, query, results]);
 
   const ran = Object.values(results);
   const failed = ran.filter((r) => !r.passed);
@@ -99,19 +144,32 @@ export default function Scenarios() {
 
           <div className="card">
             <div className="filters" role="group" aria-label="Filter by category">
-              <button aria-pressed={category === "all"} onClick={() => setCategory("all")}>
+              <button aria-pressed={category === "all"} onClick={() => setParam({ category: "all" })}>
                 Everything <span className="muted">{all.length}</span>
               </button>
               {Object.entries(counts).sort().map(([c, n]) => (
-                <button key={c} aria-pressed={category === c} onClick={() => setCategory(c)}>
+                <button key={c} aria-pressed={category === c}
+                        onClick={() => setParam({ category: c })}>
                   {c.replace(/_/g, " ")} <span className="muted">{n}</span>
                 </button>
               ))}
             </div>
+            <div className="row" style={{ marginBottom: 10 }}>
+              <input type="text" value={query} aria-label="Search scenarios"
+                     placeholder="Search id, description, request or assertions…"
+                     style={{ maxWidth: 360 }}
+                     onChange={(e) => setParam({ q: e.target.value })} />
+              {query || category !== "all" || criticalOnly ? (
+                <button onClick={() => setParam({ category: "all", critical: "", q: "" })}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
             <div className="row">
               <label style={{ margin: 0 }}>
                 <input type="checkbox" checked={criticalOnly}
-                       onChange={(e) => setCriticalOnly(e.target.checked)} /> critical only
+                       onChange={(e) => setParam({ critical: e.target.checked ? "1" : "" })} />{" "}
+                critical only
               </label>
               <span className="muted">{shown.length} shown</span>
               <span style={{ marginLeft: "auto" }} />
@@ -157,9 +215,12 @@ function Row(
     disabled: boolean; onRun: () => void },
 ) {
   const m = result?.metrics;
+  const asserts = assertions(scenario.expect);
+  const setup = conditions(scenario.setup);
+
   return (
     <tr>
-      <td className="mono" style={{ whiteSpace: "nowrap" }}>
+      <td className="mono" style={{ whiteSpace: "nowrap", verticalAlign: "top" }}>
         {scenario.id}
         {scenario.critical ? (
           <div><span className="pill danger">critical</span></div>
@@ -167,9 +228,40 @@ function Row(
         <div className="muted" style={{ fontSize: 11 }}>
           {scenario.category.replace(/_/g, " ")}
         </div>
+        {scenario.principal !== "owner" ? (
+          <div><span className="pill neutral">as {scenario.principal}</span></div>
+        ) : null}
       </td>
-      <td style={{ maxWidth: 420 }}>{scenario.description}</td>
-      <td>
+
+      <td style={{ maxWidth: 460, verticalAlign: "top" }}>
+        {scenario.description}
+        <details style={{ marginTop: 6 }}>
+          <summary className="muted" style={{ fontSize: 12 }}>
+            what it asserts · {asserts.length}
+          </summary>
+          <div className="assert-block">
+            <div className="assert-line">
+              <span className="k">request</span>
+              <span className="mono">“{scenario.request}”</span>
+            </div>
+            <div className="assert-line">
+              <span className="k">runs as</span>
+              <span className="mono">{scenario.principal}</span>
+            </div>
+            {setup.length ? (
+              <div className="assert-line">
+                <span className="k">setup</span>
+                <span>{setup.join(" · ")}</span>
+              </div>
+            ) : null}
+            <ul className="asserts">
+              {asserts.map((a) => <li key={a}>{a}</li>)}
+            </ul>
+          </div>
+        </details>
+      </td>
+
+      <td style={{ verticalAlign: "top" }}>
         {running ? <Busy>running</Busy>
           : result ? (
             <>
@@ -179,9 +271,6 @@ function Row(
               {m ? (
                 <div className="muted metrics" style={{ fontSize: 12, marginTop: 4 }}>
                   {m.final_status} · {m.tool_calls} tools · {m.duration_ms} ms
-                  {/* The single most important number on this page: a scenario
-                      that was not supposed to move money, and did, is a failure
-                      even when every other check passes. */}
                   {m.external_actions > 0 ? (
                     <div><span className="pill warn">{m.external_actions} external action
                       {m.external_actions > 1 ? "s" : ""}</span></div>
@@ -208,7 +297,8 @@ function Row(
             </>
           ) : <span className="muted">—</span>}
       </td>
-      <td>
+
+      <td style={{ verticalAlign: "top" }}>
         <button onClick={onRun} disabled={disabled || running}>Run</button>
       </td>
     </tr>

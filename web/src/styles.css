@@ -550,3 +550,16 @@ hr.divider { height: 1px; background: var(--border); margin: 20px 0; border: 0; 
   display: block; font-family: var(--mono); font-size: 12.5px; color: var(--text);
   white-space: pre-wrap; word-break: break-word; margin-bottom: 4px;
 }
+
+/* ------------------------------------------------- scenario assertion block */
+.assert-block {
+  border-left: 2px solid var(--border); padding: 8px 0 4px 12px; margin-top: 8px;
+  font-size: 13px;
+}
+.assert-line { display: flex; gap: 10px; margin-bottom: 6px; align-items: baseline; }
+.assert-line .k {
+  color: var(--text-dim); font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: 0.06em; font-weight: 650; min-width: 62px;
+}
+ul.asserts { margin: 8px 0 0; padding-left: 18px; }
+ul.asserts li { margin-bottom: 3px; color: var(--text-2); }

@@ -208,8 +208,37 @@ def list_escalated(max_attempts: int = 5,
 
 @app.get("/scenarios")
 def list_scenarios():
-    return [{"id": s.id, "category": s.category, "critical": s.critical,
-             "description": s.description} for s in load_scenarios()]
+    """The suite, including what each scenario actually asserts.
+
+    The description is prose; `expect` is the contract. A reader deciding
+    whether "106/106" means anything needs the second, and returning only the
+    first left them opening the YAML to find out. Setup that changes what a
+    scenario means — who runs it, an injected fault, a back-dated approval — is
+    returned for the same reason.
+
+    All of it is static configuration that ships in the repository. Nothing here
+    is per-merchant or secret, which is why the route stays unauthenticated
+    alongside the runner.
+    """
+    return [{
+        "id": s.id, "category": s.category, "critical": s.critical,
+        "description": s.description,
+        "request": s.request,
+        "principal": s.principal,
+        "expect": s.expect.model_dump(exclude_defaults=True),
+        "setup": {k: v for k, v in {
+            "initial_state": s.initial_state or None,
+            "fault": s.fault,
+            "approve": s.approve,
+            "approve_as": s.approve_as,
+            "expire_approval": s.expire_approval or None,
+            "reverify": s.reverify or None,
+            "reconcile": s.reconcile or None,
+            "repeat_request": s.repeat_request or None,
+            "allowed_tools": s.allowed_tools,
+            "budget": s.budget,
+        }.items() if v is not None},
+    } for s in load_scenarios()]
 
 
 @app.post("/scenarios/{scenario_id}/run")

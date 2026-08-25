@@ -101,6 +101,16 @@ export interface Scenario {
   category: string;
   critical: boolean;
   description: string;
+  /** The request that drives it, and who runs it — an `analyst` scenario means
+   *  something different from an `owner` one, and the description does not
+   *  always say so. */
+  request: string;
+  principal: string;
+  /** What the scenario asserts. The description is prose; this is the contract. */
+  expect: Record<string, unknown>;
+  /** Setup that changes what the scenario means: an injected fault, a
+   *  back-dated approval, a second identical request. */
+  setup: Record<string, unknown>;
 }
 
 export interface ScenarioCheck {

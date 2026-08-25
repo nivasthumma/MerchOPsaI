@@ -14,6 +14,24 @@ import TaskDetail from "./TaskDetail";
 import playbackFixture from "../test-fixtures/playback.json";
 import rereasonFixture from "../test-fixtures/rereason.json";
 
+/** The task screen is one pane deck now: trace, evidence, actions, approvals,
+ *  replay. Anything not in the open pane is reached the way a person reaches
+ *  it — by clicking the tab. */
+async function openPane(name: RegExp) {
+  await userEvent.click(await screen.findByRole("tab", { name }));
+}
+
+
+/** Approval is deliberately two-step: the first click arms the button, the
+ *  second commits. Tests go through the same door a person does. */
+async function approve() {
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Approve and execute/ }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: /Confirm — this moves money/ }));
+}
+
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
@@ -89,7 +107,7 @@ describe("pending approval", () => {
   it("sends the approval and reloads the task", async () => {
     renderAt(BASE);
     mocked.approve.mockResolvedValue({ ...BASE, status: "COMPLETED" });
-    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    await approve();
     await waitFor(() => expect(mocked.approve).toHaveBeenCalledWith("TASK_ABC"));
     // Reloaded rather than trusting the response we already have.
     await waitFor(() => expect(mocked.getTask).toHaveBeenCalledTimes(2));
@@ -99,7 +117,7 @@ describe("pending approval", () => {
     renderAt(BASE);
     mocked.approve.mockRejectedValue(
       new ApiError(409, "Approval has expired.", "APPROVAL_EXPIRED"));
-    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    await approve();
     expect(await screen.findByText("APPROVAL_EXPIRED")).toBeInTheDocument();
     expect(screen.getAllByText(/Approval has expired/).length).toBeGreaterThan(0);
   });
@@ -109,7 +127,7 @@ describe("pending approval", () => {
     renderAt(BASE);
     mocked.approve.mockRejectedValue(
       new ApiError(409, "Approval has expired.", "APPROVAL_EXPIRED"));
-    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    await approve();
     expect(await screen.findByText("Refused by the server")).toBeInTheDocument();
     expect(document.querySelector(".banner.warn")).toBeInTheDocument();
   });
@@ -124,7 +142,7 @@ describe("pending approval", () => {
                   verification_state: "SUCCESS", verification_detail: null,
                   verify_attempts: 1 }],
     });
-    await userEvent.click(await screen.findByRole("button", { name: /Approve and execute/ }));
+    await approve();
     expect(await screen.findByText("Approved and executed")).toBeInTheDocument();
     expect(screen.getByText(/Independent verification: SUCCESS/)).toBeInTheDocument();
   });
@@ -154,6 +172,7 @@ describe("unsettled actions", () => {
 
   it("renders UNKNOWN and offers re-verification", async () => {
     renderAt(unknown);
+    await openPane(/Actions/);
     expect(await screen.findByText("UNKNOWN")).toBeInTheDocument();
     expect(screen.getByText(/1 action unsettled/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Re-verify/ })).toBeEnabled();
@@ -161,6 +180,7 @@ describe("unsettled actions", () => {
 
   it("says re-verification never re-issues the action", async () => {
     renderAt(unknown);
+    await openPane(/Actions/);
     expect(await screen.findByText(/never\s+re-issues the action/)).toBeInTheDocument();
   });
 
@@ -169,6 +189,7 @@ describe("unsettled actions", () => {
     // threw "Objects are not valid as a React child" — a whole-page crash on
     // the one screen that reports whether money moved.
     renderAt(unknown);
+    await openPane(/Actions/);
     expect(await screen.findByText(/Connection lost after the request was submitted/))
       .toBeInTheDocument();
     expect(screen.queryByText(/\[object Object\]/)).toBeNull();
@@ -176,6 +197,7 @@ describe("unsettled actions", () => {
 
   it("keeps the expected-vs-actual evidence available", async () => {
     renderAt(unknown);
+    await openPane(/Actions/);
     expect(await screen.findByText("expected vs actual")).toBeInTheDocument();
   });
 
@@ -187,6 +209,7 @@ describe("unsettled actions", () => {
         reason: "Confirmed: amount_refunded increased by 499900 minor units.",
         external_reference: "rfnd_MOCK1",
       } }] });
+    await openPane(/Actions/);
     expect(await screen.findByText("SUCCESS")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Re-verify/ })).toBeNull();
   });
@@ -198,6 +221,7 @@ describe("replay", () => {
   // a clean replay as "a defect — replay must never move money".
   it("reads the count from the field the API actually sends", async () => {
     renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    await openPane(/Replay/);
     mocked.replay.mockResolvedValue(rereasonFixture);
     await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
     expect(await screen.findByText(/RE_REASON: 0 external calls/)).toBeInTheDocument();
@@ -207,6 +231,7 @@ describe("replay", () => {
 
   it("still calls a real external call a defect", async () => {
     renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    await openPane(/Replay/);
     mocked.replay.mockResolvedValue({ ...rereasonFixture, external_calls_made: 1 });
     await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
     expect(await screen.findByText(/This is a defect/)).toBeInTheDocument();
@@ -214,6 +239,7 @@ describe("replay", () => {
 
   it("shows the divergence verdicts and the sequence comparison", async () => {
     renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    await openPane(/Replay/);
     mocked.replay.mockResolvedValue(rereasonFixture);
     await userEvent.click(await screen.findByRole("button", { name: "RE_REASON" }));
     expect(await screen.findByText("reasoning identical")).toBeInTheDocument();
@@ -224,6 +250,7 @@ describe("replay", () => {
 
   it("shows each replayed step with the policy decision it got", async () => {
     renderAt({ ...BASE, status: "COMPLETED", approvals: [] });
+    await openPane(/Replay/);
     mocked.replay.mockResolvedValue(playbackFixture);
     await userEvent.click(await screen.findByRole("button", { name: "PLAYBACK" }));
     const row = (await screen.findByText("get_revenue_summary")).closest<HTMLElement>("tr")!;
@@ -306,5 +333,32 @@ describe("what policy decided, on the task page too", () => {
     const answer = await screen.findByText(/Revenue moved -6.29%/);
     expect(answer.tagName).not.toBe("PRE");
     expect(answer).toHaveClass("answer");
+  });
+});
+
+describe("the pane deck", () => {
+  // Regression: the deck gave every section a tab, including sections that
+  // render nothing when there is nothing to render. Clicking Actions on a task
+  // still at the gate opened a blank box, which reads as a broken page rather
+  // than as an empty one.
+  it("says why a pane is empty instead of showing a blank box", async () => {
+    renderAt({ ...BASE, actions: [] });
+
+    await openPane(/Actions/);
+    expect(await screen.findByText(/An action appears here only after an approval/))
+      .toBeInTheDocument();
+
+    await openPane(/Approvals/);
+    expect(await screen.findByText(/No decision has been recorded yet/)).toBeInTheDocument();
+  });
+
+  it("leaves no pane rendering nothing at all", async () => {
+    renderAt({ ...BASE, actions: [] });
+    for (const tab of ["Trace", "Evidence", "Actions", "Approvals", "Replay"]) {
+      await openPane(new RegExp(tab));
+      const body = document.querySelector<HTMLElement>(".deck-body");
+      expect(body, `${tab} pane has no body`).not.toBeNull();
+      expect(body!.textContent!.trim().length, `${tab} pane is blank`).toBeGreaterThan(0);
+    }
   });
 });

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
-  Approval, EvidenceToolCall, PlaybackResult, ReplayResult, ReReasonResult, Task,
+  Approval, EvidenceToolCall, PlaybackResult, Principal, ReplayResult, ReReasonResult, Task,
   TraceEvent,
 } from "../api/types";
 import {
@@ -15,8 +15,19 @@ import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
 
+/** The panes below the gate. Everything the old page stacked vertically is
+ *  here; none of it was dropped, it is one click instead of one scroll. */
+type Pane = "trace" | "evidence" | "actions" | "history" | "replay";
+const PANES: [Pane, string][] = [
+  ["trace", "Trace"], ["evidence", "Evidence"], ["actions", "Actions"],
+  ["history", "Approvals"], ["replay", "Replay"],
+];
+
 export default function TaskDetail() {
   const { taskId = "" } = useParams();
+  // Optional-chained: the route also renders in tests that mount it bare, with
+  // no outlet context above it.
+  const me = useOutletContext<{ me: Principal | null } | null>()?.me ?? null;
   const [task, setTask] = useState<Task | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [evidence, setEvidence] = useState<EvidenceToolCall[]>([]);
@@ -24,6 +35,11 @@ export default function TaskDetail() {
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [replay, setReplay] = useState<{ mode: string; result: ReplayResult } | null>(null);
+  // CONTRACT §21 has the human review the evidence before approving. Evidence
+  // behind an unopened tab is evidence nobody read, so while an approval is
+  // pending the evidence pane is what is showing — beside the gate, on screen,
+  // without a scroll. Once nothing is waiting, the trace is the useful default.
+  const [pane, setPane] = useState<Pane | null>(null);
   const toast = useToast();
 
   const load = useCallback(async (quiet = false) => {
@@ -117,6 +133,7 @@ export default function TaskDetail() {
   }
 
   const pending = task.approvals.find((a) => a.decision === "PENDING");
+  const shown: Pane = pane ?? (pending ? "evidence" : "trace");
   const decided = task.approvals.filter((a) => a.decision !== "PENDING");
   const unsettled = task.actions.filter(
     (a) => a.verification_state === "UNKNOWN" || a.verification_state === "PARTIAL");
@@ -144,6 +161,13 @@ export default function TaskDetail() {
         ["Prompt", task.prompt_version],
       ]} />
 
+      {/* One screen, no page scroll. The gate is always visible; everything
+          else lives in a pane below it that scrolls inside itself. The reason
+          is not tidiness: on a page that scrolls, the approval button moves,
+          and a button that moves is a button that gets mis-clicked. */}
+      <div className="task-layout">
+      <div className="task-main">
+
       {/* Announced rather than only shown: an operator acting on a refund needs
           to hear a refusal even when focus is elsewhere on the page. */}
       <div role="alert" aria-live="assertive">
@@ -154,7 +178,8 @@ export default function TaskDetail() {
 
       {pending ? (
         <ApprovalGate
-          approval={pending} busy={busy} evidence={evidence}
+          approval={pending} busy={busy}
+          signer={me?.user_id ?? "this session"}
           onApprove={() => act("approve", () => api.approve(task.id), (t2) => {
             const v = t2.actions[t2.actions.length - 1]?.verification_state;
             return ["Approved and executed",
@@ -165,14 +190,42 @@ export default function TaskDetail() {
         />
       ) : null}
 
-      {task.final_answer ? (
+      {/* Pane deck. Each pane scrolls inside itself so the page never does. */}
+      <div className="deck">
+        <div className="deck-tabs" role="tablist" aria-label="Task detail">
+          {PANES.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={shown === id}
+                    className={shown === id ? "on" : ""}
+                    onClick={() => setPane(id)}>
+              {label}
+              {id === "evidence" && evidence.length
+                ? <span className="n">{evidence.length}</span> : null}
+              {id === "actions" && task.actions.length
+                ? <span className="n">{task.actions.length}</span> : null}
+              {id === "history" && decided.length
+                ? <span className="n">{decided.length}</span> : null}
+            </button>
+          ))}
+        </div>
+
+        <div className="deck-body" role="tabpanel">
+          {shown === "trace" ? <TracePanel events={trace} /> : null}
+
+          {shown === "trace" && task.final_answer ? (
         <div className="card">
           <SectionHead title="Answer" />
           <div className="answer">{task.final_answer}</div>
         </div>
       ) : null}
 
-      {task.actions.length ? (
+          {shown === "actions" && !task.actions.length ? (
+            <Empty>
+              Nothing has executed. An action appears here only after an approval
+              is granted — the request above is still at the gate.
+            </Empty>
+          ) : null}
+
+          {shown === "actions" && task.actions.length ? (
         <div className="card">
           <SectionHead title="Actions and verification" count={`${task.actions.length}`} />
           <p className="sub">
@@ -180,43 +233,61 @@ export default function TaskDetail() {
             response to the request that created it.
           </p>
 
-          {task.actions.map((a) => (
-            <div className="action-card" key={a.id}>
-              <div className="head">
-                <strong>{a.action_type}</strong>
-                <span className="pill neutral">{a.status}</span>
-                <VerificationPill state={a.verification_state} />
-                <span className="spacer" style={{ marginLeft: "auto" }}>
-                  <Money minor={a.amount_minor} />
-                </span>
-              </div>
-              <dl className="kv" style={{ marginTop: 10 }}>
-                <dt>Payment</dt><dd>{a.target_payment_id ?? "—"}</dd>
-                <dt>External</dt>
-                <dd>{a.external_payment_id ?? "—"}</dd>
-                <dt>Reference</dt>
-                <dd>{a.external_reference
-                  ? <CopyId value={a.external_reference} label="external reference" />
-                  : <span className="muted">none received</span>}</dd>
-                {a.verify_attempts > 0 ? (
-                  <><dt>Verify attempts</dt><dd>{a.verify_attempts}</dd></>
-                ) : null}
-              </dl>
-              {a.verification_detail ? (
-                <>
-                  <p className="reason">{a.verification_detail.reason}</p>
-                  {a.verification_detail.expected || a.verification_detail.actual ? (
-                    <details>
-                      <summary>expected vs actual</summary>
-                      <pre>{JSON.stringify(
-                        { expected: a.verification_detail.expected,
-                          actual: a.verification_detail.actual }, null, 2)}</pre>
-                    </details>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          ))}
+          {/* A ledger, not a stack of cards: one row per action, columns aligned,
+              amount right-aligned. Anything that needs more than a row — the
+              verification reason, expected vs actual — sits directly under its
+              own row rather than being hidden behind it. */}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Action</th><th>Target</th><th className="r">Amount</th>
+                  <th>Status</th><th>Verified</th><th>Reference</th>
+                </tr>
+              </thead>
+                {/* One tbody per action — legal HTML, and it keeps each action's
+                    row and its verification note as one addressable block. */}
+                {task.actions.map((a) => (
+                  <tbody className="action-card" key={a.id}>
+                    <tr>
+                      <td className="mono">{a.action_type}</td>
+                      <td className="mono">{a.target_payment_id ?? "—"}</td>
+                      <td className="r mono"><Money minor={a.amount_minor} /></td>
+                      <td><span className="pill neutral">{a.status}</span></td>
+                      <td><VerificationPill state={a.verification_state} /></td>
+                      <td className="mono">
+                        {a.external_reference
+                          ? <CopyId value={a.external_reference} label="external reference" />
+                          : <span className="muted">none received</span>}
+                      </td>
+                    </tr>
+                    {a.verification_detail ? (
+                      <tr className="row-note">
+                        <td colSpan={6}>
+                          <p className="reason">
+                            {a.verification_detail.reason}
+                            {a.verify_attempts > 0 ? (
+                              <span className="muted">
+                                {" "}· {a.verify_attempts} verify attempt
+                                {a.verify_attempts > 1 ? "s" : ""}
+                              </span>
+                            ) : null}
+                          </p>
+                          {a.verification_detail.expected || a.verification_detail.actual ? (
+                            <details>
+                              <summary>expected vs actual</summary>
+                              <pre>{JSON.stringify(
+                                { expected: a.verification_detail.expected,
+                                  actual: a.verification_detail.actual }, null, 2)}</pre>
+                            </details>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                ))}
+            </table>
+          </div>
 
           {unsettled.length ? (
             <div className="banner unknown">
@@ -237,19 +308,35 @@ export default function TaskDetail() {
         </div>
       ) : null}
 
-      {!pending && evidence.some((c) => c.evidence.length) ? (
+          {shown === "evidence" && !evidence.some((c) => c.evidence.length) ? (
+            <Empty>
+              No tool call returned evidence. Nothing here is being withheld —
+              there is nothing to show.
+            </Empty>
+          ) : null}
+
+          {shown === "evidence" && evidence.some((c) => c.evidence.length) ? (
         <div className="card">
-          <SectionHead title="Evidence the agent read"
+          <SectionHead title="Evidence this rests on"
                        count={`${evidence.filter((c) => c.evidence.length).length} tool calls`} />
           <p className="sub">
-            What the tools actually returned, including any merchant-supplied text —
-            quarantined here as it was when the agent saw it.
+            CONTRACT §21 has the human review the payment, the amount, the reason,
+            <strong> the evidence</strong> and the risk. What the tools actually returned,
+            including any merchant-supplied text — quarantined here as it was when the
+            agent saw it: it is evidence, and it is also the injection surface.
           </p>
           <EvidencePanel calls={evidence} />
         </div>
       ) : null}
 
-      {decided.length ? (
+          {shown === "history" && !decided.length ? (
+            <Empty>
+              No decision has been recorded yet. Approving or rejecting above
+              writes a signed entry here, and it is never removed.
+            </Empty>
+          ) : null}
+
+          {shown === "history" && decided.length ? (
         <div className="card">
           <SectionHead title="Approval history" count={`${decided.length}`} />
           <div className="table-wrap">
@@ -283,7 +370,8 @@ export default function TaskDetail() {
         </div>
       ) : null}
 
-      <div className="card">
+          {shown === "replay" ? (
+          <div className="card">
         <SectionHead title="Replay" />
         <p className="sub">
           Both modes run against frozen tool results and must produce zero external calls.
@@ -308,9 +396,68 @@ export default function TaskDetail() {
         </div>
         {replay ? <ReplayPanel result={replay.result} /> : null}
       </div>
+          ) : null}
 
-      <TracePanel events={trace} />
+        </div>
+      </div>
+
+      </div>
+      <TaskRail evidence={evidence} decisions={policyDecisions(trace)} />
+      </div>
     </>
+  );
+}
+
+/** What the decision rests on, in one narrow column: the evidence, the rules
+ *  that fired, and the actions. It is a summary and says so — every row here is
+ *  also rendered in full in the main column, because a rail is too narrow to be
+ *  the place someone reads merchant-supplied text before approving a refund. */
+function TaskRail(
+  { evidence, decisions }:
+  { evidence: EvidenceToolCall[]; decisions: ReturnType<typeof policyDecisions> },
+) {
+  const grounded = evidence.filter((c) => c.evidence.length);
+  return (
+    <aside className="task-rail" aria-label="What this rests on">
+      <div className="rail-sec">
+        <div className="rail-sec-head">Evidence<span>{grounded.length}</span></div>
+        {grounded.length === 0
+          ? <p className="rail-none">No tool call returned evidence.</p>
+          : grounded.map((c) => (
+              <div className="rail-row" key={c.id}>
+                <span className="nm">{c.tool}</span>
+                <span className="rr">{c.evidence.length}</span>
+              </div>
+            ))}
+      </div>
+
+      <div className="rail-sec">
+        <div className="rail-sec-head">Policy engine<span>{decisions.length}</span></div>
+        {decisions.length === 0
+          ? <p className="rail-none">No policy decision recorded yet.</p>
+          : decisions.map((d, i) => (
+              <div className="rail-row" key={`${d.tool}-${i}`}>
+                <span className="nm">{d.rule ?? d.tool}</span>
+                <span className={`rr d-${d.decision}`}>{d.decision}</span>
+              </div>
+            ))}
+      </div>
+
+      <div className="rail-sec">
+        <div className="rail-sec-head">Tools called<span>{evidence.length}</span></div>
+        {evidence.length === 0
+          ? <p className="rail-none">No tool was called.</p>
+          : evidence.map((c) => (
+              <div className="rail-row" key={`t-${c.id}`}>
+                <span className="nm">{c.tool}</span>
+                <span className={`rr ${c.success ? "" : "d-DENY"}`}>
+                  {c.success ? `${c.duration_ms}ms` : "ERR"}
+                </span>
+              </div>
+            ))}
+      </div>
+
+    </aside>
   );
 }
 
@@ -327,12 +474,21 @@ function LiveDot({ state }: { state: "live" | "hidden" | "idle" }) {
 }
 
 function ApprovalGate(
-  { approval, busy, evidence, onApprove, onReject }:
-  { approval: Approval; busy: string | null; evidence: EvidenceToolCall[];
-    onApprove: () => void; onReject: () => void },
+  { approval, busy, signer, onApprove, onReject }:
+  { approval: Approval; busy: string | null;
+    signer: string; onApprove: () => void; onReject: () => void },
 ) {
   const expires = new Date(approval.expires_at);
   const expired = expires.getTime() < Date.now();
+  // Approval is two-step on purpose: a gate you can clear by reflex is not a
+  // gate. It arms locally and disarms itself; the server-side authorization
+  // check on approve is unchanged and remains the real authority.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 5000);
+    return () => clearTimeout(t);
+  }, [armed]);
   return (
     <div className="card cta">
       <SectionHead title="Approval required">
@@ -343,11 +499,25 @@ function ApprovalGate(
         Authorization is re-checked server-side on approval — this button is a request, not
         a decision.
       </p>
+      {/* The amount does not belong in a definition list. It is the one value a
+          person can most expensively misread, so it is promoted out and set at
+          display size, with the destination spelled out beside it. */}
+      <div className="gate-amount">
+        <div>
+          <span className="k">Amount</span>
+          <span className="fig">
+            <Money minor={approval.action_payload.amount_minor as number | undefined} />
+          </span>
+        </div>
+        <div className="where">
+          leaves the merchant balance if you approve.
+          <strong> Nothing has been sent yet</strong> — the policy engine stopped
+          execution before the call, and this page has made none.
+        </div>
+      </div>
       <dl className="kv">
         <dt>Action</dt><dd>{approval.action_type}</dd>
         <dt>Payment</dt><dd>{String(approval.action_payload.synthetic_payment_id ?? "—")}</dd>
-        <dt>Amount</dt>
-        <dd><Money minor={approval.action_payload.amount_minor as number | undefined} /></dd>
         <dt>Expires</dt>
         <dd>
           <When iso={approval.expires_at} />
@@ -357,18 +527,12 @@ function ApprovalGate(
       {typeof approval.action_payload.reason === "string" ? (
         <p style={{ marginTop: 12 }}>{approval.action_payload.reason}</p>
       ) : null}
-      {evidence.length ? (
-        <>
-          <h3>Evidence this rests on</h3>
-          <p className="sub">
-            CONTRACT §21 has the human review the payment, the amount, the reason,
-            <strong> the evidence</strong> and the risk. Merchant-supplied text is shown
-            quarantined: it is evidence, and it is also the injection surface.
-          </p>
-          <EvidencePanel calls={evidence} />
-        </>
-      ) : null}
-
+      {/* CONTRACT §21 has the human review the payment, the amount, the reason,
+          the evidence and the risk. The evidence is directly below this card
+          rather than inside it: with seven duplicate rows and four quarantined
+          notes in here, the button you need sat below the fold, which is its
+          own kind of failure. It is still on the same screen and still before
+          any approval can be made. */}
       {expired ? (
         <div className="banner warn" style={{ marginTop: 12 }}>
           This approval has passed its expiry. The server will refuse it — the button is
@@ -376,11 +540,17 @@ function ApprovalGate(
         </div>
       ) : null}
       <div className="row" style={{ marginTop: 16 }}>
-        <button className="primary" disabled={!!busy} aria-busy={busy === "approve"}
-                onClick={onApprove}>
-          {busy === "approve" ? "Executing…" : "Approve and execute"}
+        <button className={`primary${armed ? " armed" : ""}`} disabled={!!busy}
+                aria-busy={busy === "approve"}
+                onClick={() => { if (armed) { setArmed(false); onApprove(); } else setArmed(true); }}>
+          {busy === "approve"
+            ? "Executing…"
+            : armed ? "Confirm — this moves money" : "Approve and execute"}
         </button>
         <button className="danger" disabled={!!busy} onClick={onReject}>Reject</button>
+        <span className="gate-sign">
+          <strong>{signer}</strong>SIGNED → AUDIT LOG
+        </span>
       </div>
     </div>
   );

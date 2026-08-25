@@ -103,3 +103,15 @@ describe("token gate", () => {
     expect(await screen.findByLabelText(/Mint one with/)).toHaveAttribute("type", "password");
   });
 });
+
+describe("page scaffolding", () => {
+  it("exposes a main landmark and a skip link", async () => {
+    health.mockResolvedValue(OK);
+    renderApp();
+    // Without these, a keyboard user tabs the whole header on every navigation.
+    expect(await screen.findByRole("link", { name: "Skip to content" }))
+      .toHaveAttribute("href", "#main");
+    expect(document.querySelector("main#main")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+  });
+});

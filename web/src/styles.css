@@ -563,3 +563,76 @@ hr.divider { height: 1px; background: var(--border); margin: 20px 0; border: 0; 
 }
 ul.asserts { margin: 8px 0 0; padding-left: 18px; }
 ul.asserts li { margin-bottom: 3px; color: var(--text-2); }
+
+/* ======================================================================
+   Responsive. Until now every measurement here assumed a desktop window:
+   three preference queries, no width breakpoints at all. An operator
+   checking an approval from a phone got a horizontally cramped desktop
+   layout.
+   ====================================================================== */
+
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--accent); color: #fff; padding: 10px 16px;
+  border-radius: 0 0 var(--r) 0; font-size: 14px; font-weight: 600;
+}
+.skip:focus { left: 0; text-decoration: none; }
+
+/* ---- tablet ---------------------------------------------------------- */
+@media (max-width: 900px) {
+  .shell { padding: 20px 16px 72px; }
+  .top-inner { padding: 10px 16px; gap: 12px; }
+  .logo .kicker { display: none; }
+  .page-head h1 { font-size: 20px; }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+  .card { padding: 16px; border-radius: var(--r); }
+  .kv { grid-template-columns: 1fr; gap: 2px 0; }
+  .kv dt { margin-top: 8px; }
+  .trace li { grid-template-columns: 64px 20px 1fr; gap: 8px; }
+}
+
+/* ---- phone ----------------------------------------------------------- */
+@media (max-width: 600px) {
+  body { font-size: 14.5px; }
+  .shell { padding: 16px 12px 84px; }
+
+  /* The logo and the controls hold the top row; navigation gets its own,
+     scrollable rather than wrapped into three ragged lines. */
+  .top-inner { flex-wrap: wrap; row-gap: 8px; }
+  nav.tabs {
+    order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  nav.tabs::-webkit-scrollbar { display: none; }
+  nav.tabs a { white-space: nowrap; }
+
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .stats dd { font-size: 15px; }
+  .page-head h1 { font-size: 18px; gap: 8px; }
+  .sec-head { flex-wrap: wrap; }
+  .sec-head .spacer { margin-left: 0; width: 100%; }
+
+  /* A row of buttons that wraps is fine; one that overflows is not. */
+  .row, .filters, .examples { gap: 8px; }
+  .examples button { flex: 1 1 auto; text-align: left; }
+
+  /* Tables stay scrollable, but the scroll must be discoverable. */
+  .table-wrap { position: relative; }
+  .table-wrap::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 24px;
+    background: linear-gradient(90deg, transparent, var(--surface));
+    pointer-events: none;
+  }
+
+  .toasts { right: 12px; left: 12px; bottom: 12px; max-width: none; }
+  .palette-scrim { padding-top: 8vh; }
+  .stepper { font-size: 11px; }
+  .stepper .step { padding: 4px 8px; }
+  .trace li { grid-template-columns: 58px 1fr; }
+  .trace .icon { display: none; }
+}
+
+/* ---- wide ------------------------------------------------------------ */
+@media (min-width: 1400px) {
+  .shell { max-width: 1280px; }
+}

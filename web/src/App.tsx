@@ -26,6 +26,10 @@ export default function App() {
 
   return (
     <ToastHost>
+      {/* Keyboard users should not have to tab through the header on every
+          navigation to reach the thing they came for. */}
+      <a className="skip" href="#main">Skip to content</a>
+
       <header className="top">
         <div className="top-inner">
           <div className="logo">
@@ -35,7 +39,7 @@ export default function App() {
               <span className="kicker">control plane</span>
             </div>
           </div>
-          <nav className="tabs">
+          <nav className="tabs" aria-label="Sections">
             <NavLink to="/" end>Investigate</NavLink>
             <NavLink to="/scenarios">Scenarios</NavLink>
             <NavLink to="/operations">Operations</NavLink>
@@ -52,10 +56,10 @@ export default function App() {
 
       <CommandPalette />
 
-      <div className="shell">
+      <main className="shell" id="main">
         <RunConfig health={health} />
         {token ? <Outlet /> : <SignIn draft={draft} setDraft={setDraft} save={save} />}
-      </div>
+      </main>
     </ToastHost>
   );
 }

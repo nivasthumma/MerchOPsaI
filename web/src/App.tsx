@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, getToken, setToken } from "./api/client";
-import type { Health, Principal } from "./api/types";
+import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
-import { ToastHost, useToast } from "./components/Toast";
+import { ToastHost } from "./components/Toast";
+import { readRecent, subscribeRecent, forgetRecent, type RecentTask } from "./recent";
 
 export default function App() {
   const location = useLocation();
   const [health, setHealth] = useState<Health | null>(null);
   const [me, setMe] = useState<Principal | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [token, setTok] = useState(getToken());
   const [draft, setDraft] = useState("");
 
@@ -27,6 +29,33 @@ export default function App() {
     if (!token) { setMe(null); return; }
     api.me().then(setMe).catch(() => setMe(null));
   }, [token]);
+
+  // Everything else that sticks — the task rail, the evidence rail, the pane
+  // tabs — has to stop below the header rather than slide under it. The header
+  // is not a fixed height (the strip comes and goes with the token, and the row
+  // wraps on narrow screens), so it is measured rather than guessed.
+  useEffect(() => {
+    const el = document.querySelector("header.top");
+    if (!el) return;
+    const set = () => document.documentElement.style
+      .setProperty("--chrome", `${Math.round(el.getBoundingClientRect().height)}px`);
+    set();
+    // Measured once regardless; the observer only keeps it correct as the
+    // header reflows. Where ResizeObserver is missing the sticky offsets fall
+    // back to the measurement taken here rather than to nothing.
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [token, metrics]);
+
+  // The strip is authenticated and merchant-scoped, so it only exists once
+  // there is a principal. It refreshes on navigation rather than on a timer:
+  // the numbers change when you approve something, and that is a navigation.
+  useEffect(() => {
+    if (!token) { setMetrics(null); return; }
+    api.metrics().then(setMetrics).catch(() => setMetrics(null));
+  }, [token, location.pathname]);
 
   function save() {
     setToken(draft.trim());
@@ -55,60 +84,153 @@ export default function App() {
             <NavLink to="/scenarios">Scenarios</NavLink>
             <NavLink to="/operations">Operations</NavLink>
           </nav>
-          <button className="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
-                  onClick={() => window.dispatchEvent(
-                    new KeyboardEvent("keydown", { key: "k", metaKey: true }))}>⌘</button>
-          <DensityToggle />
-          <ThemeToggle />
-          {me ? (
-            <span className="who" title={`${me.user_id} · ${me.permissions.join(", ")}`}>
-              <span className="who-id">{me.user_id}</span>
-              <span className="muted">{me.role} · {me.merchant_id}</span>
-            </span>
-          ) : null}
-          {token ? (
-            <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
-          ) : null}
+
+          <div className="top-right">
+            {me ? (
+              <span className="who" title={`${me.user_id} · ${me.permissions.join(", ")}`}>
+                <span className="who-id">{me.user_id}</span>
+                <span className="muted">{me.role} · {me.merchant_id}</span>
+              </span>
+            ) : null}
+            <button className="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
+                    onClick={() => window.dispatchEvent(
+                      new KeyboardEvent("keydown", { key: "k", metaKey: true }))}>⌘</button>
+            <DensityToggle />
+            <ThemeToggle />
+            <Link className="icon-btn" to="/settings" title="Settings" aria-label="Settings">⚙</Link>
+            {token ? (
+              <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
+            ) : null}
+          </div>
         </div>
+
+        {token ? <OpsStrip m={metrics} /> : null}
       </header>
 
       <CommandPalette />
 
-      <main className="shell" id="main">
-        <RunConfig health={health} me={me} onProviderChange={setHealth} />
-        {/* Keyed on the path so each navigation mounts a fresh subtree and the
-            entrance animation actually runs. Under prefers-reduced-motion the
-            animation is neutralised in CSS; the key change is harmless. */}
-        <div className="route" key={location.pathname}>
-          {token ? <Outlet /> : <SignIn draft={draft} setDraft={setDraft} save={save} />}
-        </div>
-      </main>
+      <div className="frame">
+        {/* The rail is navigation, so it is only there once there is something
+            to navigate to. It never carries state the server owns. */}
+        {token ? <TaskRail /> : null}
+
+        <main className="shell" id="main">
+          <RunNotices health={health} />
+          {/* Keyed on the path so each navigation mounts a fresh subtree and the
+              entrance animation actually runs. Under prefers-reduced-motion the
+              animation is neutralised in CSS; the key change is harmless. */}
+          <div className="route" key={location.pathname}>
+            {token
+              ? <Outlet context={{ me, health, onHealth: setHealth }} />
+              : <SignIn draft={draft} setDraft={setDraft} save={save} />}
+          </div>
+        </main>
+      </div>
     </ToastHost>
   );
 }
 
-function Mark() {
-  // A gate with something passing through it, which is what the project is.
+/** The operations strip: what is waiting, what moved, and how the run is going.
+ *
+ *  Every number comes from /metrics, scoped to this merchant server-side. There
+ *  is no client-side arithmetic here on purpose — a number this page computed
+ *  itself would be a number nobody can audit. */
+function OpsStrip({ m }: { m: Metrics | null }) {
+  if (!m) return null;
+
+  const rupees = (minor: number) =>
+    `₹${(minor / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+
   return (
-    <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="30" height="30" rx="9"
-            fill="var(--accent-soft)" stroke="var(--accent-border)" />
-      <path d="M8 21V11a4 4 0 0 1 8 0v10" stroke="var(--accent)" strokeWidth="2.1"
-            strokeLinecap="round" />
-      <path d="M16 16h8" stroke="var(--accent)" strokeWidth="2.1" strokeLinecap="round" />
-      <circle cx="24" cy="16" r="2.4" fill="var(--accent)" />
-    </svg>
+    <div className="strip">
+      <span className={`strip-cell ${m.gated > 0 ? "warn" : ""}`}>
+        Gated <b>{m.gated}</b>
+      </span>
+      <span className="strip-cell">Approved {m.window_hours}h <b>{m.approved}</b></span>
+      <span className="strip-cell">Moved <b>{rupees(m.moved_minor)}</b></span>
+      <span className={`strip-cell ${m.rejected > 0 ? "danger" : ""}`}>
+        Rejected <b>{m.rejected}</b>
+      </span>
+      <span className="strip-cell">
+        Tool err{" "}
+        {/* Unknown is not zero. Over no calls there is no rate to report. */}
+        <b>{m.tool_error_rate === null
+          ? "—"
+          : `${(m.tool_error_rate * 100).toFixed(1)}%`}</b>
+      </span>
+      <span className="strip-cell">
+        P50 <b>{m.p50_duration_ms === null ? "—" : `${m.p50_duration_ms}ms`}</b>
+      </span>
+      {m.signing_secret_is_development_default ? (
+        <span className="strip-cell danger">Signing secret <b>dev</b></span>
+      ) : null}
+    </div>
   );
 }
 
-/** The run configuration, compressed to chips with the full disclosures one
- *  click away. The wording of those disclosures is unchanged: a demo running
- *  against a mock adapter has to say so in words, not only in a colour. */
-function RunConfig(
-  { health, me, onProviderChange }:
-  { health: Health | null; me: Principal | null;
-    onProviderChange: (h: Health) => void },
-) {
+/** Recently opened tasks, pinned to the left of every page.
+ *
+ *  Local navigation only. Tasks belong to the merchant and live server-side;
+ *  this list is not the record, and the rail says so rather than letting the
+ *  placement imply otherwise. */
+function TaskRail() {
+  const [recent, setRecent] = useState<RecentTask[]>(readRecent);
+  useEffect(() => subscribeRecent(setRecent), []);
+
+  return (
+    <aside className="rail" aria-label="Recent tasks">
+      <div className="rail-head">
+        Tasks
+        <span className="count">{recent.length}</span>
+      </div>
+
+      {/* Starting the next investigation is the most common thing to do from a
+          task page, and it was a trip back through the nav to reach. The state
+          flag asks Investigate to put the cursor in the box, so the action is
+          click-then-type rather than click-then-click-then-type. */}
+      <NavLink className="rail-new" to="/" state={{ focus: true }} end>
+        <span aria-hidden="true">+</span> New investigation
+      </NavLink>
+
+      {recent.length === 0 ? (
+        <p className="rail-empty">
+          Nothing yet. A task you open appears here, in this browser only.
+        </p>
+      ) : (
+        <>
+          <ul className="rail-list">
+            {recent.map((r) => (
+              <li key={r.id}>
+                <NavLink to={`/tasks/${r.id}`} data-s={r.status ?? ""}>
+                  <span className="rail-id">{r.id}</span>
+                  <span className="rail-q">{r.request}</span>
+                  {r.status ? <span className="rail-s">{r.status.replace(/_/g, " ")}</span> : null}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+          <div className="rail-foot">
+            <button onClick={forgetRecent}>Clear list</button>
+            <span className="muted">Local only — the audit trail is server-side.</span>
+          </div>
+        </>
+      )}
+    </aside>
+  );
+}
+
+/** The run configuration, as one line.
+ *
+ *  This used to be three stacked banners on top of every page — orange, green
+ *  and red — which is a wall, not a warning. A warning that is always shouting
+ *  is one people learn to scroll past.
+ *
+ *  So the *facts* are a single line that is always there, and the paragraphs
+ *  explaining them are one disclosure away. Nothing was deleted: every sentence
+ *  is still here, and still on the first screen. The one exception is a dead
+ *  API, which is not a disclosure — it means nothing else on the page is true,
+ *  so it keeps its banner. */
+function RunNotices({ health }: { health: Health | null }) {
   if (!health) {
     return (
       <div className="banner danger">
@@ -123,138 +245,74 @@ function RunConfig(
   const devSecret = health.auth_secret_is_development_default;
 
   return (
-    <details className="config" open={devSecret}>
+    <details className="notice">
       <summary>
-        <span className={`chip ${real ? "info" : "warn"}`}>
-          <span className="dot" />
-          {real ? "Razorpay Test Mode" : "Mock payment adapter"}
+        {/* The line states the facts; the body explains them. Deliberately not
+            the same sentences twice — a summary that repeats its own disclosure
+            is just the banner again, only narrower. */}
+        <span className="notice-line">
+          {real
+            ? <>Execution is <strong>live</strong> against Razorpay test mode.</>
+            : <>Execution is <strong>mocked</strong>.</>}{" "}
+          {model
+            ? <>Reasoning <code>{health.llm_model}</code>.</>
+            : <>Reasoning is the <strong>deterministic planner</strong>.</>}
+          {devSecret
+            ? <> Signing secret is the <strong className="is-danger">development default</strong>.</>
+            : null}
         </span>
-        <span className={`chip ${model ? "info" : "warn"}`}>
-          <span className="dot" />
-          {model ? health.llm_model : "Deterministic planner"}
-        </span>
-        {devSecret ? (
-          <span className="chip danger"><span className="dot" />Development signing secret</span>
-        ) : (
-          <span className="chip ok"><span className="dot" />Signed tokens</span>
-        )}
-        <span className="expand">run configuration ▾</span>
+        <span className="notice-more">what this means</span>
       </summary>
 
-      <div className="config-body">
+      <div className="notice-body">
         {!real ? (
-          <div className="banner warn">
+          <p>
             <strong>Refunds execute against a mock adapter</strong>, not Razorpay
             (<code>{health.payment_adapter}</code>). Policy, approval, idempotency and
             verification are identical on both paths — only the outbound call differs.
-          </div>
+          </p>
         ) : (
-          <div className="banner info">
-            <strong>Live Razorpay Test Mode.</strong> Approved refunds hit the provider.
-          </div>
+          <p><strong>Live Razorpay Test Mode.</strong> Approved refunds hit the provider.</p>
         )}
 
         {!model ? (
-          <div className="banner info">
+          <p>
             <strong>Reasoning is the deterministic planner</strong>, not a language model
             {health.llm_credential_source === null
               ? " (no Anthropic credential detected)"
               : ` (LLM_PROVIDER is set explicitly)`}
             . Results measure the control plane, not model intelligence.
-          </div>
+          </p>
         ) : (
-          <div className="banner info">
+          <p>
             Reasoning: <code>{health.llm_model}</code>, authenticated via{" "}
             <code>{health.llm_credential_source}</code>.
-          </div>
+          </p>
         )}
 
         {devSecret ? (
-          <div className="banner danger">
+          <p className="is-danger">
             <strong>Development signing secret in use.</strong> Tokens minted here are
             forgeable by anyone with the source. Set <code>API_TOKEN_SECRET</code> before
             this is reachable by anyone else.
-          </div>
+          </p>
         ) : null}
-
-        <ProviderControl health={health} me={me} onChange={onProviderChange} />
       </div>
     </details>
   );
 }
 
-/** Selects among providers the server can already reach.
- *
- * There is no field for a key here, and there will not be: CONTRACT §37 keeps
- * provider secrets in the environment, and a browser form is neither an
- * environment variable nor an appropriate secret mechanism. If no credential is
- * configured, the server refuses the switch and says how to configure one.
- */
-function ProviderControl(
-  { health, me, onChange }:
-  { health: Health; me: Principal | null; onChange: (h: Health) => void },
-) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const toast = useToast();
-  const isOwner = me?.role === "owner";
-
-  async function choose(provider: "auto" | "deterministic" | "anthropic") {
-    setBusy(provider);
-    setProblem(null);
-    try {
-      const r = await api.setProvider(provider);
-      onChange({ ...health, llm_provider: r.llm_provider, llm_model: r.llm_model,
-                 llm_provider_source: r.llm_provider_source });
-      toast({ tone: "ok", title: `Reasoning now: ${r.llm_provider}`,
-              body: r.changed_from === r.llm_provider
-                ? "Unchanged." : `Was ${r.changed_from}. This process only.` });
-    } catch (e) {
-      const err = e as { message?: string };
-      setProblem(err.message ?? "The switch was refused.");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (!isOwner) {
-    return (
-      <p className="sub" style={{ marginTop: 4 }}>
-        Reasoning provider: <code>{health.llm_provider}</code> (
-        {health.llm_provider_source}). Changing it requires the owner role.
-      </p>
-    );
-  }
-
+function Mark() {
+  // A gate with something passing through it, which is what the project is.
   return (
-    <div style={{ marginTop: 4 }}>
-      <h3>Reasoning provider</h3>
-      <p className="sub">
-        Selects between providers this server can already reach. Credentials stay in the
-        server environment — there is no field for a key here, and adding one would put a
-        provider secret in a browser. A switch applies to this process only and does not
-        survive a restart.
-      </p>
-      <div className="filters">
-        {(["auto", "deterministic", "anthropic"] as const).map((p) => (
-          <button key={p} disabled={!!busy}
-                  aria-pressed={health.llm_provider_source === "runtime"
-                    ? health.llm_provider === p
-                    : p === "auto" && health.llm_provider_source === "auto"}
-                  onClick={() => choose(p)}>
-            {busy === p ? "…" : p}
-          </button>
-        ))}
-      </div>
-      {problem ? <div className="banner warn" style={{ marginTop: 10 }}>{problem}</div> : null}
-      {health.llm_provider !== "deterministic" ? (
-        <div className="banner warn" style={{ marginTop: 10 }}>
-          <strong>Published metrics were measured on the deterministic planner.</strong>{" "}
-          Scenario runs and evaluation numbers produced under a language model measure
-          something different and should be reported separately.
-        </div>
-      ) : null}
-    </div>
+    <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="30" height="30" rx="9"
+            fill="var(--accent-soft)" stroke="var(--accent-border)" />
+      <path d="M8 21V11a4 4 0 0 1 8 0v10" stroke="var(--accent)" strokeWidth="2.1"
+            strokeLinecap="round" />
+      <path d="M16 16h8" stroke="var(--accent)" strokeWidth="2.1" strokeLinecap="round" />
+      <circle cx="24" cy="16" r="2.4" fill="var(--accent)" />
+    </svg>
   );
 }
 

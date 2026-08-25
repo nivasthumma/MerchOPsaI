@@ -98,6 +98,22 @@ export interface ProviderChange {
   changed_from: string;
 }
 
+/** The operations strip. Counts are scoped server-side to the caller's
+ *  merchant — a count is still merchant data. */
+export interface Metrics {
+  window_hours: number;
+  gated: number;
+  approved: number;
+  rejected: number;
+  moved_minor: number;
+  tool_calls: number;
+  tool_errors: number;
+  /** null, not 0, when nothing ran: a rate over zero calls is unknown. */
+  tool_error_rate: number | null;
+  p50_duration_ms: number | null;
+  signing_secret_is_development_default: boolean;
+}
+
 export interface Health {
   status: string;
   llm_provider: string;

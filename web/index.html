@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MerchantOps Agent</title>
     <meta name="description" content="Control plane for an AI payments agent: policy, approval, verification." />
+    <!-- Without this the browser asks for /favicon.ico on every page and gets a
+         404 in the console. The mark matches the one in the header, and carries
+         its own dark variant: at 16px the light ground vanishes on dark chrome. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Display + text faces. Both have full system fallbacks in styles.css, so a
+         blocked font request degrades to the previous look rather than to Times. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=Azeret+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>

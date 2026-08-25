@@ -16,13 +16,14 @@ import type { Task, TraceEvent } from "../api/types";
 import TaskDetail from "./TaskDetail";
 import taskFixture from "../test-fixtures/task.json";
 import traceFixture from "../test-fixtures/trace.json";
+import evidenceFixture from "../test-fixtures/evidence.json";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
     ...actual,
-    api: { getTask: vi.fn(), getTrace: vi.fn(), approve: vi.fn(), reject: vi.fn(),
-           reverify: vi.fn(), replay: vi.fn() },
+    api: { getTask: vi.fn(), getTrace: vi.fn(), getEvidence: vi.fn(), approve: vi.fn(),
+           reject: vi.fn(), reverify: vi.fn(), replay: vi.fn() },
   };
 });
 
@@ -36,6 +37,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocked.getTask.mockResolvedValue(TASK);
   mocked.getTrace.mockResolvedValue({ task_id: TASK.id, trace: TRACE });
+  mocked.getEvidence.mockResolvedValue(evidenceFixture);
   render(
     <MemoryRouter initialEntries={[`/tasks/${TASK.id}`]}>
       <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>

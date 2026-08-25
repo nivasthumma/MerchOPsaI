@@ -526,3 +526,27 @@ hr.divider { height: 1px; background: var(--border); margin: 20px 0; border: 0; 
   border-top: 1px solid var(--border); background: var(--surface-2);
 }
 .palette-foot kbd { margin-right: 3px; }
+
+/* ---------------------------------------------------------------- evidence */
+.evidence { margin-top: 6px; }
+.evidence-group { border: 1px solid var(--border); border-radius: var(--r);
+                  padding: 12px 14px; margin-bottom: 10px; background: var(--surface-2); }
+.evidence-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                 margin-bottom: 10px; font-size: 13px; }
+
+/* Quarantine. Merchant free text is an injection surface: it is shown to the
+   approver because hiding evidence is worse, and it is shown as data — hatched
+   border, monospace, explicitly labelled, never styled as system text. */
+.untrusted {
+  display: block; border: 1px dashed var(--warn-border); border-left-width: 3px;
+  border-left-style: solid; border-left-color: var(--warn);
+  border-radius: var(--r-sm); padding: 8px 10px; background: var(--warn-soft);
+}
+.untrusted-tag {
+  display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--warn); font-weight: 700; margin-bottom: 5px; font-family: var(--sans);
+}
+.untrusted-body {
+  display: block; font-family: var(--mono); font-size: 12.5px; color: var(--text);
+  white-space: pre-wrap; word-break: break-word; margin-bottom: 4px;
+}

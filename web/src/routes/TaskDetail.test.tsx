@@ -3,9 +3,9 @@
 // behaviours ADR-0015 claims: the button is never gated client-side, a refusal
 // is shown with its reason, and an unsettled action is shown as unsettled.
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { ToastHost } from "../components/Toast";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
@@ -19,7 +19,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return {
     ...actual,
     api: {
-      getTask: vi.fn(), getTrace: vi.fn(), approve: vi.fn(),
+      getTask: vi.fn(), getTrace: vi.fn(), getEvidence: vi.fn(), approve: vi.fn(),
       reject: vi.fn(), reverify: vi.fn(), replay: vi.fn(),
     },
   };
@@ -45,13 +45,22 @@ const BASE: Task = {
   actions: [],
 };
 
+/** MemoryRouter keeps history in memory and never touches window.location, so
+ *  a URL assertion has to read the router's own location. */
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="location">{loc.search}</div>;
+}
+
 function renderAt(task: Task, trace: unknown[] = []) {
   mocked.getTask.mockResolvedValue(task);
   mocked.getTrace.mockResolvedValue({ task_id: task.id, trace });
+  mocked.getEvidence.mockResolvedValue({ task_id: task.id, tool_calls: [] });
   return render(
     <ToastHost>
       <MemoryRouter initialEntries={[`/tasks/${task.id}`]}>
         <Routes><Route path="/tasks/:taskId" element={<TaskDetail />} /></Routes>
+        <LocationProbe />
       </MemoryRouter>
     </ToastHost>,
   );
@@ -220,5 +229,58 @@ describe("replay", () => {
     const row = (await screen.findByText("get_revenue_summary")).closest<HTMLElement>("tr")!;
     expect(within(row).getByText("ALLOW")).toBeInTheDocument();
     expect(within(row).getByText("LOW")).toBeInTheDocument();
+  });
+});
+
+describe("live updates", () => {
+  it("polls while a task still waits on a human, and stops when it cannot change", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderAt(BASE);                       // AWAITING_APPROVAL
+    await screen.findByText("Approval required");
+    expect(await screen.findByText("live")).toBeInTheDocument();
+
+    const before = mocked.getTask.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(11000); });
+    expect(mocked.getTask.mock.calls.length).toBeGreaterThan(before);
+    vi.useRealTimers();
+  });
+
+  it("does not poll a task that has finished", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [], actions: [] });
+    await screen.findByText("COMPLETED");
+    expect(screen.queryByText("live")).toBeNull();
+
+    const before = mocked.getTask.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(20000); });
+    expect(mocked.getTask.mock.calls.length).toBe(before);
+    vi.useRealTimers();
+  });
+});
+
+describe("trace controls", () => {
+  it("puts the stage filter in the URL so it can be linked", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] }, [
+      { id: 1, at: new Date().toISOString(), event: "policy_decision",
+        payload: { decision: "ALLOW", tool: "get_order", rule: "low_risk_authorized" } },
+      { id: 2, at: new Date().toISOString(), event: "verification",
+        payload: { state: "SUCCESS" } },
+    ]);
+    await screen.findByText("Audit trace");
+    await userEvent.click(screen.getByRole("button", { name: "Verification" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("stage=verification");
+  });
+
+  it("searches summaries and payloads, not only event names", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] }, [
+      { id: 1, at: new Date().toISOString(), event: "policy_decision",
+        payload: { decision: "DENY", tool: "request_refund", rule: "missing_permission" } },
+      { id: 2, at: new Date().toISOString(), event: "llm_turn",
+        payload: { turn: 1, stop_reason: "tool_use", requested_tools: [] } },
+    ]);
+    await screen.findByText("Audit trace");
+    await userEvent.type(screen.getByLabelText("Search the trace"), "missing_permission");
+    expect(screen.getByText("policy_decision")).toBeInTheDocument();
+    expect(screen.queryByText("llm_turn")).toBeNull();
   });
 });

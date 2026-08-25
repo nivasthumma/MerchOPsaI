@@ -1,4 +1,12 @@
-# MerchantOps Agent
+# 🏦 MerchantOps Agent
+
+[![CI](https://github.com/nivasthumma/Merchantagent/actions/workflows/ci.yml/badge.svg)](https://github.com/nivasthumma/Merchantagent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Tests](https://img.shields.io/badge/tests-81%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-106%2F106-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-15%2F15-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -17,7 +25,7 @@ OBSERVE → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
 
 ---
 
-## Built vs designed
+## 🧭 Built vs designed
 
 Read this table before anything else. It is the difference between what runs today
 and what is architecture.
@@ -42,7 +50,7 @@ Nothing in the right column is claimed as implemented.
 
 ---
 
-## Two honesty disclosures
+## ⚠️ Two honesty disclosures
 
 These are stated up front rather than buried, because the project's entire premise
 is that measured claims beat impressive ones.
@@ -69,7 +77,7 @@ ambiguous between "chosen" and "nothing was detected".
 
 ---
 
-## Measured results
+## 📊 Measured results
 
 From `make eval` — actual execution, not targets:
 
@@ -101,7 +109,7 @@ Test suite: **81 passed** (`make test`) across unit, security and integration.
 
 ---
 
-## Demo
+## ▶️ Demo
 
 ```bash
 make seed && make demo
@@ -127,7 +135,7 @@ Seven steps, each printing what actually happened:
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
     Synthetic dataset                  the analytical truth
@@ -210,7 +218,7 @@ shape a webhook would take if one were added:
 
 ---
 
-## Data architecture: the synthetic / real boundary
+## 🔀 Data architecture: the synthetic / real boundary
 
 This separation is mandatory and easy to get wrong.
 
@@ -231,7 +239,7 @@ Dataset (`seed 20260825`, byte-identical every run): 2 merchants, 200 customers,
 
 ---
 
-## Security model
+## 🔐 Security model
 
 | Control | Where it lives | Test |
 |---|---|---|
@@ -250,7 +258,7 @@ decision was recorded"** — not "the agent resisted". Threat model:
 
 ---
 
-## Setup
+## ⚙️ Setup
 
 Requires Python 3.12+ and PostgreSQL.
 
@@ -282,7 +290,7 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 ---
 
-## API
+## 🔌 API
 
 | Endpoint | Purpose |
 |---|---|
@@ -303,7 +311,7 @@ cross-merchant read returns 404, not 403 — existence is not leaked.
 
 ---
 
-## Evaluation methodology
+## 🧪 Evaluation methodology
 
 Scenarios grade **observable behaviour**, never prose: tool sequence, arguments,
 policy decision, approval requirement, final status, verification state, evidence
@@ -322,7 +330,7 @@ Details: [`docs/evaluation.md`](docs/evaluation.md).
 
 ---
 
-## Reconciliation
+## 🔁 Reconciliation
 
 `UNKNOWN` is a pending safety state, and a pending state that nobody resolves is not
 safety — it is deferral. The sweep closes that gap:
@@ -348,7 +356,7 @@ Three properties make it safe to run unattended:
 - **Settlement is a read** — verified by `test_sweep_settles_unknown_without_reissuing`,
   which asserts the refund row count is unchanged.
 
-## Known limitations
+## 🚧 Known limitations
 
 These are split by *why* they exist, because "we chose not to" and "we could not"
 are different claims.
@@ -397,7 +405,7 @@ are different claims.
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
 Ordered by value, not by architectural impressiveness:
 
@@ -414,7 +422,7 @@ Ordered by value, not by architectural impressiveness:
 
 ---
 
-## Repository layout
+## 📁 Repository layout
 
 ```
 app/
@@ -433,7 +441,7 @@ tests/          unit · security · integration  (81 tests)
 docs/           CONTRACT.md, architecture (+ assumptions), threat model, evaluation, 14 ADRs
 ```
 
-## License / disclaimer
+## 📄 License / disclaimer
 
 Licensed under the MIT License — see [`LICENSE`](LICENSE).
 

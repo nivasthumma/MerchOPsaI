@@ -6,5 +6,8 @@
       "maxDuration": 30,
       "includeFiles": "web/dist/**"
     }
+  },
+  "git": {
+    "deploymentEnabled": false
   }
 }

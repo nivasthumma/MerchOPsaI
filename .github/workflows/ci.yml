@@ -41,7 +41,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -60,7 +60,7 @@ jobs:
 
   # ---------------------------------------------------------------- scenario suite
   evaluate:
-    name: Evaluation suite (103 scenarios)
+    name: Evaluation suite (106 scenarios)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -78,7 +78,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -191,7 +191,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip

@@ -10,6 +10,7 @@ import {
   StatusPill, VerificationPill, When,
 } from "../components/Bits";
 import { EvidencePanel } from "../components/Evidence";
+import { PolicyOutcome, policyDecisions } from "../components/PolicyOutcome";
 import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
@@ -149,6 +150,8 @@ export default function TaskDetail() {
         <ErrorBanner error={error} />
       </div>
 
+      <PolicyOutcome decisions={policyDecisions(trace)} />
+
       {pending ? (
         <ApprovalGate
           approval={pending} busy={busy} evidence={evidence}
@@ -165,7 +168,7 @@ export default function TaskDetail() {
       {task.final_answer ? (
         <div className="card">
           <SectionHead title="Answer" />
-          <pre>{task.final_answer}</pre>
+          <div className="answer">{task.final_answer}</div>
         </div>
       ) : null}
 
@@ -231,6 +234,18 @@ export default function TaskDetail() {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {!pending && evidence.some((c) => c.evidence.length) ? (
+        <div className="card">
+          <SectionHead title="Evidence the agent read"
+                       count={`${evidence.filter((c) => c.evidence.length).length} tool calls`} />
+          <p className="sub">
+            What the tools actually returned, including any merchant-supplied text —
+            quarantined here as it was when the agent saw it.
+          </p>
+          <EvidencePanel calls={evidence} />
         </div>
       ) : null}
 

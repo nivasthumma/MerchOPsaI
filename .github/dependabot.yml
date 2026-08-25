@@ -1,19 +1,30 @@
 # Dependency updates. Both ecosystems this repository actually uses.
+#
+# Everything is grouped. An earlier version grouped only `minor` and `patch`
+# updates, which quietly excluded most of what Dependabot actually opens here:
+# requirements.txt pins with `>=`, so a bump from `>=0.115` to `>=0.141.1` is
+# not classified as a minor update and fell outside the group. The result was
+# eight separate PRs, each triggering a full CI run whose mutation job alone
+# takes fourteen minutes. Grouping without an update-types filter is what was
+# meant in the first place.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     groups:
-      # One PR for routine bumps; anything that breaks shows up as a single
-      # red CI run rather than five.
+      # One PR for the whole set. A break shows up as a single red run rather
+      # than five, and CI cost stays proportional to the work.
       python-dependencies:
         patterns: ["*"]
-        update-types: ["minor", "patch"]
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns: ["*"]

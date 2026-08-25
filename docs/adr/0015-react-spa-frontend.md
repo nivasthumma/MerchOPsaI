@@ -57,3 +57,29 @@ same origin.
 - **Node 18 pins Vite to 5.x.** Vite 7 requires Node 20+. Recorded so an upgrade is a
   decision rather than a surprise.
 - `node_modules/` and `dist/` are ignored; nothing in `web/` affects the Python CI jobs.
+
+---
+
+## Addendum — the test gap is closed, the CI gap is not
+
+The consequence above began "The SPA has no test coverage". That is no longer true:
+39 Vitest tests cover the API client, the approval screen, verification rendering,
+money formatting and the run-configuration banners — chosen for where a frontend bug
+would *misrepresent a financial state* rather than merely look wrong.
+
+Two things the exercise turned up, both worth keeping:
+
+- **`tsc` caught what Vitest could not.** The tests originally wrote
+  `await api.approve(...).catch(e => e as ApiError)`, which types the result as a union
+  with the success value; every assertion after it was silently unchecked. Vitest passed
+  regardless, because esbuild strips types without checking them. The build failing is
+  what surfaced it. The helper that replaced it also fails loudly if a call that must
+  reject ever starts resolving.
+- **Testing Library's auto-cleanup is not automatic here.** It registers only when
+  Vitest globals are enabled, and this project imports what it uses instead. Without an
+  explicit `afterEach(cleanup)`, renders accumulated across tests and queries began
+  finding several of everything — a failure mode that looks like a component bug.
+
+The CI gap stands. `web/` is still outside `.github/workflows/ci.yml` by request, so
+these tests gate a developer's machine and nothing else. A merge can still break the
+SPA without anything going red.

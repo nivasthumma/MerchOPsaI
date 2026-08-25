@@ -323,9 +323,14 @@ make web                          # Vite dev server on :5173
 make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
+```bash
+make web-test                     # 39 Vitest tests
+```
+
 The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
-see [ADR-0015](docs/adr/0015-react-spa-frontend.md). It is verified by hand, not by
-tests; the Streamlit UI remains the contract-conformant surface.
+see [ADR-0015](docs/adr/0015-react-spa-frontend.md). The Streamlit UI remains the
+contract-conformant surface. The SPA's tests are not in CI, so they are a local gate
+rather than a regression gate.
 
 Before trusting real payment execution:
 

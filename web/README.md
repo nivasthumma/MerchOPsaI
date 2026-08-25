@@ -54,10 +54,31 @@ src/
   components/Bits   status pills, money formatting, error banners
 ```
 
+## Test
+
+```bash
+npm test             # 39 Vitest tests, jsdom, no API required
+npm run test:watch
+```
+
+The tests cover the places where a frontend bug would misrepresent a financial state
+rather than merely look wrong:
+
+| Area | What is pinned |
+|---|---|
+| API client | The bearer token is sent; a request without one never leaves the browser; a 409 from the approval state machine keeps its `code`; a dead API says so instead of "Failed to fetch"; task ids are percent-encoded |
+| Verification | `UNKNOWN` renders as `UNKNOWN` and never carries a success tone; `PARTIAL` is distinct from `SUCCESS`; a settled action offers no re-verify button |
+| Money | Minor units convert exactly, keep sub-rupee precision, and a missing amount is not rendered as zero |
+| Approval | The approve button stays enabled — authorization is the server's call; a refusal shows its code; the task is reloaded rather than trusting the response |
+| Replay | Zero external calls reads as correct; a non-zero count reads as a defect |
+| Shell | The mock adapter, the deterministic planner, and a development signing secret are each stated before anyone can act |
+
+They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
+
 ## Build
 
 ```bash
-npm run build        # tsc --noEmit equivalent, then vite build -> dist/
+npm run build        # tsc, then vite build -> dist/
 npm run typecheck
 ```
 

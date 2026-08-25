@@ -104,31 +104,62 @@ export interface ScenarioCheck {
   detail: string;
 }
 
+export interface ScenarioMetrics {
+  category: string;
+  critical: boolean;
+  tool_calls: number;
+  llm_turns: number;
+  duration_ms: number;
+  final_status: string;
+  failure_code: string | null;
+  grounding_rate: number;
+  tools_used: string[];
+  /** The one that matters most: did this scenario move money externally? */
+  external_actions: number;
+  verification_states: string[];
+}
+
 export interface ScenarioResult {
   scenario_id: string;
   passed: boolean;
   checks: ScenarioCheck[];
-  metrics?: Record<string, unknown>;
+  metrics: ScenarioMetrics;
 }
 
+/** Exactly the columns `escalated_actions()` selects. It does *not* return
+ *  `action_type` — an earlier version of this type claimed it did, so the UI
+ *  rendered an always-empty column and nothing complained. */
 export interface EscalatedAction {
   id: string;
   task_id: string;
   merchant_id: string;
-  action_type: string;
+  target_payment_id: string | null;
+  external_payment_id: string | null;
+  amount_minor: number | null;
+  external_reference: string | null;
   verification_state: VerificationState | null;
   verify_attempts: number;
-  external_reference: string | null;
-  amount_minor: number | null;
-  [k: string]: unknown;
+  updated_at: string;
+}
+
+/** One line of the sweep's working: what it re-read, and what changed. */
+export interface ReconcileDetail {
+  action_id: string;
+  from: string | null;
+  to: string | null;
+  attempt?: number;
+  external_reference?: string | null;
+  escalated?: boolean;
+  error?: string;
 }
 
 export interface ReconcileReport {
   scanned: number;
   settled: number;
+  still_unsettled: number;
   escalated: number;
-  still_unknown: number;
-  [k: string]: unknown;
+  skipped_too_recent: number;
+  details: ReconcileDetail[];
 }
 
 export interface ReplayResult {

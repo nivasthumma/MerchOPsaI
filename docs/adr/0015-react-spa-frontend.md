@@ -99,6 +99,27 @@ familiar from ADR-0013 — a claim written from intent rather than from the run 
 is worth noticing that a test suite can inherit an assumption as easily as a document
 can.
 
+### A third shape mismatch, and one real discrepancy
+
+Reviewing the other two pages the same way — reading the backend, then capturing live
+responses — turned up two more things.
+
+`escalated_actions()` selects no `action_type` column, but `types.ts` claimed one, so the
+operator queue rendered an always-empty cell and nothing complained. Same class as the
+`verification_detail` crash, quieter symptom. `ReconcileReport.still_unknown` was
+similarly invented; the field is `still_unsettled`.
+
+The discrepancy is more interesting. `run_all()` — what `make eval` runs — reseeds the
+database before *every* scenario, and that is what makes 106/106 reproducible.
+`run_one()`, which the Scenarios page calls, runs against the database as it stands. So a
+scenario can fail in the UI for a reason unrelated to the code: a duplicate already
+refunded by an earlier task is correctly denied a second refund. The captured REF-01
+fixture is exactly this — a real failure that says nothing about correctness.
+
+The page now says so above the table, and the fixture is kept as the failure it really
+is. The backend is unchanged: making `run_one()` reseed would silently destroy whatever
+the operator was working on, which is a worse surprise than a caveat.
+
 The CI gap stands. `web/` is still outside `.github/workflows/ci.yml` by request, so
 these tests gate a developer's machine and nothing else. A merge can still break the
 SPA without anything going red.

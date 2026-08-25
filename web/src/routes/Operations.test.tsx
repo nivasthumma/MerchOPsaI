@@ -44,7 +44,7 @@ describe("operator queue", () => {
   it("explains that an empty queue is the expected condition", async () => {
     mocked.escalated.mockResolvedValue([]);
     renderOps();
-    expect(await screen.findByText(/every action reached a settled state/))
+    expect(await screen.findByText(/expected condition, not a missing feature/))
       .toBeInTheDocument();
   });
 });
@@ -79,5 +79,50 @@ describe("reconciliation sweep", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
     expect(await screen.findByText(/Actions younger than 30 seconds are skipped/))
       .toBeInTheDocument();
+  });
+});
+
+describe("queue scope", () => {
+  it("asks for the escalation threshold by default", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    renderOps();
+    await screen.findByText(/Nothing escalated/);
+    expect(mocked.escalated).toHaveBeenCalledWith(5);
+  });
+
+  it("shows work in progress when asked for everything unsettled", async () => {
+    // An action UNKNOWN with one attempt is invisible at the escalation
+    // threshold — it is precisely what the sweep has not given up on.
+    const inProgress = { ...ESCALATED[0], verify_attempts: 1 };
+    mocked.escalated.mockResolvedValueOnce([]).mockResolvedValueOnce([inProgress]);
+    renderOps();
+    await screen.findByText(/Nothing escalated/);
+
+    await userEvent.click(screen.getByRole("button", { name: "All unsettled" }));
+    expect(mocked.escalated).toHaveBeenLastCalledWith(0);
+    expect(await screen.findByText(inProgress.task_id)).toBeInTheDocument();
+  });
+
+  it("says why an empty queue is empty, differently for each scope", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    renderOps();
+    expect(await screen.findByText(/no action has exhausted its attempts/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All unsettled" }));
+    expect(await screen.findByText(/every action reached SUCCESS, FAILED or PARTIAL/))
+      .toBeInTheDocument();
+  });
+});
+
+describe("sweep details", () => {
+  it("renders an unrecognised state as itself rather than forcing a pill", async () => {
+    mocked.escalated.mockResolvedValue([]);
+    mocked.reconcile.mockResolvedValue({
+      ...REPORT,
+      details: [{ ...REPORT.details[0], to: "SOMETHING_NEW" }],
+    });
+    renderOps();
+    await userEvent.click(await screen.findByRole("button", { name: "Run sweep" }));
+    const row = (await screen.findByText(REPORT.details[0].action_id)).closest<HTMLElement>("tr")!;
+    expect(within(row).getByText("SOMETHING_NEW")).toBeInTheDocument();
   });
 });

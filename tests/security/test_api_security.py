@@ -14,6 +14,10 @@ def client(db):
     with TestClient(app) as c:
         yield c
     sec.reset_rate_limits()
+    # The runtime provider override lives in the process. Left set, it would
+    # silently change what every later test measures.
+    from app.config import set_runtime_llm_provider
+    set_runtime_llm_provider(None)
 
 
 def token(user_id: str) -> dict:
@@ -177,3 +181,54 @@ def test_evidence_does_not_leak_across_merchants(client, db):
     assert client.get(f"/tasks/{tid}/evidence",
                       headers=token("USR_B_OWNER")).status_code == 404
     assert client.get(f"/tasks/{tid}/evidence").status_code == 401
+
+
+# --------------------------------------------------------- provider selection
+def test_identity_comes_from_the_server(client, db):
+    body = client.get("/me", headers=token("USR_A_ANALYST")).json()
+    assert body["user_id"] == "USR_A_ANALYST"
+    assert body["role"] == "analyst"
+    # Permissions are the database's answer, not the token's claim.
+    assert "action:refund" not in body["permissions"]
+
+
+def test_provider_switch_requires_the_owner_role(client, db):
+    r = client.post("/config/llm-provider", json={"provider": "deterministic"},
+                    headers=token("USR_A_ANALYST"))
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "role_required"
+
+
+def test_provider_switch_refuses_a_provider_that_is_not_configured(client, db):
+    """The control selects among providers the process can already reach. It
+    cannot conjure one, and it never accepts a credential (CONTRACT §37)."""
+    r = client.post("/config/llm-provider", json={"provider": "anthropic"},
+                    headers=token("USR_A_OWNER"))
+    # No credential in the test environment, so this must be refused rather
+    # than leaving the agent pointed at a provider it cannot reach.
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "no_credential"
+    assert client.get("/health").json()["llm_provider"] == "deterministic"
+
+
+def test_provider_switch_is_audited(client, db):
+    from sqlalchemy import text
+    r = client.post("/config/llm-provider", json={"provider": "deterministic"},
+                    headers=token("USR_A_OWNER"))
+    assert r.status_code == 200
+    assert r.json()["llm_provider_source"] == "runtime"
+
+    row = db.execute(text("""
+        SELECT user_id, payload FROM audit_logs
+        WHERE event_type = 'llm_provider_changed' ORDER BY id DESC LIMIT 1
+    """)).mappings().first()
+    assert row is not None, "a privileged change must leave a record"
+    assert row["user_id"] == "USR_A_OWNER"
+    assert row["payload"]["to"] == "deterministic"
+
+
+def test_unknown_provider_is_rejected(client, db):
+    r = client.post("/config/llm-provider", json={"provider": "gpt"},
+                    headers=token("USR_A_OWNER"))
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "unknown_provider"

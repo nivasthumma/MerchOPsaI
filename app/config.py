@@ -41,6 +41,24 @@ def _cli_profile_is_active() -> bool:
         return False
 
 
+# A runtime override of the configured provider.
+#
+# Process-local and deliberately not persisted: it survives no restart, and with
+# more than one worker each would hold its own. That is a real limitation, and
+# the honest place for it is here rather than in a comment on the UI — the same
+# constraint the in-process rate limiter carries.
+_runtime_provider: str | None = None
+
+
+def set_runtime_llm_provider(value: str | None) -> None:
+    global _runtime_provider
+    _runtime_provider = value
+
+
+def runtime_llm_provider() -> str | None:
+    return _runtime_provider
+
+
 @lru_cache(maxsize=8)
 def detect_anthropic_credentials(explicit_key: str | None = None) -> str | None:
     """Which credential source the SDK would use, or None if it has none.
@@ -95,7 +113,20 @@ class Settings(BaseSettings):
         return detect_anthropic_credentials(self.anthropic_api_key)
 
     @property
+    def llm_provider_source(self) -> str:
+        """Where the active provider came from: `runtime`, `env` or `auto`."""
+        if runtime_llm_provider() is not None:
+            return "runtime"
+        return "env" if self.llm_provider != "auto" else "auto"
+
+    @property
     def resolved_llm_provider(self) -> str:
+        # A runtime override wins, so an operator can switch between providers
+        # that are already configured. It cannot conjure one: the API refuses to
+        # select `anthropic` when no credential was detected.
+        override = runtime_llm_provider()
+        if override is not None:
+            return override
         # An explicit setting is never second-guessed: `deterministic` must stay
         # selectable on a machine that has credentials, or the evaluation suite
         # could not be run reproducibly there.

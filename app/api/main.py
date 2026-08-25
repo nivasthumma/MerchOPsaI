@@ -9,7 +9,9 @@ from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from types import SimpleNamespace
 
-from sqlalchemy import text
+from datetime import timedelta
+
+from sqlalchemy import case, func, select, text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
@@ -20,7 +22,9 @@ from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
-from app.models import AgentAction, AgentTask, Approval, ToolCall
+from app.models import (
+    AgentAction, AgentTask, Approval, ToolCall, VerificationState, utcnow,
+)
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
@@ -274,6 +278,80 @@ def list_escalated(max_attempts: int = 5,
         rows = escalated_actions(s, max_attempts=max_attempts)
     # Merchant isolation applies here too.
     return [r for r in rows if r["merchant_id"] == principal.merchant_id]
+
+
+@app.get("/metrics")
+def metrics(window_hours: int = 24,
+            principal: Principal = Depends(current_principal)):
+    """Counts for the operations strip, scoped to the caller's merchant.
+
+    Everything here is derived from rows this merchant owns. There is no
+    cross-merchant aggregate and there will not be one on this route: the
+    isolation that applies to a task applies to a count of tasks.
+
+    `moved_minor` deliberately counts only actions that were both executed and
+    independently verified as SUCCESS. An action that is UNKNOWN has not been
+    shown to have moved money, and this number must never imply it did — the
+    unsettled queue is what reports those, and it reports them as unsettled.
+    """
+    since = utcnow() - timedelta(hours=window_hours)
+    m = principal.merchant_id
+
+    with session_scope() as s:
+        gated = s.scalar(
+            select(func.count()).select_from(Approval)
+            .where(Approval.merchant_id == m, Approval.decision == "PENDING")) or 0
+
+        approved = s.scalar(
+            select(func.count()).select_from(Approval)
+            .where(Approval.merchant_id == m, Approval.decision == "APPROVED",
+                   Approval.decided_at >= since)) or 0
+
+        rejected = s.scalar(
+            select(func.count()).select_from(Approval)
+            .where(Approval.merchant_id == m, Approval.decision == "REJECTED",
+                   Approval.decided_at >= since)) or 0
+
+        moved_minor = s.scalar(
+            select(func.coalesce(func.sum(AgentAction.amount_minor), 0))
+            .where(AgentAction.merchant_id == m,
+                   AgentAction.verification_state == VerificationState.SUCCESS,
+                   AgentAction.created_at >= since)) or 0
+
+        calls, failures = s.execute(
+            select(func.count(ToolCall.id),
+                   func.sum(case((ToolCall.success.is_(False), 1), else_=0)))
+            .join(AgentTask, AgentTask.id == ToolCall.task_id)
+            .where(AgentTask.merchant_id == m, AgentTask.created_at >= since)
+        ).one()
+        calls = calls or 0
+        failures = failures or 0
+
+        # p50 in the database would be a percentile function three engines
+        # spell differently. The row count here is small and bounded by the
+        # window, so it is honest and portable to sort in Python.
+        durations = sorted(
+            d for (d,) in s.execute(
+                select(AgentTask.duration_ms)
+                .where(AgentTask.merchant_id == m, AgentTask.created_at >= since,
+                       AgentTask.duration_ms.is_not(None))).all())
+
+    p50 = durations[(len(durations) - 1) // 2] if durations else None
+
+    return {
+        "window_hours": window_hours,
+        "gated": gated,
+        "approved": approved,
+        "rejected": rejected,
+        "moved_minor": int(moved_minor),
+        "tool_calls": calls,
+        "tool_errors": int(failures),
+        # None rather than 0.0 when nothing ran: a rate over zero calls is not
+        # zero, it is unknown, and a strip cell that reads 0.0% would be a lie.
+        "tool_error_rate": (failures / calls) if calls else None,
+        "p50_duration_ms": p50,
+        "signing_secret_is_development_default": DEV_SECRET_IN_USE,
+    }
 
 
 @app.get("/scenarios")

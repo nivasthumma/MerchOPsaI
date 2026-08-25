@@ -10,6 +10,20 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
+# One run per ref. A newer push supersedes an older one rather than queueing
+# behind it: this workflow takes ~17 minutes, 14 of them in the mutation job,
+# so three pushes in quick succession otherwise occupy runners for the better
+# part of an hour to report on states nobody will look at.
+#
+# The trade-off is deliberate. On master, a superseded run is cancelled, so the
+# per-commit CI history becomes "the latest commit has a verdict" rather than
+# "every commit has one". Set cancel-in-progress to
+# ${{ github.ref != 'refs/heads/master' }} if a definitive result per commit
+# matters more than runner time.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@127.0.0.1:5432/merchantops
   # A CI-only signing secret. Tokens minted here are worthless elsewhere.

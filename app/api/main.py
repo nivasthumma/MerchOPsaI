@@ -18,7 +18,7 @@ from app.config import get_settings
 from app.db import session_scope
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
-from app.models import AgentAction, AgentTask, Approval
+from app.models import AgentAction, AgentTask, Approval, ToolCall
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
@@ -108,6 +108,37 @@ def get_trace(task_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         _owned(s, task_id, principal)
         return {"task_id": task_id, "trace": trace_for(s, task_id)}
+
+
+@app.get("/tasks/{task_id}/evidence")
+def get_evidence(task_id: str, principal: Principal = Depends(current_principal)):
+    """The evidence behind a task's findings and its pending action.
+
+    CONTRACT §21 says the human reviews payment, amount, reason, **evidence**
+    and risk before approving. The Streamlit UI reads `tool_calls` straight from
+    the database to do that; an HTTP client had no route to the same facts, so a
+    non-Streamlit approval screen could only show four of the five.
+
+    `untrusted` is carried through deliberately (CONTRACT §36). Merchant and
+    customer free text is an injection surface, and a client needs to know which
+    values to render as quarantined data rather than as system text. Stripping
+    the flag here would push that judgement onto every consumer.
+    """
+    with session_scope() as s:
+        _owned(s, task_id, principal)
+        rows = s.query(ToolCall).filter(ToolCall.task_id == task_id) \
+            .order_by(ToolCall.seq).all()
+        return {
+            "task_id": task_id,
+            "tool_calls": [{
+                "id": c.id, "seq": c.seq, "tool": c.tool_name,
+                "arguments": c.input, "success": c.success,
+                "error_code": c.error_code, "risk_level": c.risk_level,
+                "policy_decision": c.policy_decision, "duration_ms": c.duration_ms,
+                "evidence": (c.output or {}).get("evidence", []),
+                "data": (c.output or {}).get("data", {}),
+            } for c in rows],
+        }
 
 
 @app.post("/tasks/{task_id}/approve")

@@ -136,3 +136,44 @@ def test_unauthenticated_requests_cannot_consume_a_principal_budget(client, db):
         client.post("/tasks/NOPE/approve")
     assert client.post("/tasks/NOPE/approve",
                        headers=token("USR_A_OWNER")).status_code != 429
+
+
+# ------------------------------------------------------------- evidence route
+def _halted_task(client) -> str:
+    """A task stopped at the approval gate — the state §21 describes."""
+    r = client.post("/tasks", json={"request": "Find the duplicate payment and refund it"},
+                    headers=token("USR_A_OWNER"))
+    assert r.status_code == 200
+    assert r.json()["status"] == "AWAITING_APPROVAL"
+    return r.json()["id"]
+
+
+def test_evidence_is_reachable_for_the_task_owner(client, db):
+    """CONTRACT §21 lists evidence among what the human reviews before
+    approving. Streamlit reads tool_calls from the database directly; an HTTP
+    client needs a route to the same facts or it can only show four of five."""
+    tid = _halted_task(client)
+    body = client.get(f"/tasks/{tid}/evidence", headers=token("USR_A_OWNER")).json()
+    tools = [c["tool"] for c in body["tool_calls"]]
+    assert "find_duplicate_payments" in tools
+    assert any(c["evidence"] for c in body["tool_calls"])
+
+
+def test_evidence_preserves_the_untrusted_tag(client, db):
+    """CONTRACT §36. Merchant free text is an injection surface, and the client
+    must be told which values to quarantine. Stripping the flag at the API would
+    push that judgement onto every consumer."""
+    tid = _halted_task(client)
+    body = client.get(f"/tasks/{tid}/evidence", headers=token("USR_A_OWNER")).json()
+    items = [e for c in body["tool_calls"] for e in c["evidence"]]
+    untrusted = [e for e in items if e["untrusted"]]
+    assert untrusted, "the seeded order carries injected notes; the tag must survive"
+    assert any("SYSTEM OVERRIDE" in str(e["value"]) for e in untrusted)
+
+
+def test_evidence_does_not_leak_across_merchants(client, db):
+    tid = _halted_task(client)
+    # 404 rather than 403: existence is not leaked.
+    assert client.get(f"/tasks/{tid}/evidence",
+                      headers=token("USR_B_OWNER")).status_code == 404
+    assert client.get(f"/tasks/{tid}/evidence").status_code == 401

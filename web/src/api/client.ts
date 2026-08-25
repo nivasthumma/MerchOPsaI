@@ -7,7 +7,7 @@
 
 import type {
   EscalatedAction, Health, ReconcileReport, ReplayResult, Scenario,
-  ScenarioResult, Task, TraceEvent,
+  ScenarioResult, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
 const BASE = "/api";
@@ -109,6 +109,10 @@ export const api = {
     request<Task>("/tasks", { method: "POST", body: JSON.stringify({ request: req }) }),
 
   getTask: (id: string) => request<Task>(`/tasks/${encodeURIComponent(id)}`),
+
+  /** CONTRACT §21: the evidence the human reviews before approving. */
+  getEvidence: (id: string) =>
+    request<TaskEvidence>(`/tasks/${encodeURIComponent(id)}/evidence`),
 
   getTrace: (id: string) =>
     request<{ task_id: string; trace: TraceEvent[] }>(`/tasks/${encodeURIComponent(id)}/trace`),

@@ -212,3 +212,33 @@ export interface ReReasonResult {
 }
 
 export type ReplayResult = PlaybackResult | ReReasonResult;
+
+
+/** One fact a tool returned. `untrusted` marks merchant or customer free text —
+ *  the injection surface. A client that renders it as ordinary system text is
+ *  doing the one thing CONTRACT §36 exists to prevent. */
+export interface EvidenceItem {
+  key: string;
+  value: unknown;
+  source: string;
+  untrusted: boolean;
+}
+
+export interface EvidenceToolCall {
+  id: string;
+  seq: number;
+  tool: string;
+  arguments: Record<string, unknown>;
+  success: boolean;
+  error_code: string | null;
+  risk_level: string | null;
+  policy_decision: string | null;
+  duration_ms: number;
+  evidence: EvidenceItem[];
+  data: Record<string, unknown>;
+}
+
+export interface TaskEvidence {
+  task_id: string;
+  tool_calls: EvidenceToolCall[];
+}

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
-  Approval, PlaybackResult, ReplayResult, ReReasonResult, Task, TraceEvent,
+  Approval, EvidenceToolCall, PlaybackResult, ReplayResult, ReReasonResult, Task,
+  TraceEvent,
 } from "../api/types";
 import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   StatusPill, VerificationPill, When,
 } from "../components/Bits";
+import { EvidencePanel } from "../components/Evidence";
 import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
@@ -16,22 +18,61 @@ export default function TaskDetail() {
   const { taskId = "" } = useParams();
   const [task, setTask] = useState<Task | null>(null);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
+  const [evidence, setEvidence] = useState<EvidenceToolCall[]>([]);
+  const [live, setLive] = useState<"live" | "hidden" | "idle">("idle");
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [replay, setReplay] = useState<{ mode: string; result: ReplayResult } | null>(null);
   const toast = useToast();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     try {
-      const [t, tr] = await Promise.all([api.getTask(taskId), api.getTrace(taskId)]);
+      const [t, tr, ev] = await Promise.all([
+        api.getTask(taskId), api.getTrace(taskId), api.getEvidence(taskId),
+      ]);
       setTask(t);
       setTrace(tr.trace);
+      setEvidence(ev.tool_calls);
+      if (!quiet) setError(null);
     } catch (e) {
-      setError(e as ApiError);
+      // A failed background poll must not replace a page that is working.
+      if (!quiet) setError(e as ApiError);
     }
   }, [taskId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // A task waiting on a human, or holding an action the sweep may settle from
+  // somewhere else entirely, is not finished. Poll it — quietly, only while the
+  // tab is visible, and never once nothing can change.
+  const settling = task
+    ? task.status === "AWAITING_APPROVAL" || task.status === "RUNNING" ||
+      task.actions.some((a) => a.verification_state === "UNKNOWN" ||
+                              a.verification_state === "PARTIAL")
+    : false;
+
+  useEffect(() => {
+    if (!settling) { setLive("idle"); return; }
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const tick = () => {
+      if (document.hidden) { setLive("hidden"); return; }
+      setLive("live");
+      void load(true);
+    };
+    const start = () => { if (!timer) timer = setInterval(tick, 5000); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+
+    const onVisibility = () => {
+      if (document.hidden) { setLive("hidden"); stop(); }
+      else { setLive("live"); void load(true); start(); }
+    };
+
+    setLive(document.hidden ? "hidden" : "live");
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [settling, load]);
 
   async function act<T>(
     name: string, fn: () => Promise<T>, announce?: (r: T) => [string, string],
@@ -58,7 +99,14 @@ export default function TaskDetail() {
     }
   }
 
-  if (error && !task) return <ErrorBanner error={error} />;
+  if (error && !task) {
+    return (
+      <div className="card">
+        <ErrorBanner error={error} />
+        <button onClick={() => { setError(null); void load(); }}>Try again</button>
+      </div>
+    );
+  }
   if (!task) {
     return (
       <div className="card">
@@ -80,6 +128,7 @@ export default function TaskDetail() {
           <CopyId value={task.id} label="task id" />
           <StatusPill status={task.status} />
           {task.is_replay ? <span className="pill neutral">replay</span> : null}
+          <LiveDot state={live} />
         </h1>
         <p className="request">{task.request}</p>
       </div>
@@ -102,7 +151,7 @@ export default function TaskDetail() {
 
       {pending ? (
         <ApprovalGate
-          approval={pending} busy={busy}
+          approval={pending} busy={busy} evidence={evidence}
           onApprove={() => act("approve", () => api.approve(task.id), (t2) => {
             const v = t2.actions[t2.actions.length - 1]?.verification_state;
             return ["Approved and executed",
@@ -250,9 +299,22 @@ export default function TaskDetail() {
   );
 }
 
+function LiveDot({ state }: { state: "live" | "hidden" | "idle" }) {
+  if (state === "idle") return null;
+  return (
+    <span className={`pill ${state === "live" ? "ok" : "neutral"}`}
+          title={state === "live"
+            ? "Refreshing every 5 seconds while this task can still change"
+            : "Paused — this tab is in the background"}>
+      {state === "live" ? "live" : "paused"}
+    </span>
+  );
+}
+
 function ApprovalGate(
-  { approval, busy, onApprove, onReject }:
-  { approval: Approval; busy: string | null; onApprove: () => void; onReject: () => void },
+  { approval, busy, evidence, onApprove, onReject }:
+  { approval: Approval; busy: string | null; evidence: EvidenceToolCall[];
+    onApprove: () => void; onReject: () => void },
 ) {
   const expires = new Date(approval.expires_at);
   const expired = expires.getTime() < Date.now();
@@ -280,6 +342,18 @@ function ApprovalGate(
       {typeof approval.action_payload.reason === "string" ? (
         <p style={{ marginTop: 12 }}>{approval.action_payload.reason}</p>
       ) : null}
+      {evidence.length ? (
+        <>
+          <h3>Evidence this rests on</h3>
+          <p className="sub">
+            CONTRACT §21 has the human review the payment, the amount, the reason,
+            <strong> the evidence</strong> and the risk. Merchant-supplied text is shown
+            quarantined: it is evidence, and it is also the injection surface.
+          </p>
+          <EvidencePanel calls={evidence} />
+        </>
+      ) : null}
+
       {expired ? (
         <div className="banner warn" style={{ marginTop: 12 }}>
           This approval has passed its expiry. The server will refuse it — the button is
@@ -434,10 +508,32 @@ const FILTERS: { key: TraceGroup | "all"; label: string }[] = [
 ];
 
 function TracePanel({ events }: { events: TraceEvent[] }) {
-  const [filter, setFilter] = useState<TraceGroup | "all">("all");
-  const shown = useMemo(
-    () => events.filter((e) => filter === "all" || groupOf(e.event) === filter),
-    [events, filter]);
+  // In the URL rather than in state: "look at the verification stage of this
+  // task" should be a link you can paste to someone, and a reload should not
+  // throw away the filter an operator just set.
+  const [params, setParams] = useSearchParams();
+  const filter = (params.get("stage") ?? "all") as TraceGroup | "all";
+  const query = params.get("q") ?? "";
+
+  const update = (patch: Record<string, string>) => {
+    const next = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v && v !== "all") next.set(k, v);
+      else next.delete(k);
+    }
+    setParams(next, { replace: true });
+  };
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return events.filter((e) => {
+      if (filter !== "all" && groupOf(e.event) !== filter) return false;
+      if (!q) return true;
+      return e.event.toLowerCase().includes(q)
+        || (summarise(e) ?? "").toLowerCase().includes(q)
+        || JSON.stringify(e.payload ?? {}).toLowerCase().includes(q);
+    });
+  }, [events, filter, query]);
 
   return (
     <div className="card">
@@ -448,12 +544,29 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
       </p>
       <div className="filters" role="group" aria-label="Filter trace by stage">
         {FILTERS.map((f) => (
-          <button key={f.key} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
+          <button key={f.key} aria-pressed={filter === f.key}
+                  onClick={() => update({ stage: f.key })}>
             {f.label}
           </button>
         ))}
       </div>
-      {shown.length === 0 ? <Empty>No events at this stage.</Empty> : (
+      <div className="row" style={{ marginBottom: 12 }}>
+        <input type="text" value={query} placeholder="Search events, summaries and payloads…"
+               aria-label="Search the trace" style={{ maxWidth: 340 }}
+               onChange={(e) => update({ q: e.target.value })} />
+        {query || filter !== "all" ? (
+          <button onClick={() => update({ stage: "all", q: "" })}>Clear</button>
+        ) : null}
+        <span className="muted" style={{ marginLeft: "auto" }}>
+          <button onClick={() => navigator.clipboard?.writeText(
+            JSON.stringify(events, null, 2))}>Copy trace JSON</button>
+        </span>
+      </div>
+      {shown.length === 0 ? (
+        <Empty>
+          {query ? `Nothing in this trace matches “${query}”.` : "No events at this stage."}
+        </Empty>
+      ) : (
         <ul className="trace">
           {shown.map((e) => {
             const line = summarise(e);

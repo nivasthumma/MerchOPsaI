@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { DensityToggle } from "./Chrome";
 import { CommandPalette } from "./CommandPalette";
 import { Stepper } from "./Stepper";
 import { ThemeToggle } from "./Theme";
@@ -16,6 +17,7 @@ import type { Task } from "../api/types";
 import taskFixture from "../test-fixtures/task.json";
 
 const TASK = taskFixture as unknown as Task;
+
 
 describe("theme control", () => {
   beforeEach(() => {
@@ -132,5 +134,31 @@ describe("command palette", () => {
     for (const forbidden of ["approve", "refund", "execute", "reject"]) {
       expect(labels.some((l) => l.includes(forbidden))).toBe(false);
     }
+  });
+});
+
+describe("density", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.removeAttribute("data-density");
+  });
+
+  it("defaults to comfortable and remembers compact", async () => {
+    render(<DensityToggle />);
+    expect(document.documentElement.getAttribute("data-density")).toBe("comfortable");
+
+    await userEvent.click(screen.getByRole("button"));
+    expect(document.documentElement.getAttribute("data-density")).toBe("compact");
+    expect(localStorage.getItem("merchantops.density")).toBe("compact");
+
+    await userEvent.click(screen.getByRole("button"));
+    expect(document.documentElement.getAttribute("data-density")).toBe("comfortable");
+    expect(localStorage.getItem("merchantops.density")).toBeNull();
+  });
+
+  it("announces the state it is in, not just an icon", () => {
+    render(<DensityToggle />);
+    expect(screen.getByRole("button"))
+      .toHaveAccessibleName(/Density: comfortable\. Switch to compact\./);
   });
 });

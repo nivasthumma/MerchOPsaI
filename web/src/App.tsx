@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, getToken, setToken } from "./api/client";
 import type { Health } from "./api/types";
+import { ActivityBar, DensityToggle } from "./components/Chrome";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
 import { ToastHost } from "./components/Toast";
 
 export default function App() {
+  const location = useLocation();
   const [health, setHealth] = useState<Health | null>(null);
   const [token, setTok] = useState(getToken());
   const [draft, setDraft] = useState("");
@@ -29,6 +31,7 @@ export default function App() {
       {/* Keyboard users should not have to tab through the header on every
           navigation to reach the thing they came for. */}
       <a className="skip" href="#main">Skip to content</a>
+      <ActivityBar />
 
       <header className="top">
         <div className="top-inner">
@@ -47,6 +50,7 @@ export default function App() {
           <button className="icon-btn" title="Command palette (⌘K)" aria-label="Command palette"
                   onClick={() => window.dispatchEvent(
                     new KeyboardEvent("keydown", { key: "k", metaKey: true }))}>⌘</button>
+          <DensityToggle />
           <ThemeToggle />
           {token ? (
             <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
@@ -58,7 +62,12 @@ export default function App() {
 
       <main className="shell" id="main">
         <RunConfig health={health} />
-        {token ? <Outlet /> : <SignIn draft={draft} setDraft={setDraft} save={save} />}
+        {/* Keyed on the path so each navigation mounts a fresh subtree and the
+            entrance animation actually runs. Under prefers-reduced-motion the
+            animation is neutralised in CSS; the key change is harmless. */}
+        <div className="route" key={location.pathname}>
+          {token ? <Outlet /> : <SignIn draft={draft} setDraft={setDraft} save={save} />}
+        </div>
       </main>
     </ToastHost>
   );

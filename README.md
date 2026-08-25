@@ -25,6 +25,38 @@ OBSERVE → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
 
 ---
 
+## 📑 Contents
+
+**Start here** — what is real, what is measured, and what it looks like running:
+
+| | |
+|---|---|
+| [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
+| [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
+| [📊 Measured results](#-measured-results) | 81 tests · 106/106 scenarios · 15/15 mutations |
+| [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
+
+**How it works** — the machinery the project exists to demonstrate:
+
+| | |
+|---|---|
+| [🏗️ Architecture](#-architecture) | The request path, gate by gate |
+| [🔀 Synthetic / real boundary](#-data-architecture-the-synthetic--real-boundary) | Why the two data worlds never mix |
+| [🔐 Security model](#-security-model) | Every control, where it lives, and its test |
+| [🧪 Evaluation methodology](#-evaluation-methodology) | Grading behaviour, not prose |
+| [🔁 Reconciliation](#-reconciliation) | Resolving `UNKNOWN` without re-issuing money |
+
+**Run it** — and the parts that are honest about their edges:
+
+| | |
+|---|---|
+| [⚙️ Setup](#-setup) · [🔌 API](#-api) | Local install; the endpoint surface |
+| [🚧 Known limitations](#-known-limitations) | Split by *why* each one exists |
+| [🗺️ Roadmap](#-roadmap) · [📁 Repository layout](#-repository-layout) | What is next; where things live |
+| [📄 License / disclaimer](#-license--disclaimer) | MIT, and what this project is not |
+
+---
+
 ## 🧭 Built vs designed
 
 Read this table before anything else. It is the difference between what runs today

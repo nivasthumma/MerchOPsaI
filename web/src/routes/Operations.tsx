@@ -13,6 +13,9 @@ export default function Operations() {
   const [report, setReport] = useState<ReconcileReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [escalatedOnly, setEscalatedOnly] = useState(true);
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  const [live, setLive] = useState(true);
+  const [minAge, setMinAge] = useState(30);
   const [error, setError] = useState<ApiError | null>(null);
   const toast = useToast();
 
@@ -22,6 +25,7 @@ export default function Operations() {
       // the actions the sweep has not given up on. Showing only the former
       // leaves an operator blind to work in progress.
       setRows(await api.escalated(escalatedOnly ? 5 : 0));
+      setFetchedAt(new Date().toISOString());
     } catch (e) {
       setError(e as ApiError);
     }
@@ -29,11 +33,29 @@ export default function Operations() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // This queue changes without anyone touching this tab: a cron sweep settles
+  // something, another operator approves a refund. A stale work list is worse
+  // than an empty one, because it looks current.
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const tick = () => { if (!document.hidden) void load(); };
+    const start = () => { if (!timer) timer = setInterval(tick, 15000); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const onVisibility = () => {
+      if (document.hidden) { setLive(false); stop(); }
+      else { setLive(true); void load(); start(); }
+    };
+    setLive(!document.hidden);
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [load]);
+
   async function sweep() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.reconcile();
+      const r = await api.reconcile({ minAgeSeconds: minAge });
       setReport(r);
       toast({
         tone: r.escalated > 0 ? "warn" : "ok",
@@ -78,6 +100,29 @@ export default function Operations() {
           </button>
           {busy ? <Busy>re-reading external state</Busy> : null}
         </div>
+
+        <details style={{ marginTop: 12 }}>
+          <summary className="muted" style={{ fontSize: 12.5, cursor: "pointer" }}>
+            Minimum age: {minAge}s
+          </summary>
+          <p className="sub" style={{ marginTop: 8 }}>
+            Actions younger than this are skipped. A refund submitted seconds ago may
+            simply not have propagated, and re-reading it immediately burns an attempt —
+            five of those and a perfectly healthy action is escalated to a human. Lower it
+            only when you are deliberately exercising the path, as in a demo.
+          </p>
+          <div className="row">
+            {[0, 5, 30].map((s) => (
+              <button key={s} aria-pressed={minAge === s} onClick={() => setMinAge(s)}
+                      className={minAge === s ? "" : undefined}>
+                {s}s{s === 30 ? " (default)" : ""}
+              </button>
+            ))}
+            {minAge < 30 ? (
+              <span className="pill warn">guard relaxed</span>
+            ) : null}
+          </div>
+        </details>
 
         {report ? (
           <>
@@ -133,6 +178,11 @@ export default function Operations() {
 
       <div className="card">
         <SectionHead title="Operator queue" count={rows ? `${rows.length}` : undefined}>
+          <span className="muted" style={{ fontSize: 12, marginRight: 10 }}>
+            {fetchedAt ? <>read <When iso={fetchedAt} /></> : null}
+            {live ? <span className="pill ok" style={{ marginLeft: 8 }}>live</span>
+                  : <span className="pill neutral" style={{ marginLeft: 8 }}>paused</span>}
+          </span>
           <div className="filters" style={{ margin: 0 }}>
             <button aria-pressed={escalatedOnly} onClick={() => setEscalatedOnly(true)}>
               Escalated
@@ -160,7 +210,7 @@ export default function Operations() {
                 <thead>
                   <tr>
                     <th>Action</th><th>Task</th><th>Payment</th><th>Amount</th>
-                    <th>Attempts</th><th>State</th><th>Last read</th>
+                    <th>Attempts</th><th>State</th><th>Why</th><th>Last read</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -177,6 +227,13 @@ export default function Operations() {
                       <td><Money minor={r.amount_minor} /></td>
                       <td>{r.verify_attempts}</td>
                       <td><VerificationPill state={r.verification_state} /></td>
+                      <td style={{ maxWidth: 320 }}>
+                        {r.verification_detail ? (
+                          <span className="muted" style={{ fontSize: 12.5 }}>
+                            {r.verification_detail.reason}
+                          </span>
+                        ) : <span className="muted">—</span>}
+                      </td>
                       <td className="muted"><When iso={r.updated_at} /></td>
                     </tr>
                   ))}

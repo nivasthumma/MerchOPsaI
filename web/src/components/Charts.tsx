@@ -42,7 +42,12 @@ export function ChangeChart({ points, unit = "pp" }: { points: ChangePoint[]; un
   const plotW = w - labelW - 56;
   const mid = labelW + plotW / 2;
   const max = Math.max(...points.map((p) => Math.abs(p.value))) || 1;
-  const scale = (v: number) => (v / max) * (plotW / 2 - 8);
+  // The value sits outside the end of its bar, so the longest bar has to stop
+  // short enough to leave room for it. At `plotW / 2 - 8` the biggest negative
+  // bar reached the label column and its number printed on top of the category
+  // name — "upi" and "-18.6" rendered as one smear.
+  const valueGutter = 46;
+  const scale = (v: number) => (v / max) * (plotW / 2 - valueGutter);
 
   return (
     <div className="viz">

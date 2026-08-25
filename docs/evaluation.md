@@ -58,10 +58,13 @@ turn, re-runs the suite, and reports which scenarios caught the break:
 15/15 mutations caught
 ```
 
-Mutations cover: the registry lookup, permission checks, merchant isolation, the approval requirement,
-the amount limit, the duplicate-action guard, four verification behaviours, argument
-validation, the execution budget, approval expiry, idempotency-key derivation, and
-audit redaction.
+The 15 mutations cover: the registry lookup, permission checks, merchant isolation,
+the approval requirement, the amount limit, the duplicate-action guard, three
+verification behaviours, argument validation, the execution budget, approval expiry,
+idempotency-key derivation, the duplicate-action SAVEPOINT, and audit redaction.
+
+"Caught" is not one thing, and the distinction matters — see *Known coverage limits*
+below for how the 15 actually break down.
 
 ### What the first run found
 
@@ -85,27 +88,61 @@ than the pass count.
 
 ### Known coverage limits
 
-Every mutant is now caught by at least one scenario. The three that were once
-unit-test-only are closed:
+`make mutants` reports **15/15 caught**, but that headline flattens three different
+kinds of catching. The measured breakdown, from the run itself:
 
-| Was uncovered | Closed by |
+| How the mutant is caught | Count | Mutants |
+|---|---|---|
+| A named scenario grades it red | 10 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3) |
+| The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
+| Unit tests only — no scenario distinguishes it | 3 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction |
+
+Read strictly, **10 of 15 mutants produce a graded scenario failure.** The other five
+are still detected, and the suite is still doing real work — but "15/15 caught" and
+"every control has a scenario behind it" are different claims, and only the first
+one is true.
+
+The two crashes are scenario-*reachable*: with the registry guard removed, SEC-24
+drives the runtime into `AttributeError: 'NoneType' object has no attribute
+'input_schema'` and the run dies. That is detection — nothing silently passes — but
+the harness records `<suite crashed mid-run>` rather than SEC-24 red, so it proves
+less than a graded failure would.
+
+The three unit-only mutants each sit behind a guard that fires first:
+
+| Mutant | Why no scenario separates it |
 |---|---|
-| Verification reporting SUCCESS on an unreadable state | **UNK-18** — the read-back itself fails |
-| Audit redaction disabled | **SEC-25** — a secret in the user's request must not survive into the trail |
-| Registry lookup removed | **SEC-24** — the agent requests an unregistered tool |
+| Idempotency-key derivation (fresh key per call) | Observable only when one approval executes twice; the approval state machine prevents a second execution, and the refundable-balance precondition fires before the key is ever consulted. |
+| Duplicate-action SAVEPOINT → full rollback | Same branch: it needs a key collision, which needs the balance check bypassed. Three integration tests cover it, including one that swaps in a random key to prove they measure the key and not another guard. |
+| Audit redaction, key-name branch | The mutant disables redaction of secret-*named* dict keys. SEC-25's secret arrives inside the user's request string and is redacted by the *value-pattern* branch, which the mutant leaves intact — so SEC-25 still passes. Breaking the value branch instead does fail SEC-25 (verified: 0/1), so the scenario is real; it simply does not cover this half of `redact()`. |
 
-An earlier version of this document argued that redaction and idempotency-key
-derivation were pure-function properties with no scenario-reachable path, and that
-building scenarios for them would be theatre. That was wrong on both counts, and
-checking rather than assuming is what showed it:
+Closing these would mean either a scenario that reaches a branch the safety guards
+exist to make unreachable, or a second redaction mutant aimed at the value branch.
+The second is worth doing; the first would be theatre. Recorded here rather than
+quietly rounded up.
 
-- The raw user request is recorded on the `task_created` audit event, so anything a
-  user pastes into it passes through `redact()`. That is a real path, and SEC-25
-  exercises it.
-- The idempotency `UNIQUE` constraint *is* reachable — but only after an attempt
-  that leaves the refundable balance untouched, because the balance precondition
-  fires first in the ordinary path. `ACCEPTED_NOT_APPLIED` produces exactly that
-  state, and three integration tests now cover the branch.
+#### What this section got wrong twice
+
+Both errors are kept here, because how a claim went wrong is more useful than the
+corrected claim on its own.
+
+**First:** it argued that redaction and idempotency-key derivation were pure-function
+properties with no reachable path, so testing them would be theatre. Checking showed
+otherwise. The raw user request is recorded on `task_created`, so anything pasted
+into a request passes through `redact()` — SEC-25 exercises that. And the
+idempotency `UNIQUE` constraint is reachable via `ACCEPTED_NOT_APPLIED`, which leaves
+the refundable balance untouched so the precondition does not fire first; three
+integration tests now cover it.
+
+**Second:** having written those tests, it declared the gaps *closed* — "every mutant
+is caught by at least one scenario", closed by UNK-18, SEC-24 and SEC-25. Only UNK-18
+actually closes its mutant. The mutation output had been printing `0 scenario(s)`
+next to the other two the whole time; the claim was written from intent instead of
+from the run.
+
+The pattern is the same both times: reasoning about the code where reading the output
+was available. That is precisely the failure mutation testing exists to catch, so it
+is corrected in place rather than quietly deleted.
 
 Writing those tests found a genuine defect: the duplicate-action handler called
 `session.rollback()`, which undoes the **entire** transaction rather than the one

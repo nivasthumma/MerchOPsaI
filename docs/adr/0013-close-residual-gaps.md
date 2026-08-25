@@ -82,3 +82,38 @@ that it had been taken. Fixed with a SAVEPOINT; added as a 15th mutation.
 The general lesson: "this is unreachable, so a test would be contrived" is a claim
 about the code, and it needs checking like any other. Here it was load-bearing —
 believing it left a transaction-scope bug sitting in the one branch nobody exercised.
+
+---
+
+## Second addendum — the closure claim was also wrong
+
+The addendum above ends by describing SEC-25 and three integration tests as closing
+the redaction and idempotency gaps. `docs/evaluation.md` then went further and stated
+that every mutant was caught by at least one scenario. Re-running `make mutants` and
+reading the output shows it is not:
+
+```
+actions: let the caller reuse a spent idempotency key   CAUGHT  0 scenario(s) + unit tests
+actions: roll back the whole transaction on a duplicate CAUGHT  0 scenario(s) + unit tests
+audit: stop redacting secrets                           CAUGHT  0 scenario(s) + unit tests
+```
+
+Two more mutants (registry lookup, argument validation) are detected as a *crash*
+rather than a graded failure. Counted strictly, **10 of 15 mutants produce a graded
+scenario failure**; all 15 are detected.
+
+SEC-25 is a real scenario — breaking the value-pattern branch of `redact()` fails it
+0/1. It simply does not cover the *key-name* branch, which is the half the mutant
+disables. That distinction was never checked; the ADR was written from the intent of
+the change rather than from the mutation output, which had been printing
+`0 scenario(s)` throughout.
+
+One more number in this ADR has since drifted: the "Closed" table says the expanded
+dataset maps 19 external payments. `seed_data.py` reports **21** of 589 today. The
+README carries the current figures; this table is left as the record of what was
+believed then.
+
+The per-mutant accounting now lives in
+[`docs/evaluation.md`](../evaluation.md#known-coverage-limits) and is the authority.
+This ADR's earlier claims stand as written, corrected here, because how a claim went
+wrong is worth more than a clean record.

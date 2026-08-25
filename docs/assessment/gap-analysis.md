@@ -2,6 +2,8 @@
 
 Contract (as amended by ADR-0008) versus what is implemented.
 
+**Verified:** 2026-08-25 — 81 tests, 106/106 scenarios, 15/15 mutations, demo end to end.
+
 ## Implemented and verified
 
 | Contract § | Requirement | Evidence |
@@ -19,7 +21,7 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | §25, §26 | Read-back verification; UNKNOWN resolvable | `test_lost_response_yields_unknown_then_resolves` |
 | §27, §39 | Append-only audit, secrets redacted | `app/audit/trace.py` |
 | §28 | Replay: PLAYBACK + RE_REASON, divergence classified | `app/agent/replay.py`, ADR-0006 |
-| §29–§32 | 103 scenarios grading observable behaviour | `data/scenarios/scenarios.yaml`, 103/103 |
+| §29–§32 | 106 scenarios grading observable behaviour | `data/scenarios/scenarios.yaml`, 106/106 |
 | §33 | All five required security scenarios | SEC-01…SEC-05 |
 | §34 | 15 classified failure codes | `app/models.py` |
 | §35A | Fault-injection seam | `app/integrations/razorpay/faults.py` |
@@ -27,8 +29,9 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | §37, §38 | Secret isolation, merchant isolation | 4 isolation tests, 404 not 403 |
 | §40, §41 | Streamlit UI + API incl. `/reverify` | `ui/`, `app/api/main.py` |
 | §42 | 13 tables incl. `agent_actions` | `app/models.py` |
-| §46 | 10 ADRs | `docs/adr/` |
+| §46 | 14 ADRs | `docs/adr/` |
 | §49 | Definition of done | see below |
+| — | CI regression gate | `.github/workflows/ci.yml`: seed determinism, tests, evaluation reproducibility, critical gate, mutation test |
 | §58 | Both acceptance tests | `tests/integration/test_flows.py` |
 
 ## Not implemented (deliberate)
@@ -38,7 +41,6 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | Real Razorpay execution | No credentials; spike verdict `mock`. Disclosed in README. |
 | Model-backed reasoning metrics | No API key; deterministic planner used. Disclosed. |
 | Always-on reconciliation worker | Would need Redis/Celery, cut by §52. Implemented as a cron-able sweep with an escalation queue instead. |
-| CI regression gate | Suite and mutation test both run locally; not yet wired into CI. |
 | Next.js, Redis, Celery, containers | §52 forbids them in the MVP. |
 | Real identity provider | Header-based stand-in; principal still resolved server-side. |
 
@@ -60,8 +62,8 @@ Contract (as amended by ADR-0008) versus what is implemented.
 | Duplicate execution prevented | ✅ |
 | Audit persisted | ✅ |
 | Replay without side effects | ✅ asserted, not assumed |
-| 100+ scenarios executable | ✅ 103/103, validated by 13/13 mutation testing |
-| Adversarial cases tested | ✅ 23/23 |
+| 100+ scenarios executable | ✅ 106/106; 15/15 mutations caught, 10 of them by a graded scenario ([why the other 5 differ](../evaluation.md#known-coverage-limits)) |
+| Adversarial cases tested | ✅ 25/25 |
 | Actual evaluation results generated | ✅ measured, counts not percentages |
 | README distinguishes built vs designed | ✅ table near the top |
 | Demo completable in 5–7 minutes | ✅ `make demo` |

@@ -11,7 +11,7 @@ reconcile:  ; $(PY) scripts/reconcile.py
 mutants:    ; $(PY) scripts/mutation_test.py
 harden:     ; $(PY) scripts/harden_db.py
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
-ci:         ; $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
+ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------

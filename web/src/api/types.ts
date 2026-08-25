@@ -84,11 +84,28 @@ export interface TraceEvent {
   payload: Record<string, unknown>;
 }
 
+export interface Principal {
+  user_id: string;
+  merchant_id: string;
+  role: string;
+  permissions: string[];
+}
+
+export interface ProviderChange {
+  llm_provider: string;
+  llm_provider_source: string;
+  llm_model: string;
+  changed_from: string;
+}
+
 export interface Health {
   status: string;
   llm_provider: string;
   llm_credential_source: string | null;
   llm_provider_is_explicit: boolean;
+  /** `runtime` means it was switched in this process and will not survive a
+   *  restart — and that a published metric was not measured under it. */
+  llm_provider_source: string;
   llm_model: string;
   payment_adapter: string;
   razorpay_execution_is_real: boolean;

@@ -11,15 +11,25 @@ import type { Health } from "./api/types";
 
 vi.mock("./api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/client")>();
-  return { ...actual, api: { health: vi.fn() } };
+  return { ...actual, api: { health: vi.fn(), me: vi.fn(), setProvider: vi.fn() } };
 });
 
 const { api } = await import("./api/client");
 const health = api.health as unknown as ReturnType<typeof vi.fn>;
+const me = api.me as unknown as ReturnType<typeof vi.fn>;
+const setProvider = api.setProvider as unknown as ReturnType<typeof vi.fn>;
+
+const OWNER = {
+  user_id: "USR_A_OWNER", merchant_id: "MERCH_A", role: "owner",
+  permissions: ["read:metrics", "read:orders", "action:refund"],
+};
+const ANALYST = { ...OWNER, user_id: "USR_A_ANALYST", role: "analyst",
+                  permissions: ["read:metrics", "read:orders"] };
 
 const OK: Health = {
   status: "ok", llm_provider: "deterministic", llm_credential_source: null,
-  llm_provider_is_explicit: false, llm_model: "deterministic-planner-v1",
+  llm_provider_is_explicit: false, llm_provider_source: "auto",
+  llm_model: "deterministic-planner-v1",
   payment_adapter: "mock", razorpay_execution_is_real: false,
   auth: "bearer_hmac", auth_secret_is_development_default: false,
 };
@@ -39,6 +49,7 @@ function renderApp() {
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
+  me.mockResolvedValue(OWNER);
 });
 
 describe("run configuration", () => {
@@ -113,5 +124,67 @@ describe("page scaffolding", () => {
       .toHaveAttribute("href", "#main");
     expect(document.querySelector("main#main")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+  });
+});
+
+describe("acting identity", () => {
+  it("shows who the server says you are, not who the token claims", async () => {
+    health.mockResolvedValue(OK);
+    me.mockResolvedValue(ANALYST);
+    localStorage.setItem("merchantops.token", "USR_A_ANALYST.sig");
+    renderApp();
+    expect(await screen.findByText("USR_A_ANALYST")).toBeInTheDocument();
+    expect(screen.getByText(/analyst · MERCH_A/)).toBeInTheDocument();
+  });
+});
+
+describe("reasoning provider control", () => {
+  beforeEach(() => localStorage.setItem("merchantops.token", "t"));
+
+  it("offers the switch to an owner", async () => {
+    health.mockResolvedValue(OK);
+    renderApp();
+    expect(await screen.findByText("Reasoning provider")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "anthropic" })).toBeEnabled();
+  });
+
+  it("never offers a field for a credential", async () => {
+    // CONTRACT §37 keeps provider secrets in the environment. A browser form is
+    // neither an environment variable nor an appropriate secret mechanism.
+    health.mockResolvedValue(OK);
+    renderApp();
+    await screen.findByText("Reasoning provider");
+    expect(screen.getByText(/there is no field for a key here/)).toBeInTheDocument();
+    const inputs = screen.queryAllByRole("textbox");
+    expect(inputs.every((i) => !/key|secret|token/i.test(i.getAttribute("aria-label") ?? "")))
+      .toBe(true);
+  });
+
+  it("tells an analyst it is not theirs to change", async () => {
+    health.mockResolvedValue(OK);
+    me.mockResolvedValue(ANALYST);
+    renderApp();
+    expect(await screen.findByText(/Changing it requires the owner role/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "anthropic" })).toBeNull();
+  });
+
+  it("surfaces the server's refusal when no credential is configured", async () => {
+    health.mockResolvedValue(OK);
+    setProvider.mockRejectedValue(
+      new Error("No Anthropic credential is configured on the server."));
+    renderApp();
+    await userEvent.click(await screen.findByRole("button", { name: "anthropic" }));
+    expect(await screen.findByText(/No Anthropic credential is configured/))
+      .toBeInTheDocument();
+  });
+
+  it("warns that published metrics were not measured on a model", async () => {
+    health.mockResolvedValue({ ...OK, llm_provider: "anthropic",
+                               llm_provider_source: "runtime",
+                               llm_model: "claude-opus-5",
+                               llm_credential_source: "api_key" });
+    renderApp();
+    expect(await screen.findByText(/Published metrics were measured on the deterministic planner/))
+      .toBeInTheDocument();
   });
 });

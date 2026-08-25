@@ -695,3 +695,9 @@ ul.asserts li { margin-bottom: 3px; color: var(--text-2); }
   white-space: pre-wrap; word-break: break-word;
   font-size: 14.5px; line-height: 1.65; max-width: 78ch;
 }
+
+/* Acting identity, in the header. An ops tool where the same screen behaves
+   differently per role must say which role is looking at it. */
+.who { display: flex; flex-direction: column; line-height: 1.25; font-size: 12px; }
+.who-id { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+@media (max-width: 600px) { .who { display: none; } }

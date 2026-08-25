@@ -7,14 +7,16 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+from types import SimpleNamespace
+
 from sqlalchemy import text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, Principal
 from app.api.security import DEV_SECRET_IN_USE, current_principal
-from app.audit.trace import trace_for
-from app.config import get_settings
+from app.audit.trace import record, trace_for
+from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
@@ -30,6 +32,10 @@ app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
 class TaskRequest(BaseModel):
     request: str
+
+
+class ProviderRequest(BaseModel):
+    provider: str
 
 
 def _task_view(s, task: AgentTask) -> dict:
@@ -81,6 +87,10 @@ def health():
         # is ambiguous: deliberately configured, or no credentials found?
         "llm_credential_source": s.anthropic_credential_source,
         "llm_provider_is_explicit": s.llm_provider != "auto",
+        # `runtime` means someone switched it in this process; it does not
+        # survive a restart, and a published metric was not measured under it
+        # unless the report says so.
+        "llm_provider_source": s.llm_provider_source,
         "llm_model": s.llm_model if s.resolved_llm_provider == "anthropic"
                      else "deterministic-planner-v1",
         "payment_adapter": s.resolved_razorpay_mode,
@@ -88,6 +98,66 @@ def health():
         "auth": "bearer_hmac",
         "auth_secret_is_development_default": DEV_SECRET_IN_USE,
     }
+
+
+@app.get("/me")
+def whoami(principal: Principal = Depends(current_principal)):
+    """Who the caller is, as the server understands it.
+
+    The client never asserts this. It is returned so an interface can show the
+    acting identity — the same screen behaves differently for an owner and an
+    analyst, and an operator should not have to infer which one they are.
+    """
+    return {"user_id": principal.user_id, "merchant_id": principal.merchant_id,
+            "role": principal.role, "permissions": principal.permissions}
+
+
+@app.post("/config/llm-provider")
+def set_llm_provider(body: ProviderRequest,
+                     principal: Principal = Depends(current_principal)):
+    """Switch between providers that are already configured.
+
+    Deliberately narrow. It selects among providers the process can already
+    reach; it never accepts a credential. CONTRACT §37 keeps secrets in the
+    environment, and a browser form is not that.
+
+    The override is process-local and does not survive a restart — with more
+    than one worker, each would hold its own. Persisting it would make the
+    active provider a piece of durable state that no environment variable
+    explains, which is a worse trade.
+    """
+    s = get_settings()
+    choice = body.provider.lower()
+    if choice not in {"auto", "deterministic", "anthropic"}:
+        raise HTTPException(422, {"error": f"Unknown provider '{body.provider}'.",
+                                  "code": "unknown_provider"})
+    if principal.role != "owner":
+        # 403 rather than 404: this is not a merchant-scoped resource, so
+        # refusing plainly leaks nothing.
+        raise HTTPException(403, {"error": "Changing the provider requires the owner role.",
+                                  "code": "role_required"})
+    if choice == "anthropic" and not s.anthropic_credential_source:
+        raise HTTPException(409, {
+            "error": "No Anthropic credential is configured on the server. "
+                     "Set ANTHROPIC_API_KEY or sign in with `ant auth login`, then retry.",
+            "code": "no_credential"})
+
+    before = s.resolved_llm_provider
+    set_runtime_llm_provider(None if choice == "auto" else choice)
+    after = s.resolved_llm_provider
+
+    with session_scope() as sess:
+        # Audited like any other privileged change. No task owns this event,
+        # which is why audit_logs.task_id is nullable.
+        record(sess, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                     user_id=principal.user_id),
+               "llm_provider_changed",
+               {"from": before, "to": after, "requested": choice,
+                "by": principal.user_id, "role": principal.role})
+
+    return {"llm_provider": after, "llm_provider_source": s.llm_provider_source,
+            "llm_model": s.llm_model if after == "anthropic" else "deterministic-planner-v1",
+            "changed_from": before}
 
 
 @app.post("/tasks")

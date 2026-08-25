@@ -139,6 +139,34 @@ boxed, monospaced, and labelled *treated as data, never as instructions*, and th
 approval gate is unmoved by what it says. A test asserts exactly that — the injected
 text is visible, and the human is still required.
 
+### Selecting a provider from the UI, and what that must not become
+
+A provider control was asked for. The obvious reading — a field for an API key —
+is refused. CONTRACT §37 keeps provider secrets in the environment, and a browser
+form is neither an environment variable nor an appropriate secret mechanism: the
+key would cross the network from an untrusted origin, sit in browser memory, and
+land in a request body that audit redaction does not cover, since redaction
+protects logs rather than transport.
+
+What shipped instead selects among providers the process can already reach.
+`POST /config/llm-provider` takes a name, never a credential. It requires the owner
+role (403, not 404 — this is not merchant-scoped, so refusing plainly leaks
+nothing), refuses `anthropic` outright when no credential was detected rather than
+leaving the agent pointed at a provider it cannot use, and writes an
+`llm_provider_changed` audit event naming who changed what.
+
+The override is process-local and does not survive a restart. Persisting it would
+make the active provider durable state that no environment variable explains,
+which is the worse trade — and with several workers each would hold its own, the
+same honest limitation the in-process rate limiter carries.
+
+Two supporting pieces. `GET /me` returns the acting identity, because the same
+screens behave differently for an owner and an analyst and nobody should have to
+infer which they are — the header had never said who was signed in. And whenever
+the provider is not the deterministic planner, the UI states that published
+metrics were measured on the planner and that numbers produced under a model
+measure something else.
+
 The CI gap stands. `web/` is still outside `.github/workflows/ci.yml` by request, so
 these tests gate a developer's machine and nothing else. A merge can still break the
 SPA without anything going red.

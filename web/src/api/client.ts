@@ -7,7 +7,7 @@
 
 import type {
   EscalatedAction, Health, ReconcileReport, ReplayResult, Scenario,
-  ScenarioResult, Task, TaskEvidence, TraceEvent,
+  Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
 const BASE = "/api";
@@ -129,6 +129,14 @@ function safeJson(text: string): unknown {
 
 export const api = {
   health: () => request<Health>("/health", {}, { auth: false }),
+
+  me: () => request<Principal>("/me"),
+
+  /** Selects among providers the server can already reach. It never carries a
+   *  credential — CONTRACT §37 keeps those in the environment. */
+  setProvider: (provider: "auto" | "deterministic" | "anthropic") =>
+    request<ProviderChange>("/config/llm-provider",
+                            { method: "POST", body: JSON.stringify({ provider }) }),
 
   createTask: (req: string) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify({ request: req }) }),

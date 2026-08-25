@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, getToken, setToken } from "./api/client";
-import type { Health } from "./api/types";
+import type { Health, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
-import { ToastHost } from "./components/Toast";
+import { ToastHost, useToast } from "./components/Toast";
 
 export default function App() {
   const location = useLocation();
   const [health, setHealth] = useState<Health | null>(null);
+  const [me, setMe] = useState<Principal | null>(null);
   const [token, setTok] = useState(getToken());
   const [draft, setDraft] = useState("");
 
@@ -19,6 +20,13 @@ export default function App() {
     // backend resolved — this app never infers it.
     api.health().then(setHealth).catch(() => setHealth(null));
   }, []);
+
+  // Who the server thinks you are. The same screens behave differently for an
+  // owner and an analyst, and nobody should have to infer which they are.
+  useEffect(() => {
+    if (!token) { setMe(null); return; }
+    api.me().then(setMe).catch(() => setMe(null));
+  }, [token]);
 
   function save() {
     setToken(draft.trim());
@@ -52,6 +60,12 @@ export default function App() {
                     new KeyboardEvent("keydown", { key: "k", metaKey: true }))}>⌘</button>
           <DensityToggle />
           <ThemeToggle />
+          {me ? (
+            <span className="who" title={`${me.user_id} · ${me.permissions.join(", ")}`}>
+              <span className="who-id">{me.user_id}</span>
+              <span className="muted">{me.role} · {me.merchant_id}</span>
+            </span>
+          ) : null}
           {token ? (
             <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
           ) : null}
@@ -61,7 +75,7 @@ export default function App() {
       <CommandPalette />
 
       <main className="shell" id="main">
-        <RunConfig health={health} />
+        <RunConfig health={health} me={me} onProviderChange={setHealth} />
         {/* Keyed on the path so each navigation mounts a fresh subtree and the
             entrance animation actually runs. Under prefers-reduced-motion the
             animation is neutralised in CSS; the key change is harmless. */}
@@ -90,7 +104,11 @@ function Mark() {
 /** The run configuration, compressed to chips with the full disclosures one
  *  click away. The wording of those disclosures is unchanged: a demo running
  *  against a mock adapter has to say so in words, not only in a colour. */
-function RunConfig({ health }: { health: Health | null }) {
+function RunConfig(
+  { health, me, onProviderChange }:
+  { health: Health | null; me: Principal | null;
+    onProviderChange: (h: Health) => void },
+) {
   if (!health) {
     return (
       <div className="banner danger">
@@ -158,8 +176,85 @@ function RunConfig({ health }: { health: Health | null }) {
             this is reachable by anyone else.
           </div>
         ) : null}
+
+        <ProviderControl health={health} me={me} onChange={onProviderChange} />
       </div>
     </details>
+  );
+}
+
+/** Selects among providers the server can already reach.
+ *
+ * There is no field for a key here, and there will not be: CONTRACT §37 keeps
+ * provider secrets in the environment, and a browser form is neither an
+ * environment variable nor an appropriate secret mechanism. If no credential is
+ * configured, the server refuses the switch and says how to configure one.
+ */
+function ProviderControl(
+  { health, me, onChange }:
+  { health: Health; me: Principal | null; onChange: (h: Health) => void },
+) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const toast = useToast();
+  const isOwner = me?.role === "owner";
+
+  async function choose(provider: "auto" | "deterministic" | "anthropic") {
+    setBusy(provider);
+    setProblem(null);
+    try {
+      const r = await api.setProvider(provider);
+      onChange({ ...health, llm_provider: r.llm_provider, llm_model: r.llm_model,
+                 llm_provider_source: r.llm_provider_source });
+      toast({ tone: "ok", title: `Reasoning now: ${r.llm_provider}`,
+              body: r.changed_from === r.llm_provider
+                ? "Unchanged." : `Was ${r.changed_from}. This process only.` });
+    } catch (e) {
+      const err = e as { message?: string };
+      setProblem(err.message ?? "The switch was refused.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (!isOwner) {
+    return (
+      <p className="sub" style={{ marginTop: 4 }}>
+        Reasoning provider: <code>{health.llm_provider}</code> (
+        {health.llm_provider_source}). Changing it requires the owner role.
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <h3>Reasoning provider</h3>
+      <p className="sub">
+        Selects between providers this server can already reach. Credentials stay in the
+        server environment — there is no field for a key here, and adding one would put a
+        provider secret in a browser. A switch applies to this process only and does not
+        survive a restart.
+      </p>
+      <div className="filters">
+        {(["auto", "deterministic", "anthropic"] as const).map((p) => (
+          <button key={p} disabled={!!busy}
+                  aria-pressed={health.llm_provider_source === "runtime"
+                    ? health.llm_provider === p
+                    : p === "auto" && health.llm_provider_source === "auto"}
+                  onClick={() => choose(p)}>
+            {busy === p ? "…" : p}
+          </button>
+        ))}
+      </div>
+      {problem ? <div className="banner warn" style={{ marginTop: 10 }}>{problem}</div> : null}
+      {health.llm_provider !== "deterministic" ? (
+        <div className="banner warn" style={{ marginTop: 10 }}>
+          <strong>Published metrics were measured on the deterministic planner.</strong>{" "}
+          Scenario runs and evaluation numbers produced under a language model measure
+          something different and should be reported separately.
+        </div>
+      ) : null}
+    </div>
   );
 }
 

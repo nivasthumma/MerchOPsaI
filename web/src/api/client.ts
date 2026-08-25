@@ -33,13 +33,39 @@ export const activity = {
   },
 };
 
+/** A demo credential baked in at build time, or "" when none was configured.
+ *
+ *  This exists so a public deployment can be opened and used without minting a
+ *  token first. It is a real bearer token and anyone who loads the page has it,
+ *  so it belongs only on a deployment where that is acceptable: synthetic data,
+ *  the mock payment adapter, nothing that reaches a real financial system.
+ *
+ *  It is read from the environment rather than written here, so the credential
+ *  never enters the repository and can be rotated by changing one Vercel
+ *  variable and redeploying. Leave VITE_DEMO_TOKEN unset and the app behaves
+ *  exactly as before: it asks for a token. */
+const DEMO_TOKEN: string = import.meta.env.VITE_DEMO_TOKEN ?? "";
+
 export function getToken(): string {
   try {
-    return localStorage.getItem(TOKEN_KEY) ?? "";
+    // A token this browser was given wins over the shared demo one, so signing
+    // in as somebody else is still possible and still sticks.
+    return localStorage.getItem(TOKEN_KEY) ?? DEMO_TOKEN;
   } catch {
     // Private browsing and some embedded webviews throw on access rather than
     // returning null. An unreadable store is the same as an empty one here.
-    return "";
+    return DEMO_TOKEN;
+  }
+}
+
+/** True when the session is running on the shared demo credential rather than
+ *  one this person supplied. The UI says so — a page that silently hands a
+ *  visitor approval rights over somebody's audit log should admit it. */
+export function isDemoSession(): boolean {
+  try {
+    return !localStorage.getItem(TOKEN_KEY) && !!DEMO_TOKEN;
+  } catch {
+    return !!DEMO_TOKEN;
   }
 }
 

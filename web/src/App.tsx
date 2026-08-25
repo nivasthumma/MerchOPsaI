@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { api, getToken, setToken } from "./api/client";
+import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import { CommandPalette } from "./components/CommandPalette";
@@ -98,6 +98,11 @@ export default function App() {
             <DensityToggle />
             <ThemeToggle />
             <Link className="icon-btn" to="/settings" title="Settings" aria-label="Settings">⚙</Link>
+            {isDemoSession() ? (
+              <span className="chip warn" title="Everyone who opens this page shares this session">
+                <span className="dot" />Shared demo
+              </span>
+            ) : null}
             {token ? (
               <button onClick={() => { setToken(""); setTok(""); }}>Sign out</button>
             ) : null}

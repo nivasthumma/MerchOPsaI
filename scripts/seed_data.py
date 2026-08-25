@@ -8,6 +8,7 @@ Fixed RNG seed => byte-identical dataset on every run => reproducible evaluation
 """
 from __future__ import annotations
 
+import os
 import random
 import sys
 from datetime import datetime, timedelta, timezone
@@ -432,7 +433,39 @@ def build() -> dict:
     }
 
 
+def _refuse_if_work_would_be_lost(force: bool) -> None:
+    """Seeding drops the schema, and agent tasks go with it.
+
+    That is fine on an empty database and destructive on a used one. It has
+    already cost real work: a task someone had open became "Unknown task" and
+    nothing said why. So the reset stops when there is something to lose,
+    unless it is asked for explicitly.
+    """
+    if force:
+        return
+    from sqlalchemy import func, select
+
+    from app.models import AgentTask
+
+    try:
+        with session_scope() as s:
+            existing = s.scalar(select(func.count()).select_from(AgentTask)) or 0
+    except Exception:
+        return  # No schema yet — nothing to lose, carry on and create it.
+
+    if existing:
+        raise SystemExit(
+            f"Refusing to seed: {existing} agent task(s) are in this database and "
+            "seeding drops them.\n"
+            "Re-run with --force if that is what you want:\n"
+            "    python scripts/seed_data.py --force\n"
+            "The test suite has its own database and is unaffected either way."
+        )
+
+
 def main() -> None:
+    force = "--force" in sys.argv or os.getenv("SEED_FORCE") == "1"
+    _refuse_if_work_would_be_lost(force)
     print(f"Resetting schema (dataset={DATASET_VERSION}, seed={SEED})...")
     reset_schema()
     data = build()

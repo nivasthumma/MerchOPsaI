@@ -129,7 +129,13 @@ export const api = {
 
   reconcile: () => request<ReconcileReport>("/actions/reconcile", { method: "POST" }),
 
-  escalated: () => request<EscalatedAction[]>("/actions/escalated"),
+  /** `maxAttempts` is the endpoint's own threshold: rows are unsettled actions
+   *  with at least that many verify attempts. The default of 5 is the
+   *  escalation line; 0 returns everything still unsettled, including the
+   *  actions the sweep is actively working. */
+  escalated: (maxAttempts?: number) =>
+    request<EscalatedAction[]>(
+      `/actions/escalated${maxAttempts === undefined ? "" : `?max_attempts=${maxAttempts}`}`),
 
   scenarios: () => request<Scenario[]>("/scenarios", {}, { auth: false }),
 

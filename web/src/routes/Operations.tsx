@@ -4,7 +4,7 @@ import { api, ApiError } from "../api/client";
 import type { EscalatedAction, ReconcileReport } from "../api/types";
 import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
-  VerificationPill, When,
+  isVerificationState, VerificationPill, When,
 } from "../components/Bits";
 import { useToast } from "../components/Toast";
 
@@ -12,16 +12,20 @@ export default function Operations() {
   const [rows, setRows] = useState<EscalatedAction[] | null>(null);
   const [report, setReport] = useState<ReconcileReport | null>(null);
   const [busy, setBusy] = useState(false);
+  const [escalatedOnly, setEscalatedOnly] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
     try {
-      setRows(await api.escalated());
+      // 5 is the escalation line; 0 is everything still unsettled, including
+      // the actions the sweep has not given up on. Showing only the former
+      // leaves an operator blind to work in progress.
+      setRows(await api.escalated(escalatedOnly ? 5 : 0));
     } catch (e) {
       setError(e as ApiError);
     }
-  }, []);
+  }, [escalatedOnly]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -105,7 +109,11 @@ export default function Operations() {
                         <tr key={`${d.action_id}-${i}`}>
                           <td className="mono">{d.action_id}</td>
                           <td>{d.from ?? "—"}</td>
-                          <td><VerificationPill state={d.to as never} /></td>
+                          <td>
+                            {isVerificationState(d.to)
+                              ? <VerificationPill state={d.to} />
+                              : <span className="mono muted">{d.to ?? "—"}</span>}
+                          </td>
                           <td>{d.attempt ?? "—"}</td>
                           <td className="mono">{d.external_reference ?? "—"}</td>
                           <td>
@@ -124,16 +132,27 @@ export default function Operations() {
       </div>
 
       <div className="card">
-        <SectionHead title="Operator queue" count={rows ? `${rows.length}` : undefined} />
+        <SectionHead title="Operator queue" count={rows ? `${rows.length}` : undefined}>
+          <div className="filters" style={{ margin: 0 }}>
+            <button aria-pressed={escalatedOnly} onClick={() => setEscalatedOnly(true)}>
+              Escalated
+            </button>
+            <button aria-pressed={!escalatedOnly} onClick={() => setEscalatedOnly(false)}>
+              All unsettled
+            </button>
+          </div>
+        </SectionHead>
         <p className="sub">
-          Actions the sweep could not settle within its attempt limit. Escalated rather
-          than swept forever, so nothing sits unresolved and invisible.
+          {escalatedOnly
+            ? "Actions the sweep could not settle within its attempt limit — five tries. Escalated rather than swept forever, so nothing sits unresolved and invisible."
+            : "Every action still UNKNOWN or PARTIAL, including those the sweep has not given up on. Anything below five attempts will be retried automatically; it is here so work in progress is visible, not because it needs a human yet."}
         </p>
         {rows === null ? <Skeleton rows={2} />
           : rows.length === 0 ? (
             <Empty>
-              Nothing escalated — every action reached a settled state. This queue being
-              empty is the expected condition, not a missing feature.
+              {escalatedOnly
+                ? "Nothing escalated — no action has exhausted its attempts. This queue being empty is the expected condition, not a missing feature."
+                : "Nothing unsettled — every action reached SUCCESS, FAILED or PARTIAL and stayed there."}
             </Empty>
           ) : (
             <div className="table-wrap">

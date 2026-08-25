@@ -14,6 +14,15 @@ export function StatusPill({ status }: { status: TaskStatus | string }) {
   return <span className={`pill ${tone}`}>{status.replace(/_/g, " ")}</span>;
 }
 
+const STATES = ["SUCCESS", "FAILED", "PARTIAL", "UNKNOWN"] as const;
+
+/** The reconcile report types its from/to as plain strings. Narrow rather than
+ *  cast: an unrecognised value should render as itself, not be forced into a
+ *  state it is not. */
+export function isVerificationState(v: unknown): v is VerificationState {
+  return typeof v === "string" && (STATES as readonly string[]).includes(v);
+}
+
 export function VerificationPill({ state }: { state: VerificationState | null }) {
   if (!state) return <span className="pill neutral">not verified</span>;
   const tone =

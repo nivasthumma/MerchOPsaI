@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { Approval, ReplayResult, Task, TraceEvent } from "../api/types";
+import type {
+  Approval, PlaybackResult, ReplayResult, ReReasonResult, Task, TraceEvent,
+} from "../api/types";
 import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   StatusPill, VerificationPill, When,
@@ -228,19 +230,19 @@ export default function TaskDetail() {
                   onClick={() => act("PLAYBACK",
                     () => api.replay(task.id, "PLAYBACK"),
                     (r) => { setReplay({ mode: "PLAYBACK", result: r });
-                             return ["Replayed (PLAYBACK)", `${r.external_calls} external calls`]; })}>
+                             return ["Replayed (PLAYBACK)", `${r.external_calls_made} external calls`]; })}>
             PLAYBACK
           </button>
           <button disabled={!!busy} aria-busy={busy === "RE_REASON"}
                   onClick={() => act("RE_REASON",
                     () => api.replay(task.id, "RE_REASON"),
                     (r) => { setReplay({ mode: "RE_REASON", result: r });
-                             return ["Replayed (RE_REASON)", `${r.external_calls} external calls`]; })}>
+                             return ["Replayed (RE_REASON)", `${r.external_calls_made} external calls`]; })}>
             RE_REASON
           </button>
           {busy === "PLAYBACK" || busy === "RE_REASON" ? <Busy /> : null}
         </div>
-        {replay ? <ReplayPanel mode={replay.mode} result={replay.result} /> : null}
+        {replay ? <ReplayPanel result={replay.result} /> : null}
       </div>
 
       <TracePanel events={trace} />
@@ -295,30 +297,130 @@ function ApprovalGate(
   );
 }
 
-function ReplayPanel({ mode, result }: { mode: string; result: ReplayResult }) {
-  const clean = result.external_calls === 0;
+function ReplayPanel({ result }: { result: ReplayResult }) {
+  // Both modes report the count in `external_calls_made`. Nothing else on this
+  // page matters more: a replay that moved money is a defect, and a replay that
+  // did not must not be reported as one.
+  const calls = result.external_calls_made;
+  const clean = calls === 0;
+
   return (
     <>
-      <div className={`banner ${clean ? "info" : "danger"}`} style={{ marginTop: 14 }}>
-        <strong>{mode}: {result.external_calls} external calls.</strong>{" "}
+      <div className={`banner ${clean ? "info" : "danger"}`} style={{ marginTop: 16 }}>
+        <strong>{result.mode}: {calls} external call{calls === 1 ? "" : "s"}.</strong>{" "}
         {clean
           ? "No financial side effect, as required."
           : "This is a defect — replay must never move money."}
-        {result.reasoning_diverged !== undefined
-          ? ` Reasoning diverged: ${result.reasoning_diverged}${
-              result.divergence_kind ? ` (${result.divergence_kind})` : ""}.`
-          : ""}
       </div>
-      {result.steps?.length ? (
-        <p className="sub" style={{ marginTop: 10 }}>
-          Steps: <span className="mono">{result.steps.join(" → ")}</span>
-        </p>
-      ) : null}
-      {result.note ? <p className="sub">{result.note}</p> : null}
+
+      {result.mode === "RE_REASON" ? <ReReasonDetail result={result} /> : null}
+      {result.mode === "PLAYBACK" ? <PlaybackDetail result={result} /> : null}
+
+      {result.note ? <p className="sub" style={{ marginTop: 12 }}>{result.note}</p> : null}
       <details>
         <summary>raw result</summary>
         <pre>{JSON.stringify(result, null, 2)}</pre>
       </details>
+    </>
+  );
+}
+
+function PlaybackDetail({ result }: { result: PlaybackResult }) {
+  return (
+    <>
+      <h3>Steps replayed against frozen tool results</h3>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Tool</th><th>Risk</th><th>Policy</th><th>Result</th><th>Time</th></tr>
+          </thead>
+          <tbody>
+            {result.steps.map((s) => (
+              <tr key={s.seq}>
+                <td className="mono">{s.seq}</td>
+                <td className="mono">{s.tool}</td>
+                <td>
+                  <span className={`pill ${s.risk_level === "HIGH" ? "warn" : "neutral"}`}>
+                    {s.risk_level}
+                  </span>
+                </td>
+                <td>
+                  <span className={`pill ${s.policy_decision === "ALLOW" ? "ok" : "warn"}`}>
+                    {s.policy_decision}
+                  </span>
+                </td>
+                <td>
+                  {s.success ? <span className="pill ok">ok</span>
+                             : <span className="pill danger">{s.error_code ?? "failed"}</span>}
+                </td>
+                <td className="mono muted">{s.duration_ms} ms</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function ReReasonDetail({ result }: { result: ReReasonResult }) {
+  const same = result.original_tool_sequence.join("|") === result.replay_tool_sequence.join("|");
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 14 }}>
+        <span className={`pill ${result.reasoning_diverged ? "warn" : "ok"}`}>
+          reasoning {result.reasoning_diverged ? "diverged" : "identical"}
+        </span>
+        <span className={`pill ${result.policy_diverged ? "warn" : "ok"}`}>
+          policy {result.policy_diverged ? "diverged" : "identical"}
+        </span>
+        <span className={`pill ${result.original_actions_unchanged ? "ok" : "danger"}`}>
+          original actions {result.original_actions_unchanged ? "unchanged" : "MUTATED"}
+        </span>
+      </div>
+
+      {result.policy_divergence_cause ? (
+        <div className="banner warn">
+          <strong>Policy reached a different decision.</strong> {result.policy_divergence_cause}
+          {" "}A state divergence is the policy engine working — the world moved between
+          the original run and this one.
+        </div>
+      ) : null}
+
+      <h3>Tool sequence — original against replay</h3>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Original</th><th>Replay</th><th /></tr></thead>
+          <tbody>
+            {Array.from(
+              { length: Math.max(result.original_tool_sequence.length,
+                                 result.replay_tool_sequence.length) },
+              (_, i) => {
+                const a = result.original_tool_sequence[i];
+                const b = result.replay_tool_sequence[i];
+                return (
+                  <tr key={i}>
+                    <td className="mono">{i + 1}</td>
+                    <td className="mono">{a ?? "—"}</td>
+                    <td className="mono">{b ?? "—"}</td>
+                    <td>{a === b ? <span className="muted">match</span>
+                                 : <span className="pill warn">differs</span>}</td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </div>
+      {same ? (
+        <p className="sub" style={{ marginTop: 10 }}>
+          The same tools in the same order, from the same frozen evidence. That is what
+          replay consistency means here — not identical prose.
+        </p>
+      ) : null}
+
+      {Object.keys(result.diff).length ? (
+        <details><summary>diff</summary><pre>{JSON.stringify(result.diff, null, 2)}</pre></details>
+      ) : null}
     </>
   );
 }

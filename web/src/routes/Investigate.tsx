@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Finding, Task } from "../api/types";
 import { Busy, CopyId, ErrorBanner, SectionHead, StatStrip } from "../components/Bits";
+import { ChangeChart, RankChart, type ChangePoint, type RankPoint } from "../components/Charts";
 
 const EXAMPLES = [
   "Why did revenue drop this week?",
@@ -148,6 +149,32 @@ function groupMeasured(findings: Finding[]) {
   return [...rows.values()].map((r) => ({ ...r, refs: [...new Set(r.refs)] }));
 }
 
+/** Findings named `<method>_success_change_pp` are a polarity series: which
+ *  payment methods improved and which fell. Nothing else on the page shows that
+ *  at a glance. */
+function methodChange(findings: Finding[]): ChangePoint[] {
+  const seen = new Map<string, number>();
+  for (const f of findings) {
+    const m = /^(.+)_success_change_pp$/.exec(f.metric ?? "");
+    if (m && typeof f.value === "number" && !seen.has(m[1])) seen.set(m[1], f.value);
+  }
+  return [...seen.entries()]
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => a.value - b.value);
+}
+
+/** `upi_worst_hours` arrives as formatted strings — "20:00 (75.0% failed)".
+ *  Parsed defensively: anything that does not match is dropped rather than
+ *  guessed at, and an empty result simply renders no chart. */
+function worstHours(findings: Finding[]): RankPoint[] {
+  const f = findings.find((x) => x.metric?.endsWith("worst_hours"));
+  if (!Array.isArray(f?.value)) return [];
+  return (f.value as unknown[]).flatMap((v) => {
+    const m = /^(\d{1,2}:\d{2})\s*\(([\d.]+)%\s*failed\)$/.exec(String(v));
+    return m ? [{ label: m[1], value: Number(m[2]) }] : [];
+  });
+}
+
 function Result({ task }: { task: Task }) {
   const findings = task.findings ?? [];
   const measured = groupMeasured(findings);
@@ -161,6 +188,8 @@ function Result({ task }: { task: Task }) {
   const answer = task.final_answer ?? "";
   const conclusion = findings.find((f) => !f.metric && f.claim.trim() === answer.trim());
   const narrative = findings.filter((f) => !f.metric && f !== conclusion);
+  const change = methodChange(findings);
+  const hours = worstHours(findings);
 
   return (
     <div className="card">
@@ -184,6 +213,20 @@ function Result({ task }: { task: Task }) {
               {conclusion.kind.toLowerCase()} · grounded in {conclusion.evidence_refs.join(", ")}
             </p>
           ) : null}
+        </>
+      ) : null}
+
+      {change.length ? (
+        <>
+          <h3>Where the change landed</h3>
+          <ChangeChart points={change} />
+        </>
+      ) : null}
+
+      {hours.length ? (
+        <>
+          <h3>When the failures cluster</h3>
+          <RankChart points={hours} caption="Share of attempts that failed, by hour" />
         </>
       ) : null}
 

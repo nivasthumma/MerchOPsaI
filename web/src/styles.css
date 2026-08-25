@@ -438,3 +438,91 @@ kbd {
 }
 
 hr.divider { height: 1px; background: var(--border); margin: 20px 0; border: 0; }
+
+/* ======================================================================
+   Chart roles. Values are the validated defaults: a blue↔red diverging
+   pair with a neutral midpoint, checked with the palette validator for
+   both surfaces — lightness band, chroma floor, CVD separation
+   (ΔE 26.1 protan on light, 20.2 on dark), normal-vision floor and 3:1
+   contrast. Do not substitute by eye; re-run the validator.
+   ====================================================================== */
+.viz {
+  --viz-pos: #2a78d6;      /* improvement */
+  --viz-neg: #c0392b;      /* decline */
+  --viz-mid: #f0efec;      /* neutral midpoint / zero axis */
+  --viz-single: #2a78d6;   /* single-series magnitude */
+  --viz-grid: var(--border);
+  --viz-ink: var(--text);
+  --viz-ink-2: var(--text-dim);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .viz {
+    --viz-pos: #3987e5;
+    --viz-neg: #e06c60;
+    --viz-mid: #383835;
+    --viz-single: #3987e5;
+  }
+}
+:root[data-theme="dark"] .viz {
+  --viz-pos: #3987e5;
+  --viz-neg: #e06c60;
+  --viz-mid: #383835;
+  --viz-single: #3987e5;
+}
+
+.viz { position: relative; margin: 6px 0 4px; }
+.viz svg { display: block; width: 100%; height: auto; overflow: visible; }
+.viz .bar { transition: opacity var(--t); cursor: default; }
+.viz .bar:hover { opacity: 0.82; }
+.viz .axis { stroke: var(--viz-grid); stroke-width: 1; }
+.viz .zero { stroke: var(--border-strong); stroke-width: 1.5; }
+.viz text { font-family: var(--sans); fill: var(--viz-ink); }
+.viz text.label { fill: var(--viz-ink-2); font-size: 11.5px; }
+.viz text.value { font-size: 11.5px; font-weight: 620; font-variant-numeric: tabular-nums; }
+
+.viz-tip {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm); box-shadow: var(--shadow-lg);
+  padding: 7px 10px; font-size: 12.5px; white-space: nowrap;
+  transform: translate(-50%, -115%);
+}
+.viz-tip .k { color: var(--text-dim); }
+.viz-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px;
+              color: var(--text-dim); margin-top: 8px; }
+.viz-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.viz-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+/* ------------------------------------------------------------- palette (⌘K) */
+.palette-scrim {
+  position: fixed; inset: 0; z-index: 80; display: flex; justify-content: center;
+  align-items: flex-start; padding-top: 14vh;
+  background: color-mix(in srgb, #000 42%, transparent);
+  backdrop-filter: blur(2px); animation: fade var(--t) ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.palette {
+  width: min(560px, calc(100vw - 32px)); background: var(--bg-elev);
+  border: 1px solid var(--border-strong); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); overflow: hidden;
+  animation: rise-in 160ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+@keyframes rise-in { from { opacity: 0; transform: translateY(-8px) scale(0.99); }
+                     to { opacity: 1; transform: none; } }
+.palette input {
+  border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+  padding: 15px 18px; font-size: 15px; background: transparent;
+}
+.palette input:focus { box-shadow: none; }
+.palette ul { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
+.palette li {
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+  padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; cursor: pointer;
+}
+.palette li.on { background: var(--accent-soft); color: var(--accent); }
+.palette li.on .muted { color: var(--accent); opacity: 0.75; }
+.palette-foot {
+  display: flex; gap: 16px; padding: 9px 16px; font-size: 11.5px;
+  border-top: 1px solid var(--border); background: var(--surface-2);
+}
+.palette-foot kbd { margin-right: 3px; }

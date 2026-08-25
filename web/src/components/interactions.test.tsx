@@ -3,10 +3,12 @@
 // a refusal may not, and the stepper must show a halted task as halted rather
 // than as progressing.
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { CommandPalette } from "./CommandPalette";
 import { Stepper } from "./Stepper";
 import { ThemeToggle } from "./Theme";
 import { ToastHost, useToast } from "./Toast";
@@ -95,5 +97,40 @@ describe("lifecycle stepper", () => {
     render(<Stepper task={TASK} />);
     expect(screen.getByText(/Execute/)).toHaveClass("done");
     expect(screen.getByText(/Verify/)).toHaveClass("done");
+  });
+});
+
+describe("command palette", () => {
+  beforeEach(() => { localStorage.clear(); document.documentElement.removeAttribute("data-theme"); });
+
+  function open() {
+    render(<MemoryRouter><CommandPalette /></MemoryRouter>);
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+  }
+
+  it("opens on ⌘K and closes on Escape", () => {
+    open();
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("filters and runs a command with the keyboard", async () => {
+    open();
+    const input = screen.getByLabelText("Command");
+    await userEvent.type(input, "theme");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await userEvent.keyboard("{Enter}");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  });
+
+  it("offers no way to approve or execute anything", async () => {
+    // Approving a refund two keystrokes after typing three letters is exactly
+    // the frictionless action this system exists to prevent.
+    open();
+    const labels = screen.getAllByRole("option").map((o) => o.textContent?.toLowerCase() ?? "");
+    for (const forbidden of ["approve", "refund", "execute", "reject"]) {
+      expect(labels.some((l) => l.includes(forbidden))).toBe(false);
+    }
   });
 });

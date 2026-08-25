@@ -113,3 +113,35 @@ describe("navigation", () => {
     expect(JSON.parse(localStorage.getItem("merchantops.recent")!)[0].id).toBe(TASK.id);
   });
 });
+
+describe("charts", () => {
+  it("plots the method change as polarity, one bar per method", async () => {
+    renderPage();
+    await investigate();
+    const chart = await screen.findByRole("img", {
+      name: /Change in payment success rate by method/ });
+    // Four methods, sorted worst first — and upi's -18.6 is the headline.
+    expect(within(chart).getByText("upi")).toBeInTheDocument();
+    expect(within(chart).getByText("-18.6")).toBeInTheDocument();
+    expect(within(chart).getByText("+3.8")).toBeInTheDocument();
+    // The same metric arrives from two tool calls; the chart must not draw it twice.
+    expect(within(chart).getAllByText("card")).toHaveLength(1);
+  });
+
+  it("labels every bar, so colour is never the only carrier", async () => {
+    renderPage();
+    await investigate();
+    const chart = await screen.findByRole("img", { name: /Change in payment success rate/ });
+    const methods = ["upi", "netbanking", "card", "wallet"];
+    for (const m of methods) expect(within(chart).getByText(m)).toBeInTheDocument();
+  });
+
+  it("parses the worst-hours strings rather than printing them raw", async () => {
+    renderPage();
+    await investigate();
+    const chart = await screen.findByRole("img", { name: /Ranked values|failed/ });
+    expect(within(chart).getByText("20:00")).toBeInTheDocument();
+    expect(within(chart).getByText("75%")).toBeInTheDocument();
+    expect(within(chart).queryByText(/failed\)/)).toBeNull();
+  });
+});

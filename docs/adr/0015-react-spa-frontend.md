@@ -1,0 +1,59 @@
+# ADR 0015 — A React SPA, against the contract's own scope
+
+**Status:** Accepted · 2026-08-25
+
+## Context
+
+CONTRACT §3 places the React/Next.js UI in the *designed, not built* column and §52
+lists it under what not to build in the MVP. The Streamlit app exists precisely because
+§40 asks for "only what is needed to demonstrate the system".
+
+A React SPA was nonetheless requested directly. §46 says a repository that conflicts
+with the contract records the conflict in an ADR rather than drifting silently, so this
+is that record. The requester's decision governs scope; what an ADR can do is make sure
+the deviation is visible to the next reader instead of being discovered from the file
+tree.
+
+## Decision
+
+Build a Vite + React + TypeScript SPA under `web/`, and keep the Streamlit UI.
+
+Keeping both is deliberate. The Streamlit app is the contract-conformant demonstration
+surface and is referenced by the README and the demo script; deleting it to make room
+for something the contract excludes would compound the deviation rather than contain it.
+
+### Constraints carried over from the backend
+
+The SPA inherits the project's central rule — **the frontend is never the authority**:
+
+- It renders policy outcomes; it never computes one.
+- The approve button is always enabled for a pending approval. Hiding it based on a
+  client-side permission guess would put an authorization decision in the browser. The
+  server re-checks, returns 409 with a code, and the UI displays that.
+- `UNKNOWN` is rendered as `UNKNOWN`, next to the re-verify action. A UI that rounds an
+  unsettled financial action up to "done" would undo the property the backend exists to
+  provide.
+- The bearer token is stored in `localStorage` and carries identity only; permissions
+  are read from the database per request, as before.
+
+### No CORS middleware
+
+The dev server proxies `/api` to `127.0.0.1:8000`, so every request is same-origin.
+Adding permissive CORS to this API to save a proxy rule would widen the attack surface
+of the one component whose job is to be narrow. Deployment serves `dist/` behind the
+same origin.
+
+## Consequences
+
+- **Two UIs to keep in step.** Both call the same API, so a route change breaks both;
+  neither has automated tests. This is the real cost of the deviation and it is not
+  hypothetical — it is how the next inconsistency will arrive.
+- **The SPA has no test coverage.** The Python suite does not touch it, and no frontend
+  test runner was added. It was verified by hand against a live API: unauthenticated
+  request rejected 401, investigation returning 3 tool calls and 13 findings, duplicate
+  detection stopping at the approval gate with zero actions recorded, approval executing
+  and verification reading back SUCCESS. That is a manual check, not a regression gate,
+  and it should be stated that way rather than implied to be more.
+- **Node 18 pins Vite to 5.x.** Vite 7 requires Node 20+. Recorded so an upgrade is a
+  decision rather than a surprise.
+- `node_modules/` and `dist/` are ignored; nothing in `web/` affects the Python CI jobs.

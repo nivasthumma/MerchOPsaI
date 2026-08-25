@@ -129,7 +129,15 @@ export default function TaskDetail() {
                       <VerificationPill state={a.verification_state} />
                       {a.verification_detail ? (
                         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                          {a.verification_detail}
+                          {a.verification_detail.reason}
+                          {a.verification_detail.expected || a.verification_detail.actual ? (
+                            <details>
+                              <summary>expected vs actual</summary>
+                              <pre>{JSON.stringify(
+                                { expected: a.verification_detail.expected,
+                                  actual: a.verification_detail.actual }, null, 2)}</pre>
+                            </details>
+                          ) : null}
                         </div>
                       ) : null}
                     </td>

@@ -27,6 +27,17 @@ export interface Approval {
   decided_by: string | null;
 }
 
+/** `agent_actions.verification_detail` is a JSON column (`Mapped[dict | None]`),
+ *  not a string. It carries the verdict, the sentence explaining it, and the
+ *  expected-vs-actual evidence the verdict was computed from. */
+export interface VerificationDetail {
+  state: VerificationState;
+  reason: string;
+  expected?: Record<string, unknown>;
+  actual?: Record<string, unknown>;
+  external_reference?: string | null;
+}
+
 export interface AgentAction {
   id: string;
   action_type: string;
@@ -36,7 +47,7 @@ export interface AgentAction {
   amount_minor: number | null;
   external_reference: string | null;
   verification_state: VerificationState | null;
-  verification_detail: string | null;
+  verification_detail: VerificationDetail | null;
   verify_attempts: number;
 }
 

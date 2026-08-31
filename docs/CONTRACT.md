@@ -1,3 +1,16 @@
+> ## ⚠️ SUPERSEDED
+>
+> This document is **no longer the governing specification**. It has been superseded by
+> [`MerchantOps.md`](MerchantOps.md) — see
+> [ADR-0016](adr/0016-merchantops-spec-supersedes-contract.md), which carries the
+> §-number crosswalk.
+>
+> It is kept, unedited, because it is the recorded justification for ADRs 0001–0015 and
+> for the `CONTRACT §N` citations still present throughout the source. Deleting it would
+> orphan both. Read it as history, not as instruction.
+
+------------------------------------------------------------------------
+
 # MerchantOps Agent --- Claude Code Master Implementation Contract
 
 **Version:** 1.0\

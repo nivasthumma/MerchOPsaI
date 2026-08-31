@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0–5 delivered
+**Status:** in progress — phases 0–6 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -223,7 +223,7 @@ tool existed. And extending the deterministic planner to reach the new tools bro
 recovery dispatcher, because a request naming an incident id was pulled into a read. A
 request that asks for an action is never a lookup, whatever entities it mentions.
 
-## Phase 6 — Agent output schema · M · ~2d
+## Phase 6 — Agent output schema · M · ~2d — **DONE**
 
 **Closes §37, completes §20 and §36.**
 
@@ -242,6 +242,17 @@ Keep both, deliberately:
 
 This is what makes §36's evidence model and §51's incident detail page real rather than
 rendered from post-hoc reconstruction.
+
+**Delivered** — see [ADR-0022](adr/0022-the-agent-output-schema.md). `app/agent/output.py`,
+`E<n>` evidence labels running across a task, prompt v2 carrying §20's context contract,
+`agent_confidence` and `model_requires_human`, 5 scenarios, 5 mutants, 22 tests.
+
+**What the plan did not say, and should have.** The model's `requires_human` needed the same
+floor rule as risk: it may raise the bar, never lower it. A mutant handing that field to the
+model survived the first run, because the test covering it asserted the task halted and never
+asserted what the API told a client. A second mutant, resetting evidence numbering per tool
+call, also survived — the test drove the renderer directly, so breaking its caller was
+invisible. Both gaps were tests aimed at the wrong layer rather than tests that were missing.
 
 ## Phase 7 — Revenue measurement + dashboard · M · ~3d
 
@@ -285,7 +296,8 @@ rendered from post-hoc reconstruction.
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0–5 complete. Phase 6, model-emitted structured output, is next.)
+(0–6 complete. Phase 7, the revenue-recovery ledger and dashboard, is next — and it is the
+first phase whose output a merchant sees directly.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

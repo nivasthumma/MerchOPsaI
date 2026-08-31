@@ -5,7 +5,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    BigInteger, func, Boolean, DateTime, Enum, ForeignKey, Index, Integer,
+    BigInteger, func, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer,
     JSON, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -87,6 +87,11 @@ class FailureCode(str, enum.Enum):
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
     PARTIAL_EXECUTION = "PARTIAL_EXECUTION"
     MODEL_INVALID_OUTPUT = "MODEL_INVALID_OUTPUT"
+    # MerchantOps §56. Distinct from MODEL_INVALID_OUTPUT: the output parsed and
+    # matched the schema, and then cited evidence that does not exist. A
+    # well-formed claim about nothing is a different defect from malformed JSON,
+    # and collapsing the two would hide the more interesting one.
+    AGENT_GROUNDING_FAILURE = "AGENT_GROUNDING_FAILURE"
     EVIDENCE_INSUFFICIENT = "EVIDENCE_INSUFFICIENT"
     BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
     REPLAY_DIVERGED = "REPLAY_DIVERGED"
@@ -554,6 +559,12 @@ class AgentTask(Base):
         ForeignKey("incidents.id"), nullable=True, index=True)
     is_replay: Mapped[bool] = mapped_column(Boolean, default=False)
     replayed_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # MerchantOps §37/§38. Agent state, stored beside the financial record and
+    # never mixed into it. Neither gates anything: confidence is consulted by
+    # nothing, and model_requires_human may only ADD to what policy already
+    # decided (app/agent/output.py).
+    agent_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model_requires_human: Mapped[bool] = mapped_column(Boolean, default=False)
     tool_call_count: Mapped[int] = mapped_column(Integer, default=0)
     llm_turn_count: Mapped[int] = mapped_column(Integer, default=0)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)

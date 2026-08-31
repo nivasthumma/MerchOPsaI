@@ -123,6 +123,40 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "output: accept a claim citing evidence that does not exist",
+        "app/agent/output.py",
+        "        if not any(e in known_evidence_ids for e in f.evidence_ids):",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "output: show a malformed agent output instead of failing the task",
+        "app/agent/runtime.py",
+        "            task.status = TaskStatus.FAILED\n            task.failure_code = problem.code",
+        "            pass  # MUTANT",
+    ),
+    (
+        "output: let the model's requires_human=false clear the approval flag",
+        "app/api/main.py",
+        '        "requires_human": bool(approvals) or task.model_requires_human,',
+        '        "requires_human": task.model_requires_human,  # MUTANT',
+    ),
+    (
+        "output: join the machine block onto the human answer",
+        "app/agent/runtime.py",
+        "        prose, output, problem = self._structured_output(task, answer)\n"
+        "        answer = prose\n        task.final_answer = prose",
+        "        prose, output, problem = self._structured_output(task, answer)\n"
+        "        task.final_answer = answer  # MUTANT",
+    ),
+    (
+        "output: restart evidence numbering on every tool call",
+        "app/agent/runtime.py",
+        "        rendered, self._evidence_seq = _render_tool_result(\n"
+        "            structured, list(structured.get(\"evidence\", [])), self._evidence_seq)",
+        "        rendered, _ = _render_tool_result(\n"
+        "            structured, list(structured.get(\"evidence\", [])), 0)  # MUTANT",
+    ),
+    (
         "tools: let a customer-contacting action run on the read path",
         "app/tools/registry.py",
         '    "reconcile_transaction": reconcile_transaction,\n}',

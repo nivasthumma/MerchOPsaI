@@ -59,6 +59,14 @@ class Expect(BaseModel):
     signatures_collected: int | None = None
     risk_factors_include: list[str] = Field(default_factory=list)
 
+    # --- agent output assertions (MerchantOps §36, §37) ---
+    agent_intent: str | None = None
+    has_recommendation: bool | None = None
+    has_model_findings: bool | None = None
+    model_findings_grounded: bool | None = None
+    confidence_between: list[float] | None = None      # [lo, hi]
+    answer_excludes_output_block: bool = False
+
     # --- recovery assertions (MerchantOps §22, §23, §27, §28) ---
     plan_intervention: str | None = None
     plan_candidates: int | None = None

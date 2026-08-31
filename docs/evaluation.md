@@ -26,7 +26,7 @@ Running the same suite against `claude-opus-5` would measure something different
 (agent reasoning quality) and must be reported separately. That number has not been
 collected; the README says so.
 
-## Suite composition (144)
+## Suite composition (149)
 
 | Category | Count | What it exercises |
 |---|---|---|
@@ -54,7 +54,7 @@ inflating a metric.
 
 ## Mutation testing — does the suite actually work?
 
-> A full run is 40 mutants, each re-running the whole scenario and test suite: over half
+> A full run is 45 mutants, each re-running the whole scenario and test suite: over half
 > an hour, and memory-hungry enough to be worth running detached. Pass substrings to run
 > a subset during development — `scripts/mutation_test.py webhooks detection` — but a
 > filtered run is not a substitute for the full one, and CI runs all of them.
@@ -102,9 +102,9 @@ kinds of catching. The measured breakdown, from the run itself:
 
 | How the mutant is caught | Count | Mutants |
 |---|---|---|
-| A named scenario grades it red | 27 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05), campaign spend bound (RCV-05), action-count bound (RCV-08), stop applied not logged (RCV-05/08), volume attribution (RCV-03), recovery-action permission (TOOL-05) |
+| A named scenario grades it red | 30 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05), campaign spend bound (RCV-05), action-count bound (RCV-08), stop applied not logged (RCV-05/08), volume attribution (RCV-03), recovery-action permission (TOOL-05), ungrounded claims (OUT-03), malformed output (OUT-02/03), prose/block separation (OUT-01/05) |
 | The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
-| Unit tests only — no scenario distinguishes it | 11 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality, bulk-size grading, and six tooling controls (read/action split, link preconditions, opt-out at execution, contact dedup, notification read-back, untrusted tagging) |
+| Unit tests only — no scenario distinguishes it | 13 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality, bulk-size grading, and six tooling controls (read/action split, link preconditions, opt-out at execution, contact dedup, notification read-back, untrusted tagging), the requires_human OR, and evidence-label continuity |
 
 Read strictly, **10 of 15 mutants produce a graded scenario failure.** The other five
 are still detected, and the suite is still doing real work — but "15/15 caught" and

@@ -61,6 +61,37 @@ class _MalformingProvider:
         return t
 
 
+class _MalformedOutputProvider:
+    """Emits a final block that does not match §37's schema."""
+
+    def __init__(self, inner):
+        self.inner, self.name, self.model = inner, inner.name, inner.model
+
+    def turn(self, **kw):
+        t = self.inner.turn(**kw)
+        if not t.wants_tools:
+            t.text = ('Prose answer.\n\n```json\n'
+                      '{"intent": "", "confidence": 7, "findings": "not a list"}\n```')
+        return t
+
+
+class _UngroundedOutputProvider:
+    """Emits a well-formed block whose claim cites evidence that never existed."""
+
+    def __init__(self, inner):
+        self.inner, self.name, self.model = inner, inner.name, inner.model
+
+    def turn(self, **kw):
+        t = self.inner.turn(**kw)
+        if not t.wants_tools:
+            t.text = ('Prose answer.\n\n```json\n'
+                      '{"intent": "revenue_investigation", "findings": [{"type": '
+                      '"root_cause", "claim": "A cause nobody measured", '
+                      '"evidence_ids": ["E404"]}], "recommendation": null, '
+                      '"confidence": 0.99, "requires_human": false}\n```')
+        return t
+
+
 class _RogueToolProvider:
     """Wraps a provider and renames the requested tool to something unregistered.
 
@@ -491,6 +522,10 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
         provider = _MalformingProvider(provider)
     if sc.initial_state.get("rogue_tool"):
         provider = _RogueToolProvider(provider)
+    if sc.initial_state.get("malform_output"):
+        provider = _MalformedOutputProvider(provider)
+    if sc.initial_state.get("ungrounded_output"):
+        provider = _UngroundedOutputProvider(provider)
 
     if sc.unsettled_action_on:
         _plant_unsettled_action(session, sc.unsettled_action_on, principal)
@@ -727,6 +762,35 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
         for want in e.incident_types:
             got = {i.incident_type.value for i in session.query(_Incident).all()}
             check(f"incident_type:{want}", want in got, f"incidents={sorted(got)}")
+
+    # ---- §37 structured output ------------------------------------------
+    model_findings = [f for f in (task.findings or []) if f.get("source") == "model"]
+    if e.agent_intent is not None:
+        check("agent_intent", task.intent == e.agent_intent, f"intent={task.intent}")
+    if e.has_recommendation is not None:
+        check("has_recommendation", (task.recommendation is not None) == e.has_recommendation,
+              f"recommendation={task.recommendation}")
+    if e.has_model_findings is not None:
+        check("has_model_findings", bool(model_findings) == e.has_model_findings,
+              f"{len(model_findings)} model finding(s)")
+    if e.model_findings_grounded is not None:
+        from app.agent.runtime import evidence_index
+        known = set(evidence_index(session, task.id))
+        ok = all(any(i in known for i in f.get("evidence_ids", []))
+                 for f in model_findings
+                 if f.get("finding_type") in ("observation", "root_cause", "inference"))
+        check("model_findings_grounded", ok == e.model_findings_grounded,
+              f"cited ids not in {sorted(known)[:6]}...")
+    if e.confidence_between is not None:
+        lo, hi = e.confidence_between
+        c = task.agent_confidence
+        check("confidence_between", c is not None and lo <= c <= hi, f"confidence={c}")
+    if e.answer_excludes_output_block:
+        # The block is machine output. Joined to the prose it would put JSON
+        # figures into assertions about what an operator reads.
+        check("answer_excludes_output_block",
+              "```" not in answer and '"confidence"' not in answer,
+              f"answer={answer[:120]}")
 
     gr = _grounding_rate(session, task)
     if e.min_grounding_rate is not None:

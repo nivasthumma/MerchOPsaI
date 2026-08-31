@@ -62,6 +62,15 @@ def _task_view(s, task: AgentTask) -> dict:
         "request": task.request, "status": task.status.value,
         "final_answer": task.final_answer, "failure_code": task.failure_code,
         "findings": task.findings, "tool_calls": task.tool_call_count,
+        # MerchantOps §37. `confidence` is displayed and consulted by nothing.
+        "intent": task.intent,
+        "recommendation": task.recommendation,
+        "agent_confidence": task.agent_confidence,
+        # The model may RAISE this and never lower it, so it is an OR and not a
+        # field the model owns. A pending approval means a human is required
+        # whatever the model said about it.
+        "requires_human": bool(approvals) or task.model_requires_human,
+        "model_requires_human": task.model_requires_human,
         "llm_turns": task.llm_turn_count, "duration_ms": task.duration_ms,
         "agent_version": task.agent_version, "model_version": task.model_version,
         "prompt_version": task.prompt_version,

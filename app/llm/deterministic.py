@@ -23,6 +23,11 @@ import re
 
 from app.llm.base import LLMProvider, LLMTurn, ToolRequest
 
+def _first_sentence(text: str, limit: int = 200) -> str:
+    m = re.search(r"(?<=[.!?])\s", text)
+    return (text[:m.start()] if m else text)[:limit].strip()
+
+
 DUPLICATE_RE = re.compile(r"\bduplicate|duplicat|double[- ]charg|charged twice\b", re.I)
 REFUND_RE = re.compile(r"\brefund|reimburse|money back\b", re.I)
 REVENUE_RE = re.compile(r"\brevenue|sales|turnover|income|drop|decline|fell|down\b", re.I)
@@ -48,6 +53,101 @@ class DeterministicProvider(LLMProvider):
     model = "deterministic-planner-v1"
 
     def turn(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn:
+        """Plan the next step, and on the last one attach §37's output block."""
+        turn = self._plan(system=system, messages=messages, tools=tools)
+        if turn.wants_tools or not turn.text:
+            return turn
+        turn.text = turn.text + "\n\n" + self._output_block(
+            self._first_user_text(messages), messages, turn.text)
+        return turn
+
+    # ------------------------------------------------------------------
+    def _output_block(self, request: str, messages: list[dict], prose: str) -> str:
+        """MerchantOps §37, built from what the tools actually returned.
+
+        Every field is derived. `confidence` in particular is computed from the
+        evidence actually gathered rather than asserted -- a planner that hard-
+        coded 0.9 would be teaching the evaluation suite to accept a number
+        nothing produced, which is the same objection §18 raises to a hard-coded
+        duplicate confidence.
+        """
+        import json as _json
+
+        results = self._tool_results(messages)
+        # Evidence ids run across successful calls in order, matching exactly how
+        # AgentRuntime._render_tool_result numbered them for the model.
+        ids: list[str] = []
+        n = 0
+        for r in results:
+            if not r.get("success"):
+                continue
+            for _ in r.get("evidence", []):
+                n += 1
+                ids.append(f"E{n}")
+
+        wants_dupe = bool(DUPLICATE_RE.search(request))
+        wants_refund = bool(REFUND_RE.search(request))
+        wants_link = bool(PAYMENT_LINK_RE.search(request))
+        called = self._tools_called(messages)
+        proposed_action = bool(called & {"request_refund", "generate_payment_link",
+                                         "send_customer_notification"})
+
+        if wants_dupe or wants_refund:
+            intent = "duplicate_payment"
+        elif wants_link:
+            intent = "payment_recovery"
+        elif REVENUE_RE.search(request) or FAILURE_RE.search(request):
+            intent = "revenue_investigation"
+        else:
+            intent = "record_lookup"
+
+        findings = []
+        if ids:
+            findings.append({
+                "type": "root_cause" if intent in ("revenue_investigation",
+                                                   "duplicate_payment") else "observation",
+                # First SENTENCE, not first period: "-6.29%" is one number and
+                # splitting on "." alone truncated the claim mid-figure.
+                "claim": _first_sentence(prose) or "See the answer above.",
+                # Cite what was read, not everything: a finding that cites every
+                # id is a finding that cites nothing in particular.
+                "evidence_ids": ids[:5],
+            })
+        else:
+            findings.append({
+                "type": "uncertainty",
+                "claim": "No evidence was gathered, so no claim is supported.",
+                "evidence_ids": [],
+            })
+
+        recommendation = None
+        if proposed_action:
+            recommendation = {
+                "type": "refund_duplicate" if "request_refund" in called
+                        else "payment_link_recovery",
+                "detail": "Proposed for human approval; policy decides whether it proceeds.",
+            }
+        elif intent == "revenue_investigation" and ids:
+            recommendation = {"type": "investigate_further",
+                              "detail": "The degraded method warrants a recovery plan."}
+
+        # Computed, and deliberately capped below certainty: a deterministic
+        # planner reading five numbers has not earned 1.0.
+        confidence = round(min(0.9, 0.4 + 0.1 * len(ids)), 2) if ids else 0.1
+
+        return "```json\n" + _json.dumps({
+            "intent": intent,
+            "findings": findings,
+            "recommendation": recommendation,
+            "confidence": confidence,
+            # A proposed financial action always wants a person. Policy has
+            # already said so; agreeing costs nothing and disagreeing would be
+            # ignored anyway.
+            "requires_human": proposed_action,
+        }, indent=2) + "\n```"
+
+    # ------------------------------------------------------------------
+    def _plan(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn:
         available = {t["name"] for t in tools}
         request = self._first_user_text(messages)
         called = self._tools_called(messages)

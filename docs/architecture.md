@@ -55,6 +55,40 @@ An incident supplies **context**, never authority. Both entry points run the sam
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
 
+## The agent's output
+
+Added in ADR-0022. §37's typed object, validated by the backend:
+
+```json
+{"intent": "...", "findings": [...], "recommendation": {...},
+ "confidence": 0.0, "requires_human": false}
+```
+
+One rule governs it, and it is the risk floor rule again on a different field:
+
+```
+requires_human = policy_requires_human OR model_requires_human
+confidence     = recorded, displayed, consulted by nothing
+```
+
+The model may **raise** a bar and never lower one. Its output travels through prompts
+carrying merchant free text, so a `requires_human: false` that could relax a control would
+mean an injection need only sound sure of itself.
+
+**Findings come from two places and stay distinguishable.** Deterministic OBSERVED findings
+are built from what the tools returned — they are what makes the grounding rate computable
+without a second model judging the first. Model findings are added alongside, tagged
+`source: "model"`, as INFERRED and RECOMMENDED. That is §20's FACT / INFERENCE /
+RECOMMENDATION split reaching the database.
+
+**Claims must cite evidence that exists.** Every tool result labels its values `E1`, `E2`,
+`E3`, numbered across the whole task. A finding of type `observation`, `root_cause` or
+`inference` citing nothing — or citing `E404` — fails the task as `AGENT_GROUNDING_FAILURE`,
+which is deliberately a different code from `MODEL_INVALID_OUTPUT`: malformed JSON is a
+formatting defect, a confident claim about nothing is the interesting one.
+
+The prose and the JSON block are kept apart. `final_answer` is what an operator reads.
+
 ## The tool registry
 
 Added in ADR-0021. §18's fifteen tools, and one rule that partitions them:

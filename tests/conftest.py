@@ -103,6 +103,13 @@ def analyst() -> Principal:
 
 
 @pytest.fixture
+def approver() -> Principal:
+    """A second person at MERCH_A who may approve — MerchantOps §26."""
+    return Principal("USR_A_APPROVER", "MERCH_A", "approver",
+                     ["read:metrics", "read:orders", "action:refund"])
+
+
+@pytest.fixture
 def owner_b() -> Principal:
     return Principal("USR_B_OWNER", "MERCH_B", "owner",
                      ["read:metrics", "read:orders", "action:refund"])

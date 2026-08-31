@@ -14,12 +14,18 @@ from datetime import datetime, timezone
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.policy.risk import RiskAssessment, assess
+from app.tools.registry import REGISTRY
 
 
 class Decision(str, enum.Enum):
     ALLOW = "ALLOW"
     DENY = "DENY"
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
+    # MerchantOps §25. A second pair of eyes, from a different person -- the
+    # "different" part is a UNIQUE constraint on approval_signatures, not a
+    # check this module performs.
+    REQUIRE_DUAL_APPROVAL = "REQUIRE_DUAL_APPROVAL"
 
 
 @dataclass
@@ -43,34 +49,44 @@ class PolicyResult:
     risk_level: str
     approval_required: bool = False
     details: dict = field(default_factory=dict)
+    risk: RiskAssessment | None = None
+
+    @property
+    def required_signatures(self) -> int:
+        """How many distinct humans must sign before this may execute."""
+        return 2 if self.decision is Decision.REQUIRE_DUAL_APPROVAL else 1
 
     def as_dict(self) -> dict:
         return {
             "decision": self.decision.value, "reason": self.reason, "rule": self.rule,
             "risk_level": self.risk_level, "approval_required": self.approval_required,
+            "required_signatures": self.required_signatures,
+            "risk": self.risk.as_dict() if self.risk else None,
             "details": self.details,
         }
 
 
-# CONTRACT §19 — risk is a property of the TOOL, declared in the registry,
-# never inferred from the model's description of what it wants to do.
-TOOL_RISK: dict[str, str] = {
-    "get_revenue_summary": "LOW",
-    "get_payment_metrics": "LOW",
-    "find_duplicate_payments": "LOW",
-    "get_order": "LOW",
-    "request_refund": "HIGH",
-    "get_refund_status": "LOW",
-}
+# MerchantOps §24 — a tool's risk and its required permissions are declared ONCE,
+# in the registry, and read from there.
+#
+# They used to be declared twice: on the ToolSpec and again in dicts here, with
+# the engine's copy silently winning. The two agreed, so nothing was broken --
+# but a tool added to the registry and forgotten here was denied as an
+# unregistered tool, and a permission list that drifted would have been a
+# security control disagreeing with its own documentation. Nine more tools are
+# due in §18; the duplication is retired before they arrive rather than after.
+#
+# The declared class is a FLOOR. app.policy.risk may raise a call above it.
 
-TOOL_PERMISSIONS: dict[str, list[str]] = {
-    "get_revenue_summary": ["read:metrics"],
-    "get_payment_metrics": ["read:metrics"],
-    "find_duplicate_payments": ["read:orders"],
-    "get_order": ["read:orders"],
-    "request_refund": ["action:refund"],
-    "get_refund_status": ["read:orders"],
-}
+
+def declared_risk(tool_name: str) -> str | None:
+    spec = REGISTRY.get(tool_name)
+    return spec.risk_class.value if spec else None
+
+
+def required_permissions(tool_name: str) -> list[str]:
+    spec = REGISTRY.get(tool_name)
+    return list(spec.required_permissions) if spec else []
 
 
 def evaluate(session, ctx: PolicyContext) -> PolicyResult:
@@ -78,15 +94,19 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
     s = get_settings()
 
     # ---- 1. Tool must be registered -------------------------------------
-    if ctx.tool_name not in TOOL_RISK:
+    spec = REGISTRY.get(ctx.tool_name)
+    if spec is None:
         return PolicyResult(Decision.DENY,
                             f"Tool '{ctx.tool_name}' is not in the registry.",
                             "unregistered_tool", ctx.risk_level)
 
-    risk = TOOL_RISK[ctx.tool_name]
+    # The declared class only. Computed risk is graded after the cheap gates:
+    # it reads the database, and a caller with no permission should be refused
+    # before we spend a query grading how dangerous their refused call was.
+    risk = spec.risk_class.value
 
     # ---- 2. Permission ---------------------------------------------------
-    required = TOOL_PERMISSIONS.get(ctx.tool_name, [])
+    required = required_permissions(ctx.tool_name)
     missing = [p for p in required if p not in ctx.permissions]
     if missing:
         return PolicyResult(
@@ -185,11 +205,31 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
                 "duplicate_action", risk, details={"existing_action_id": existing["id"]},
             )
 
-    # ---- 7. HIGH risk always requires human approval (CONTRACT §19) ------
+    # ---- 7. Grade the call, then gate on the graded risk -----------------
+    # MerchantOps §24. Everything above this point either denied the call or
+    # established that it is permitted in principle; what remains is how
+    # closely a human has to look. That is the one question the declared class
+    # alone cannot answer, because it does not know the amount.
+    assessment = assess(session, tool_name=ctx.tool_name, declared=risk,
+                        merchant_id=ctx.merchant_id, arguments=ctx.arguments,
+                        spec=spec)
+
+    if assessment.level == "CRITICAL":
+        return PolicyResult(
+            Decision.REQUIRE_DUAL_APPROVAL,
+            "Critical-risk financial action requires two separate approvers. "
+            + "; ".join(f.reason for f in assessment.factors if f.level == "CRITICAL"),
+            "critical_risk_requires_dual_approval", assessment.level,
+            approval_required=True, risk=assessment,
+            details={"risk": assessment.as_dict()},
+        )
+
     return PolicyResult(
         Decision.REQUIRE_APPROVAL,
         "Financial state-changing action requires human approval.",
-        "high_risk_requires_approval", risk, approval_required=True,
+        "high_risk_requires_approval", assessment.level,
+        approval_required=True, risk=assessment,
+        details={"risk": assessment.as_dict()},
     )
 
 

@@ -64,6 +64,11 @@ def _task_view(s, task: AgentTask) -> dict:
             "id": a.id, "decision": a.decision, "action_type": a.action_type,
             "action_payload": a.action_payload, "risk_level": a.risk_level,
             "expires_at": a.expires_at.isoformat(), "decided_by": a.decided_by,
+            # MerchantOps §26. The UI renders how many more people must sign;
+            # it never decides. `signed_by` is what makes "a different person"
+            # visible to the second approver before they click.
+            "required_signatures": a.required_signatures,
+            "signed_by": [s.user_id for s in a.signatures if s.decision == "APPROVED"],
         } for a in approvals],
         "actions": [{
             "id": a.id, "action_type": a.action_type, "status": a.status.value,
@@ -227,13 +232,24 @@ def get_evidence(task_id: str, principal: Principal = Depends(current_principal)
 
 @app.post("/tasks/{task_id}/approve")
 def approve(task_id: str, principal: Principal = Depends(current_principal)):
+    """Record this caller's approval, and execute once enough people have signed.
+
+    For a CRITICAL action policy demands two signatures from two different
+    people, so a single call here returns with `awaiting_signatures` set and
+    nothing external touched. Signing twice yourself is refused by a database
+    constraint, not by this handler.
+    """
     with session_scope() as s:
         _owned(s, task_id, principal)
         try:
             r = approve_and_execute(s, task_id, principal)
         except ApprovalError as e:
             raise HTTPException(409, {"error": str(e), "code": e.code})
-        return _task_view(s, r["task"])
+        view = _task_view(s, r["task"])
+        if r.get("awaiting_signatures"):
+            view["awaiting_signatures"] = r["awaiting_signatures"]
+            view["signed_by"] = r["signatures"]
+        return view
 
 
 @app.post("/tasks/{task_id}/reject")

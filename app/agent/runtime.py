@@ -256,7 +256,7 @@ class AgentRuntime:
                           "data": {"reason": pol.reason, "rule": pol.rule}}
             return tc, {"rendered": json.dumps(structured), "structured": structured}, False, None
 
-        if pol.decision is Decision.REQUIRE_APPROVAL:
+        if pol.decision in (Decision.REQUIRE_APPROVAL, Decision.REQUIRE_DUAL_APPROVAL):
             approval = self._create_approval(task, req, pol)
             tc.success = False
             tc.error_code = None
@@ -264,10 +264,13 @@ class AgentRuntime:
             tc.duration_ms = int((time.monotonic() - t0) * 1000)
             self.session.add(tc)
             self.session.flush()
-            msg = (f"This action requires human approval. Approval request {approval.id} "
+            n = approval.required_signatures
+            who = "human approval" if n == 1 else f"{n} separate human approvers"
+            msg = (f"This action requires {who}. Approval request {approval.id} "
                    f"has been created and execution is paused. No external call was made.")
             structured = {"success": False, "error_code": None,
-                          "policy_decision": "REQUIRE_APPROVAL", "approval_required": True,
+                          "policy_decision": pol.decision.value, "approval_required": True,
+                          "required_signatures": n,
                           "approval_id": approval.id, "data": {"message": msg}}
             return tc, {"rendered": json.dumps(structured), "structured": structured}, True, approval
 
@@ -305,12 +308,18 @@ class AgentRuntime:
             action_payload=req.arguments,
             evidence=self._collect_evidence(task), risk_level=pol.risk_level,
             decision="PENDING",
+            # Fixed at proposal time. A later policy change must not quietly
+            # reduce what an in-flight action needs.
+            required_signatures=pol.required_signatures,
             expires_at=datetime.now(timezone.utc) + timedelta(seconds=s.approval_ttl_seconds),
         )
         self.session.add(ap)
         self.session.flush()
         record(self.session, task, "approval_requested",
                {"approval_id": ap.id, "action": req.name, "payload": req.arguments,
+                "risk_level": pol.risk_level,
+                "required_signatures": ap.required_signatures,
+                "risk": pol.risk.as_dict() if pol.risk else None,
                 "expires_at": ap.expires_at.isoformat()})
         return ap
 

@@ -123,6 +123,30 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "risk: let computed risk replace the declared floor instead of raising it",
+        "app/policy/risk.py",
+        "    final = risk_at_least(declared, computed)",
+        "    final = computed  # MUTANT",
+    ),
+    (
+        "risk: never raise above the declared class",
+        "app/policy/risk.py",
+        "    return RiskAssessment(level=final, declared=declared, computed=computed,",
+        "    return RiskAssessment(level=declared, declared=declared, computed=computed,  # MUTANT",
+    ),
+    (
+        "approval: execute before enough people have signed",
+        "app/agent/approval.py",
+        "    if len(signatures) < ap.required_signatures:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "approval: forget that policy demanded two signatures",
+        "app/agent/runtime.py",
+        "            required_signatures=pol.required_signatures,",
+        "            required_signatures=1,  # MUTANT",
+    ),
+    (
         "webhooks: accept any signature",
         "app/webhooks/razorpay.py",
         "    return hmac.compare_digest(expected, signature)",

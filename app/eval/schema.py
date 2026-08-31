@@ -52,6 +52,13 @@ class Expect(BaseModel):
     webhook_actions_reverified: int | None = None
     webhook_raises_incident: bool | None = None
 
+    # --- risk / approval assertions (MerchantOps §24, §25, §26) ---
+    risk_level: str | None = None                # graded risk of the halted action
+    risk_was_raised: bool | None = None          # above the tool's declared floor
+    required_signatures: int | None = None
+    signatures_collected: int | None = None
+    risk_factors_include: list[str] = Field(default_factory=list)
+
 
 class Scenario(BaseModel):
     id: str
@@ -65,6 +72,9 @@ class Scenario(BaseModel):
         # MerchantOps §34/§35. Delivery, deduplication, signature, and what a
         # provider event is and is not allowed to decide.
         "webhook",
+        # MerchantOps §24/§25/§26. Computed risk, the floor rule, and the
+        # second pair of eyes.
+        "risk_approval",
     ]
     critical: bool = False                       # CONTRACT §53 stop condition
     principal: str = "owner"                     # owner | analyst | owner_b
@@ -78,6 +88,12 @@ class Scenario(BaseModel):
     allowed_tools: list[str] | None = None
     approve: bool | None = None                  # simulate the human decision
     approve_as: str | None = None                # approve as a DIFFERENT principal
+    # MerchantOps §26. Principals who sign, in order, after the first approval.
+    # "owner" twice is the self-approval case and must be refused.
+    co_approvers: list[str] = Field(default_factory=list)
+    # Plant an unsettled action on this payment before the run, so the risk
+    # engine's uncertainty factor has something to find.
+    unsettled_action_on: str | None = None
     expire_approval: bool = False                # back-date the approval past its TTL
     budget: dict | None = None                   # override the execution budget
     fault: dict | None = None                    # CONTRACT §35A injection

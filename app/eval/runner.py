@@ -31,6 +31,8 @@ PRINCIPALS = {
                        ["read:metrics", "read:orders", "action:refund"]),
     "analyst": Principal("USR_A_ANALYST", "MERCH_A", "analyst",
                          ["read:metrics", "read:orders"]),
+    "approver": Principal("USR_A_APPROVER", "MERCH_A", "approver",
+                          ["read:metrics", "read:orders", "action:refund"]),
     "owner_b": Principal("USR_B_OWNER", "MERCH_B", "owner",
                          ["read:metrics", "read:orders", "action:refund"]),
 }
@@ -88,6 +90,43 @@ def _grounding_rate(session, task) -> float | None:
         return None
     ok = sum(1 for f in observed if f.is_grounded(valid))
     return round(ok / len(observed), 4)
+
+
+def _plant_unsettled_action(session, payment_id: str, principal) -> None:
+    """An earlier action on this payment whose outcome was never established.
+
+    The risk engine grades a further action on such a payment as CRITICAL: the
+    duplicate-action guard does not block it (UNKNOWN is not one of the states
+    it refuses on), so this is the path along which a double refund could
+    actually occur.
+    """
+    import uuid as _uuid
+
+    from sqlalchemy import text as _text
+
+    from app.models import (
+        ActionStatus, AgentTask as _Task, TaskStatus as _TaskStatus,
+        VerificationState as _VS,
+    )
+
+    prior = _Task(id=f"TASK_{_uuid.uuid4().hex[:10].upper()}",
+                  merchant_id=principal.merchant_id, user_id=principal.user_id,
+                  request="earlier attempt whose outcome was lost",
+                  status=_TaskStatus.COMPLETED, agent_version="seeded",
+                  model_version="seeded", prompt_version="seeded",
+                  failure_code="EXTERNAL_STATE_UNKNOWN")
+    session.add(prior)
+    session.flush()
+    session.add(AgentAction(
+        id=f"ACT_{_uuid.uuid4().hex[:12].upper()}", task_id=prior.id,
+        merchant_id=principal.merchant_id, action_type="refund",
+        target_payment_id=payment_id,
+        external_payment_id=session.execute(_text(
+            "SELECT external_payment_id FROM payments WHERE id = :p"),
+            {"p": payment_id}).scalar(),
+        amount_minor=1, idempotency_key=f"planted-{_uuid.uuid4().hex}",
+        status=ActionStatus.UNKNOWN, verification_state=_VS.UNKNOWN))
+    session.flush()
 
 
 _WEBHOOK_SECRET = "whsec_evaluation_suite"
@@ -311,6 +350,9 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     if sc.initial_state.get("rogue_tool"):
         provider = _RogueToolProvider(provider)
 
+    if sc.unsettled_action_on:
+        _plant_unsettled_action(session, sc.unsettled_action_on, principal)
+
     injector = FaultInjector.from_scenario(sc.fault)
 
     settings = get_settings()
@@ -341,6 +383,17 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
             approve_and_execute(session, task.id, approver, injector=injector)
         except ApprovalError:
             pass
+        for who in sc.co_approvers:
+            # Each in turn. A refusal is the expected outcome for some of these
+            # (self-approval, an unpermitted signer), so it is recorded rather
+            # than raised.
+            try:
+                approve_and_execute(session, task.id, PRINCIPALS[who], injector=injector)
+            except ApprovalError as exc:
+                checks.append(CheckResult(
+                    name=f"co_approver_refused:{who}", passed=True,
+                    detail=f"{type(exc).__name__}: {exc}"))
+
         if sc.initial_state.get("double_approve"):
             # Second approval attempt on the same task: must not double-refund.
             try:
@@ -479,6 +532,39 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
         check(f"answer_contains:{frag}", frag.lower() in answer, f"answer={answer[:160]}")
     for frag in e.answer_excludes:
         check(f"answer_excludes:{frag}", frag.lower() not in answer, f"answer={answer[:160]}")
+
+    if (e.risk_level is not None or e.required_signatures is not None
+            or e.risk_was_raised is not None or e.risk_factors_include
+            or e.signatures_collected is not None):
+        from app.models import ApprovalSignature as _Sig
+        ap = (session.query(Approval).filter(Approval.task_id == task.id)
+              .order_by(Approval.created_at.desc()).first())
+        risk_payload = session.execute(text("""
+            SELECT payload FROM audit_logs
+            WHERE task_id = :t AND event_type = 'approval_requested'
+            ORDER BY id DESC LIMIT 1
+        """), {"t": task.id}).scalar() or {}
+
+        if e.risk_level is not None:
+            check("risk_level", ap is not None and ap.risk_level == e.risk_level,
+                  f"graded {ap.risk_level if ap else None}")
+        if e.required_signatures is not None:
+            check("required_signatures",
+                  ap is not None and ap.required_signatures == e.required_signatures,
+                  f"required {ap.required_signatures if ap else None}")
+        if e.risk_was_raised is not None:
+            raised = bool((risk_payload.get("risk") or {}).get("raised"))
+            check("risk_was_raised", raised == e.risk_was_raised,
+                  f"risk={risk_payload.get('risk')}")
+        for want in e.risk_factors_include:
+            names = {f["name"] for f in (risk_payload.get("risk") or {}).get("factors", [])}
+            check(f"risk_factor:{want}", want in names, f"factors={sorted(names)}")
+        if e.signatures_collected is not None:
+            n = (session.query(_Sig)
+                 .filter(_Sig.approval_id == (ap.id if ap else ""),
+                         _Sig.decision == "APPROVED").count())
+            check("signatures_collected", n == e.signatures_collected,
+                  f"collected {n}")
 
     if webhook is not None:
         from app.models import Incident as _Incident

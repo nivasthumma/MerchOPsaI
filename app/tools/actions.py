@@ -55,6 +55,7 @@ SPEC_REQUEST_REFUND = ToolSpec(
     risk_class=RiskClass.HIGH,
     audit_required=True,
     idempotent=True,
+    reversible=False,
 )
 
 SPEC_REFUND_STATUS = ToolSpec(

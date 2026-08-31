@@ -26,7 +26,7 @@ Running the same suite against `claude-opus-5` would measure something different
 (agent reasoning quality) and must be reported separately. That number has not been
 collected; the README says so.
 
-## Suite composition (120)
+## Suite composition (127)
 
 | Category | Count | What it exercises |
 |---|---|---|
@@ -37,6 +37,7 @@ collected; the README says so.
 | payment_failure | 12 | Method isolation, hourly concentration, error attribution, no-action guarantee |
 | revenue_investigation | 12 | Period comparison, method ranking, grounding, no-action guarantee |
 | detection | 9 | Rule discrimination, idempotency, computed revenue-at-risk, onset accuracy, latency, incident-rooted trace, merchant scoping, lifecycle outcome |
+| risk_approval | 7 | The floor rule in both directions, the one path to CRITICAL, and a two-person control that one person cannot satisfy |
 | webhook | 5 | Signature, redelivery dedup, unsubscribed types, and the one that matters: a payload claiming success against provider state that says otherwise |
 
 59 are marked `critical: true`. A critical failure is a stop condition.
@@ -52,7 +53,7 @@ inflating a metric.
 
 ## Mutation testing — does the suite actually work?
 
-> A full run is 24 mutants, each re-running the whole scenario and test suite: over half
+> A full run is 28 mutants, each re-running the whole scenario and test suite: over half
 > an hour, and memory-hungry enough to be worth running detached. Pass substrings to run
 > a subset during development — `scripts/mutation_test.py webhooks detection` — but a
 > filtered run is not a substitute for the full one, and CI runs all of them.
@@ -100,7 +101,7 @@ kinds of catching. The measured breakdown, from the run itself:
 
 | How the mutant is caught | Count | Mutants |
 |---|---|---|
-| A named scenario grades it red | 18 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04) |
+| A named scenario grades it red | 22 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05) |
 | The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
 | Unit tests only — no scenario distinguishes it | 4 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality |
 

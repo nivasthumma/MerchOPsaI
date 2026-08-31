@@ -23,15 +23,29 @@ class Base(DeclarativeBase):
 # Enumerations (CONTRACT §19, §20, §26, §34)
 # --------------------------------------------------------------------------
 class RiskLevel(str, enum.Enum):
+    """MerchantOps §24. Ordered — `RISK_ORDER` below is what makes the risk
+    engine's floor rule expressible: computed risk may raise, never lower."""
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+# Ordinal, not alphabetical. Comparing risk by string would put CRITICAL below
+# HIGH and silently invert the one rule the risk engine exists to enforce.
+RISK_ORDER: dict[str, int] = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+
+
+def risk_at_least(a: str, b: str) -> str:
+    """The higher of two risk levels."""
+    return a if RISK_ORDER.get(a, 0) >= RISK_ORDER.get(b, 0) else b
 
 
 class PolicyDecision(str, enum.Enum):
     ALLOW = "ALLOW"
     DENY = "DENY"
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
+    REQUIRE_DUAL_APPROVAL = "REQUIRE_DUAL_APPROVAL"
 
 
 class VerificationState(str, enum.Enum):
@@ -439,6 +453,38 @@ class Approval(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # MerchantOps §25 REQUIRE_DUAL_APPROVAL. 1 for an ordinary approval, 2 when
+    # policy demanded a second pair of eyes. Stored on the record rather than
+    # re-derived at execution: the requirement is a property of the decision
+    # that was made when the action was proposed, and a later policy change must
+    # not quietly reduce what an in-flight action needs.
+    required_signatures: Mapped[int] = mapped_column(Integer, default=1)
+
+    signatures: Mapped[list["ApprovalSignature"]] = relationship(
+        back_populates="approval", order_by="ApprovalSignature.signed_at")
+
+
+class ApprovalSignature(Base):
+    """One human's decision on one approval — MerchantOps §26.
+
+    The UNIQUE constraint is the whole design. "Two approvers" enforced by an
+    if-statement is a check that can be bypassed by a retry, a race, or a later
+    refactor that forgets it. Enforced by the database, one person signing twice
+    is not a case the application has to remember to reject -- it is a write
+    that cannot succeed.
+    """
+    __tablename__ = "approval_signatures"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(ForeignKey("approvals.id"), index=True)
+    user_id: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str] = mapped_column(String(16))          # APPROVED | REJECTED
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    approval: Mapped[Approval] = relationship(back_populates="signatures")
+    __table_args__ = (
+        UniqueConstraint("approval_id", "user_id", name="uq_signature_approval_user"),
+    )
 
 
 class AuditLog(Base):

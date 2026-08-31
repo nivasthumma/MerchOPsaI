@@ -36,11 +36,11 @@ There are two entry points, and they converge immediately.
                            ▼
                     recommendation
                            ▼
-             risk classification         ← property of the TOOL, not of model output
+             risk classification         ← declared floor, raised by computed factors
                            ▼
              policy decision             ← deterministic, outside the model
                            ▼
-             human approval (HIGH risk)  ← server-side, expiring
+             human approval              ← server-side, expiring; two people if CRITICAL
                            ▼
              action via typed tool       ← idempotency reserved BEFORE the call
                            ▼
@@ -54,6 +54,44 @@ There are two entry points, and they converge immediately.
 An incident supplies **context**, never authority. Both entry points run the same runtime,
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
+
+## Risk and approval
+
+Added in ADR-0019. MerchantOps §24 makes risk a function of the call, not a constant per
+tool — but only in one direction:
+
+```
+final_risk = max(declared class, computed risk)
+```
+
+Computed risk may **raise** a call above its tool's declared class. It may never lower one.
+The declared class is fixed in the registry; the computed part reads arguments, and
+arguments come from the model. A computed score that could lower risk would give
+model-supplied input a path to weaken a control — an injected instruction that made an
+action merely *look* small would buy a softer gate.
+
+| Factor | Raises to | Notes |
+|---|---|---|
+| irreversibility | MEDIUM | declared on the tool; a refund cannot be undone |
+| financial value | HIGH | fraction of the merchant's own limit; §24 grades ₹5,000 as HIGH |
+| uncertainty | CRITICAL | a further action on a payment whose last action never settled |
+| bulk size | — | not computed: no tool takes more than one target yet (§23) |
+
+Value alone never reaches CRITICAL. §24's own example reserves CRITICAL for *bulk* — it is
+about breadth, not the size of one transaction — and a single refund at the top of its
+permitted range is the most serious ordinary action, not an extraordinary one.
+
+`CRITICAL` maps to `REQUIRE_DUAL_APPROVAL`, and dual approval is a **UNIQUE constraint**:
+
+```sql
+UNIQUE (approval_id, user_id)   -- approval_signatures
+```
+
+Two approvers enforced in application logic is a check a retry or a race can get past.
+Enforced by the database, one person signing twice is not a case to remember to reject —
+it is a write that cannot succeed. One signature records and returns with nothing external
+touched; the second signer still passes every gate; and one veto is enough, because
+requiring consensus to *stop* would make the extra approver weaker than a single one.
 
 ## Webhooks — evidence, not authority
 
@@ -562,10 +600,10 @@ EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 
 ## Future state (not built)
 
-Ordered in `docs/gap-closure-plan.md`. Nearest first: a computed risk engine with
-`CRITICAL` and dual approval (§24); the recovery planner, its budgets and stopping rules
-(§23, §27, §28); the remaining nine tools of §18; model-emitted structured output (§37);
-the revenue-recovery ledger and dashboard (§49, §50).
+Ordered in `docs/gap-closure-plan.md`. Nearest first: the recovery planner, its budgets and
+stopping rules (§23, §27, §28) — which is also what makes bulk size a real risk input; the
+remaining nine tools of §18; model-emitted structured output (§37); the revenue-recovery
+ledger and dashboard (§49, §50).
 
 Beyond that: specialised agents; Next.js frontend; Redis/Celery for durable retries;
 per-merchant policy configuration; distributed tracing; containerised deployment.

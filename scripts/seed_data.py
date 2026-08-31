@@ -102,6 +102,13 @@ def build() -> dict:
              role="owner", permissions=["read:metrics", "read:orders", "action:refund"]),
         User(id="USR_A_ANALYST", merchant_id=MERCHANT_A, email="analyst@kettle.example",
              role="analyst", permissions=["read:metrics", "read:orders"]),
+        # MerchantOps §25 REQUIRE_DUAL_APPROVAL needs two people who can each
+        # approve. With one approver per merchant, dual approval could only ever
+        # be demonstrated by the same person signing twice -- which is the exact
+        # thing the control forbids. Added to the literal user list, so it
+        # consumes no RNG and the rest of the dataset is unchanged.
+        User(id="USR_A_APPROVER", merchant_id=MERCHANT_A, email="approver@kettle.example",
+             role="approver", permissions=["read:metrics", "read:orders", "action:refund"]),
         User(id="USR_B_OWNER", merchant_id=MERCHANT_B, email="owner@northwind.example",
              role="owner", permissions=["read:metrics", "read:orders", "action:refund"]),
     ]

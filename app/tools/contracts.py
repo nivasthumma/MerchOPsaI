@@ -8,9 +8,16 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RiskClass(str, enum.Enum):
+    """The risk a tool carries by construction — MerchantOps §24.
+
+    This is a FLOOR, not a verdict. `app.policy.risk` may raise a call above the
+    declared class based on what it is actually being asked to do; it may never
+    lower one below it.
+    """
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
 
 
 class Evidence(BaseModel):
@@ -95,6 +102,12 @@ class ToolSpec(BaseModel):
     idempotent: bool = True
     audit_required: bool = False
     data_scope: str = "merchant"      # merchant | global
+
+    # MerchantOps §24 lists reversibility as a risk input. Declared here rather
+    # than inferred, because whether an effect can be undone is a property of
+    # the operation, not something to guess from its arguments. A refund moves
+    # money out; a notification cannot be unsent.
+    reversible: bool = True
 
     def to_anthropic_tool(self) -> dict:
         """Anthropic tool definition. strict=True + additionalProperties:false

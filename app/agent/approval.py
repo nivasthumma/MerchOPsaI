@@ -13,8 +13,12 @@ from sqlalchemy import text
 from app.audit.trace import record
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
+import uuid
+
+from sqlalchemy.exc import IntegrityError
+
 from app.models import (
-    AgentAction, AgentTask, Approval, TaskStatus, VerificationState,
+    AgentAction, AgentTask, Approval, ApprovalSignature, TaskStatus, VerificationState,
 )
 from app.policy.engine import (
     Decision, PolicyContext, approval_is_valid, evaluate,
@@ -34,11 +38,44 @@ def _pending_approval(session, task_id: str) -> Approval | None:
     ).order_by(Approval.created_at.desc()).first()
 
 
+def _sign(session, approval: Approval, user_id: str, decision: str) -> bool:
+    """Record one person's decision. False if they had already signed.
+
+    The UNIQUE(approval_id, user_id) constraint is the authority here, not a
+    prior SELECT. MerchantOps §26 requires the second approver to be a
+    *different* person, and a check-then-insert is a race that two clicks from
+    one user can win. Attempting the write and letting the constraint refuse it
+    is the only version that holds under concurrency.
+    """
+    sp = session.begin_nested()
+    try:
+        session.add(ApprovalSignature(
+            id=f"SIG_{uuid.uuid4().hex[:10].upper()}", approval_id=approval.id,
+            user_id=user_id, decision=decision))
+        session.flush()
+        sp.commit()
+        return True
+    except IntegrityError:
+        sp.rollback()
+        return False
+
+
+def _approved_signatures(session, approval_id: str) -> list[ApprovalSignature]:
+    return (session.query(ApprovalSignature)
+            .filter(ApprovalSignature.approval_id == approval_id,
+                    ApprovalSignature.decision == "APPROVED")
+            .order_by(ApprovalSignature.signed_at).all())
+
+
 def reject(session, task_id: str, principal, reason: str = "") -> AgentTask:
     task = session.get(AgentTask, task_id)
     ap = _pending_approval(session, task_id)
     if ap is None:
         raise ApprovalError("No pending approval for this task.", "APPROVAL_REJECTED")
+    # One veto is enough. A dual-approval action needs two people to say yes
+    # and only one to say no -- requiring consensus to *stop* would make the
+    # extra approver a weaker control than a single one.
+    _sign(session, ap, principal.user_id, "REJECTED")
     ap.decision = "REJECTED"
     ap.decided_by = principal.user_id
     ap.decided_at = datetime.now(timezone.utc)
@@ -70,10 +107,41 @@ def approve_and_execute(session, task_id: str, principal,
                {"approval_id": ap.id, "reason": "cross_merchant_approver"})
         raise ApprovalError("Approver belongs to a different merchant.", "AUTHORIZATION_DENIED")
 
+    # --- 1b. record this person's signature (MerchantOps §26) ------------
+    if not _sign(session, ap, principal.user_id, "APPROVED"):
+        record(session, task, "approval_denied",
+               {"approval_id": ap.id, "reason": "duplicate_signature",
+                "by": principal.user_id})
+        raise ApprovalError(
+            f"{principal.user_id} has already signed approval {ap.id}. "
+            f"A second signature must come from a different person.",
+            "APPROVAL_REJECTED")
+
+    signatures = _approved_signatures(session, ap.id)
+    if len(signatures) < ap.required_signatures:
+        # Not yet executable. The task stays where it is, and nothing external
+        # has been touched.
+        remaining = ap.required_signatures - len(signatures)
+        record(session, task, "approval_signed", {
+            "approval_id": ap.id, "by": principal.user_id,
+            "signatures": len(signatures), "required": ap.required_signatures})
+        task.final_answer = (
+            f"Approval {ap.id} signed by {principal.user_id}. "
+            f"{remaining} further approval(s) required from a different person "
+            f"before this action can execute. No external call was made.")
+        session.flush()
+        return {"task": task, "action": None, "result": None, "approval": ap,
+                "adapter_mode": None,
+                "awaiting_signatures": remaining,
+                "signatures": [s.user_id for s in signatures]}
+
     ap.decision = "APPROVED"
     ap.decided_by = principal.user_id
     ap.decided_at = datetime.now(timezone.utc)
     session.flush()
+    record(session, task, "approval_granted", {
+        "approval_id": ap.id, "signatures": [s.user_id for s in signatures],
+        "required": ap.required_signatures})
 
     # --- 2. approval still valid (expiry) --------------------------------
     ok, why = approval_is_valid(ap)

@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0, 1 and 2 delivered
+**Status:** in progress — phases 0–3 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -126,7 +126,7 @@ routes, `RECONCILIATION_MISMATCH` incidents, 5 scenarios, 4 mutants, 15 tests. T
 holds MerchantOps §11's field list; it carries provider-delivered events only, and
 detection still reads `payments` rather than the event log.
 
-## Phase 3 — Risk engine + policy expansion · M · ~2d
+## Phase 3 — Risk engine + policy expansion · M · ~2d — **DONE**
 
 **Closes §24, §25. Ordered before recovery so recovery actions have a risk model.**
 
@@ -150,6 +150,17 @@ uncertainty.
 
 Mutants: force computed risk to `LOW`; make the floor rule permit a downgrade. Both must
 be caught.
+
+**Delivered** — see [ADR-0019](adr/0019-computed-risk-and-dual-approval.md).
+`app/policy/risk.py`, `approval_signatures` with `UNIQUE(approval_id, user_id)`, the
+registry as sole declaration of risk and permissions, 7 scenarios, 4 mutants, 35 tests.
+
+**One correction to this plan.** It implied computed risk should be able to reach CRITICAL
+on value. §24's worked example grades a ₹5,000 refund — merchant A's entire limit — as
+HIGH and reserves CRITICAL for *bulk*. Letting value reach CRITICAL made the seeded demo
+refund require two approvers and broke nineteen tests; the tests were right. Value now
+caps at HIGH, and the one path to CRITICAL is a further action on a payment whose previous
+action never settled. Bulk arrives with phase 4, which is what creates bulk actions.
 
 ## Phase 4 — Recovery planner, budget, stopping rules · L · ~4d
 
@@ -250,8 +261,9 @@ rendered from post-hoc reconstruction.
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0, 1 and 2 complete. Phase 3, the computed risk engine, is next — and still carries the
-registry/policy dual-registration fix, which phase 5 walks straight into otherwise.)
+(0–3 complete, including the registry/policy dual-registration fix. Phase 4, the recovery
+planner, is next — and it is what turns bulk size from a deferred risk factor into a real
+one.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

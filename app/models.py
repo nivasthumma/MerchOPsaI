@@ -78,6 +78,44 @@ class FailureCode(str, enum.Enum):
     REPLAY_DIVERGED = "REPLAY_DIVERGED"
 
 
+class IncidentType(str, enum.Enum):
+    """MerchantOps §12 — what the detection engine found."""
+    PAYMENT_DEGRADATION = "PAYMENT_DEGRADATION"
+    DUPLICATE_PAYMENT = "DUPLICATE_PAYMENT"
+
+
+class IncidentSeverity(str, enum.Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class IncidentStatus(str, enum.Enum):
+    """MerchantOps §13 canonical lifecycle, plus the terminal/exception set.
+
+    The order of the canonical states is meaningful: `app.incidents.lifecycle`
+    derives the legal forward transitions from it. Terminal states are listed
+    separately because they are reachable from anywhere, not from a predecessor.
+    """
+    DETECTED = "DETECTED"
+    TRIAGED = "TRIAGED"
+    INVESTIGATING = "INVESTIGATING"
+    ROOT_CAUSE_IDENTIFIED = "ROOT_CAUSE_IDENTIFIED"
+    RECOVERY_PLANNED = "RECOVERY_PLANNED"
+    POLICY_EVALUATING = "POLICY_EVALUATING"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    RESOLVED = "RESOLVED"
+    # exception / terminal (MerchantOps §13)
+    FAILED = "FAILED"
+    UNKNOWN = "UNKNOWN"
+    ESCALATED = "ESCALATED"
+    CANCELLED = "CANCELLED"
+    CLOSED = "CLOSED"
+
+
 # --------------------------------------------------------------------------
 # Business entities
 # --------------------------------------------------------------------------
@@ -169,6 +207,77 @@ class Refund(Base):
 
 
 # --------------------------------------------------------------------------
+# Incidents (MerchantOps §12, §13)
+# --------------------------------------------------------------------------
+class Incident(Base):
+    """A detected, significant problem. MerchantOps §13.
+
+    Incidents are created by `app.detection`, never by the model. The model
+    investigates an incident that already exists; it cannot declare one, close
+    one, or move one through its lifecycle. Every transition runs through
+    `app.incidents.lifecycle`, which is deterministic control-plane logic.
+    """
+    __tablename__ = "incidents"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+
+    incident_type: Mapped[IncidentType] = mapped_column(Enum(IncidentType, native_enum=False))
+    severity: Mapped[IncidentSeverity] = mapped_column(Enum(IncidentSeverity, native_enum=False))
+    status: Mapped[IncidentStatus] = mapped_column(
+        Enum(IncidentStatus, native_enum=False), default=IncidentStatus.DETECTED, index=True)
+
+    title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text)
+
+    # Detection is idempotent through this key, exactly as execution is
+    # idempotent through agent_actions.idempotency_key. Re-running the sweep
+    # over the same window must not manufacture a second incident for one
+    # anomaly -- an operations console that grows a new HIGH incident on every
+    # detection pass is worse than no console.
+    detection_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+
+    # MerchantOps §22: the number is owned by the calculation engine. It is
+    # written here by deterministic code and is never model output.
+    revenue_at_risk_minor: Mapped[int] = mapped_column(Integer, default=0)
+
+    # The metrics that tripped the rule: baseline, observed, threshold, window.
+    # Kept so an operator can see *why* this was called an anomaly.
+    signals: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    detection_rule: Mapped[str] = mapped_column(String(64))
+    detection_version: Mapped[str] = mapped_column(String(32))
+    correlation_id: Mapped[str] = mapped_column(String(64), index=True)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    evidence: Mapped[list["IncidentEvidence"]] = relationship(
+        back_populates="incident", order_by="IncidentEvidence.id")
+
+    __table_args__ = (Index("ix_incidents_merchant_status", "merchant_id", "status"),)
+
+
+class IncidentEvidence(Base):
+    """MerchantOps §36 — every conclusion carries its evidence.
+
+    Mirrors the `Evidence` tool contract, including the `untrusted` tag: an
+    incident summarising customer free text must carry the same quarantine
+    marker a tool result would (MerchantOps §39).
+    """
+    __tablename__ = "incident_evidence"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+    key: Mapped[str] = mapped_column(String(128))
+    value: Mapped[dict] = mapped_column(JSON)
+    source: Mapped[str] = mapped_column(String(64))
+    untrusted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    incident: Mapped[Incident] = relationship(back_populates="evidence")
+
+
+# --------------------------------------------------------------------------
 # Agent execution
 # --------------------------------------------------------------------------
 class AgentTask(Base):
@@ -187,6 +296,11 @@ class AgentTask(Base):
     model_version: Mapped[str] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(64))
     scenario_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # The incident this task investigates, when it was dispatched by one
+    # (MerchantOps §13). Null for a task a user started by asking a question --
+    # both entry points are legitimate and the loop is the same after this point.
+    incident_id: Mapped[str | None] = mapped_column(
+        ForeignKey("incidents.id"), nullable=True, index=True)
     is_replay: Mapped[bool] = mapped_column(Boolean, default=False)
     replayed_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tool_call_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -266,6 +380,10 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     task_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    # MerchantOps §47 requires incident_id on the audit event. Detection and
+    # lifecycle transitions happen with no task in scope, so an audit trail
+    # keyed only on task_id could not record them at all.
+    incident_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     merchant_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)

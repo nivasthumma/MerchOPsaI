@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-81%20passed-brightgreen.svg)](#-measured-results)
-[![Scenarios](https://img.shields.io/badge/scenarios-106%2F106-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-15%2F15-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-122%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-115%2F115-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-20%2F20-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -19,9 +19,13 @@ The point of this project is not the chatbot. It is the **trustworthy action loo
 around the agent**:
 
 ```
-OBSERVE → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
-        → VERIFY → AUDIT → REPLAY → EVALUATE
+DETECT → INCIDENT → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
+       → VERIFY → AUDIT → REPLAY → EVALUATE
 ```
+
+The loop begins at detection, not at a question: a deterministic sweep over payment
+history raises incidents, and an incident dispatches the agent. Asking a question
+directly is the second entry point, not the only one.
 
 ---
 
@@ -33,7 +37,7 @@ OBSERVE → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 81 tests · 106/106 scenarios · 15/15 mutations |
+| [📊 Measured results](#-measured-results) | 122 tests · 115/115 scenarios · 20/20 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -64,6 +68,8 @@ and what is architecture.
 
 | Area | Built and running | Designed, not built |
 |---|---|---|
+| Detection | Deterministic sweep over payment history: success-rate degradation, duplicate capture. Idempotent, merchant-scoped | Streaming event pipeline, provider-event ingestion |
+| Incidents | Full §13 lifecycle, evidence, computed revenue-at-risk, incident-rooted trace | Recovery planner, budgets, stopping rules |
 | Agent | One bounded agent, 6 typed tools | Specialised multi-agent orchestration |
 | Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources | Model routing, cost-aware selection |
 | Policy | Deterministic engine: RBAC, merchant isolation, risk, amount limits, duplicate guard | Per-merchant configurable policy, approval chains |
@@ -73,8 +79,8 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 106 scenarios + 15-mutation validation, gated in CI | Larger benchmark |
-| Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets |
+| Evaluation | 115 scenarios + 20-mutation validation, gated in CI | Larger benchmark |
+| Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets; durable event store |
 | UI | Streamlit **and** a React SPA (`web/`) | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
 
@@ -114,30 +120,42 @@ ambiguous between "chosen" and "nothing was detected".
 From `make eval` — actual execution, not targets:
 
 ```
-106/106 scenarios passed      (critical: 59/59)
+115/115 scenarios passed      (critical: 65/65)
 
   adversarial_security  25/25    payment_failure       12/12
-  duplicate_payment     14/14    refund_policy         25/25
-  failure_unknown       18/18    revenue_investigation 12/12
+  detection              9/9     refund_policy         25/25
+  duplicate_payment     14/14    revenue_investigation 12/12
+  failure_unknown       18/18
 
-310 assertions · median task latency 39 ms · mean grounding rate 1.0
+median task latency 41 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-15/15 mutations caught
+20/20 mutations caught
 ```
 
-That run is what makes the 106/106 meaningful — and it is how three real gaps
-were found and closed (see below).
+*Measured as two filtered runs — the 15 pre-existing mutants and the 5 new ones — not one
+20-mutant pass; a full local run exceeds available memory. CI runs all twenty in a single
+job, which is the number that gates a merge.*
+
+That run is what makes the 115/115 meaningful — and it is how three real gaps
+were found and closed (see below), plus a fourth in the detection engine: hour-bucket
+onset had no volume floor, so ordinary variance was being reported as the moment a
+degradation began.
+
+Counted honestly, as before: of the five detection and lifecycle mutants,
+**four produce a graded scenario failure** and one — allowing any incident lifecycle
+transition — is caught by unit tests only. No scenario distinguishes it, because every
+transition a scenario can drive is a legal one.
 
 Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **81 passed** (`make test`) across unit, security and integration.
+Test suite: **122 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -344,6 +362,11 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 | Endpoint | Purpose |
 |---|---|
+| `POST /incidents/detect` | Run the detection sweep (idempotent) |
+| `GET /incidents` | Open incidents, ordered by revenue at risk |
+| `GET /incidents/{id}` | Detail: signals, evidence, tasks, legal next states |
+| `GET /incidents/{id}/trace` | Detection, every lifecycle move, every task event |
+| `POST /incidents/{id}/investigate` | Dispatch the agent against an incident |
 | `POST /tasks` | Create an agent task |
 | `GET /tasks/{id}` | Task status, approvals, actions |
 | `GET /tasks/{id}/trace` | Full audit trace |
@@ -438,37 +461,64 @@ are different claims.
 7. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
    unforgeable and permissions are read from the database on every request, but
    there is no expiry, rotation, revocation list, or audience binding.
-8. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
+8. **Detection observes state, not a stream.** There is no durable event store yet, so
+   the sweep reads `payments` rather than an event log. A change that never lands on a
+   payment row is invisible to it. The event store arrives with webhook ingestion — see
+   [ADR-0017 §1](docs/adr/0017-detection-engine-and-incident-spine.md) for why building
+   it early would have been a table with no writer.
+9. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
+   Incidents appear at sweep cadence.
+10. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
    not a defect.
 
 ### Coverage limits
 
-9. **Three of the 15 mutants are caught by unit tests only** — no scenario
-   distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
-   and the key-name branch of audit redaction. Each is reachable in principle but
-   sits behind a guard that fires first in every path a scenario can drive. Two more
-   (registry lookup, argument validation) are detected as a *crash* rather than a
-   graded failure — the suite dies on `spec is None` instead of reporting SEC-24 red.
-   Counted honestly: 10 of 15 produce a graded scenario failure. See
-   [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
+11. **Four of the 20 mutants are caught by unit tests only** — no scenario
+    distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
+    the key-name branch of audit redaction, and the incident lifecycle's legality
+    check. Each is reachable in principle but sits behind a guard that fires first in
+    every path a scenario can drive — for the lifecycle mutant, because every
+    transition a scenario can drive is already a legal one. Two more (registry lookup,
+    argument validation) are detected as a *crash* rather than a graded failure — the
+    suite dies on `spec is None` instead of reporting SEC-24 red.
+    Counted honestly: **14 of 20 produce a graded scenario failure.** See
+    [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
+12. **The 20-mutant run is slow.** Each mutant re-runs the full scenario and test
+    suites, so a complete run takes well over half an hour and is memory-hungry.
+    `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
+    all of them.
 
 ---
 
 ## 🗺️ Roadmap
 
-Ordered by value, not by architectural impressiveness:
+The governing specification is now [`docs/MerchantOps.md`](docs/MerchantOps.md), which
+supersedes `docs/CONTRACT.md` (see [ADR-0016](docs/adr/0016-merchantops-spec-supersedes-contract.md)
+for the §-number crosswalk). The ordered plan to close the distance between the two is
+[`docs/gap-closure-plan.md`](docs/gap-closure-plan.md); phases 0 and 1 are delivered.
 
-1. Complete the Razorpay Test Mode spike with real credentials; map genuine captured
-   payments; publish a second results table for real execution.
-2. Run the suite against `claude-opus-5` and publish model-vs-harness results side
-   by side, including replay consistency.
-3. ~~Background reconciliation for `UNKNOWN` actions.~~ **Done** — sweep +
-   escalation queue, see below.
-4. ~~Expand to 100 scenarios and wire into CI.~~ **Done** — 106 scenarios,
-   mutation testing, GitHub Actions gate.
-5. Per-merchant configurable policy.
-6. Replace the header-based principal with a real identity provider.
+Next, in order:
+
+1. **Webhook ingestion and the durable event store** (§34, §11) — signature validation,
+   event dedup, and provider events feeding reconciliation as *evidence* rather than
+   authority.
+2. **A computed risk engine** (§24) — risk derived from value, reversibility and bulk
+   size rather than a static per-tool constant, with `CRITICAL` and dual approval.
+3. **Recovery planner, budgets and stopping rules** (§23, §27, §28).
+4. The remaining nine tools of §18; model-emitted structured output (§37); the
+   revenue-recovery ledger and dashboard (§49, §50).
+
+Independent of the plan, and still blocked on credentials:
+
+- Complete the Razorpay Test Mode spike with real credentials; map genuine captured
+  payments; publish a second results table for real execution.
+- Run the suite against `claude-opus-5` and publish model-vs-harness results side
+  by side, including replay consistency.
+
+Done: ~~background reconciliation for `UNKNOWN` actions~~ (sweep + escalation queue);
+~~expand to 100 scenarios and wire into CI~~ (115 scenarios, mutation testing, GitHub
+Actions gate); ~~detection and incident management~~ (ADR-0017).
 
 ---
 
@@ -476,6 +526,8 @@ Ordered by value, not by architectural impressiveness:
 
 ```
 app/
+  detection/    deterministic rules + the idempotent incident sweep
+  incidents/    §13 lifecycle state machine, investigation dispatch
   agent/        runtime (bounded loop), approval, replay, versioned prompts
   tools/        typed registry, contracts, investigation + action tools
   policy/       deterministic policy engine
@@ -486,10 +538,12 @@ app/
   api/          FastAPI surface
 ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015)
-data/           106 scenarios + the last evaluation report
+data/           115 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (81 tests)
-docs/           CONTRACT.md, architecture (+ assumptions), threat model, evaluation, 14 ADRs
+tests/          unit · security · integration  (122 tests)
+docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
+                architecture (+ assumptions), threat model, evaluation,
+                gap-closure plan, 17 ADRs
 ```
 
 ## 📄 License / disclaimer

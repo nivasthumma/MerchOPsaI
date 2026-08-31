@@ -12,20 +12,89 @@ deterministic system**, not the system's authority.
 
 ## The core loop
 
+There are two entry points, and they converge immediately.
+
 ```
-Merchant request
-    → intent + bounded plan
-    → read-only investigation tools
-    → evidence synthesis (typed Findings)
-    → recommendation
-    → risk classification        ← property of the TOOL, not of model output
-    → policy decision            ← deterministic, outside the model
-    → human approval (HIGH risk) ← server-side, expiring
-    → action via typed tool      ← idempotency reserved BEFORE the call
-    → independent verification   ← reads back business state
-    → audit trace
-    → replay
+  Payments (the observed history)        Merchant request
+              │                                 │
+              ▼                                 │
+    deterministic detection                     │
+              │                                 │
+              ▼                                 │
+          anomaly                               │
+              │                                 │
+              ▼                                 │
+   incident  (lifecycle, §13)                   │
+              │                                 │
+              └────────────┬────────────────────┘
+                           ▼
+                intent + bounded plan
+                           ▼
+             read-only investigation tools
+                           ▼
+             evidence synthesis (typed Findings)
+                           ▼
+                    recommendation
+                           ▼
+             risk classification         ← property of the TOOL, not of model output
+                           ▼
+             policy decision             ← deterministic, outside the model
+                           ▼
+             human approval (HIGH risk)  ← server-side, expiring
+                           ▼
+             action via typed tool       ← idempotency reserved BEFORE the call
+                           ▼
+             independent verification    ← reads back business state
+                           ▼
+                     audit trace
+                           ▼
+                        replay
 ```
+
+An incident supplies **context**, never authority. Both entry points run the same runtime,
+the same policy engine and the same audit trail; nothing reachable from an incident is
+reachable only from an incident.
+
+## Detection and incidents
+
+Added in ADR-0017. MerchantOps §12 is explicit that the model does not inspect raw events:
+
+```
+    many events -> deterministic detection -> anomalies -> incidents -> LLM
+```
+
+`app/detection/rules.py` holds the rules. Each is a SQL query and arithmetic — no model
+involvement, and none possible. Two rules run today:
+
+| rule | fires when | at-risk figure |
+|---|---|---|
+| `success_rate_below_baseline` | a method's success rate falls ≥10pp below its own prior-period baseline, over ≥30 attempts | `(expected − actual successes) × avg transaction value` (§22) |
+| `duplicate_capture_on_order` | two captured payments, same order/customer/amount, inside a window | unrefunded exposure |
+
+Three properties are load-bearing:
+
+- **Idempotent.** `Incident.detection_key` is UNIQUE and derived from the anomaly's facts,
+  not the clock. Re-running the sweep collides rather than creating a second incident —
+  the same mechanism `agent_actions.idempotency_key` uses for execution, applied to
+  observation.
+- **Discriminating.** A volume floor and a threshold keep ordinary variance out. Onset
+  detection works on much smaller hour buckets and therefore uses a wider margin; without
+  that it reports the first noisy hour as the incident's start.
+- **Deterministic status.** The lifecycle (`app/incidents/lifecycle.py`) writes its legal
+  transitions out rather than deriving them from an ordering, so that an incident in
+  `UNKNOWN` can still reach `RESOLVED` when reconciliation settles its actions. `CLOSED`
+  is the only terminal state.
+
+### What moves an incident
+
+```
+task status  ->  incident status      deterministic, app/incidents/manager.py
+model prose  ->  incident status      never
+```
+
+An agent that concludes "this is resolved" resolves nothing. Investigation stops at
+`ROOT_CAUSE_IDENTIFIED`; everything past it belongs to the recovery planner (§23), which
+is not built.
 
 ## Request path in detail
 
@@ -458,9 +527,14 @@ EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 
 ## Future state (not built)
 
-Specialised agents; Next.js frontend; Redis/Celery for background reconciliation and
-durable retries; 100+ scenario benchmark wired into CI; per-merchant policy
-configuration; distributed tracing; containerised deployment.
+Ordered in `docs/gap-closure-plan.md`. Nearest first: webhook ingestion and the durable
+event store (§34, §11); a computed risk engine with `CRITICAL` and dual approval (§24);
+the recovery planner, its budgets and stopping rules (§23, §27, §28); the remaining nine
+tools of §18; model-emitted structured output (§37); the revenue-recovery ledger and
+dashboard (§49, §50).
+
+Beyond that: specialised agents; Next.js frontend; Redis/Celery for durable retries;
+per-merchant policy configuration; distributed tracing; containerised deployment.
 
 None of it is justified until the loop above is reliable, and none of it is claimed
 as implemented.

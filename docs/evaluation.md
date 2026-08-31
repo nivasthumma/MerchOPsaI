@@ -26,7 +26,7 @@ Running the same suite against `claude-opus-5` would measure something different
 (agent reasoning quality) and must be reported separately. That number has not been
 collected; the README says so.
 
-## Suite composition (106)
+## Suite composition (115)
 
 | Category | Count | What it exercises |
 |---|---|---|
@@ -36,6 +36,7 @@ collected; the README says so.
 | duplicate_payment | 14 | Pair/triple detection, window boundary, computed confidence, per-merchant scoping |
 | payment_failure | 12 | Method isolation, hourly concentration, error attribution, no-action guarantee |
 | revenue_investigation | 12 | Period comparison, method ranking, grounding, no-action guarantee |
+| detection | 9 | Rule discrimination, idempotency, computed revenue-at-risk, onset accuracy, latency, incident-rooted trace, merchant scoping, lifecycle outcome |
 
 59 are marked `critical: true`. A critical failure is a stop condition.
 
@@ -49,6 +50,11 @@ without adding coverage. Padding a suite to a round figure is the same dishonest
 inflating a metric.
 
 ## Mutation testing — does the suite actually work?
+
+> A full run is 20 mutants, each re-running the whole scenario and test suite: over half
+> an hour, and memory-hungry enough to be worth running detached. Pass substrings to run
+> a subset during development — `scripts/mutation_test.py detection lifecycle` — but a
+> filtered run is not a substitute for the full one, and CI runs all of them.
 
 A suite reporting 106/106 proves nothing on its own. It may simply not be asserting
 anything. `scripts/mutation_test.py` (`make mutants`) breaks each core control in
@@ -93,9 +99,9 @@ kinds of catching. The measured breakdown, from the run itself:
 
 | How the mutant is caught | Count | Mutants |
 |---|---|---|
-| A named scenario grades it red | 10 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3) |
+| A named scenario grades it red | 14 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06) |
 | The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
-| Unit tests only — no scenario distinguishes it | 3 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction |
+| Unit tests only — no scenario distinguishes it | 4 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality |
 
 Read strictly, **10 of 15 mutants produce a graded scenario failure.** The other five
 are still detected, and the suite is still doing real work — but "15/15 caught" and
@@ -114,6 +120,7 @@ The three unit-only mutants each sit behind a guard that fires first:
 |---|---|
 | Idempotency-key derivation (fresh key per call) | Observable only when one approval executes twice; the approval state machine prevents a second execution, and the refundable-balance precondition fires before the key is ever consulted. |
 | Duplicate-action SAVEPOINT → full rollback | Same branch: it needs a key collision, which needs the balance check bypassed. Three integration tests cover it, including one that swaps in a random key to prove they measure the key and not another guard. |
+| Incident lifecycle legality check | The mutant lets any transition through. No scenario separates it because every transition a scenario can drive is already a legal one — the illegal moves exist only as states the application never attempts. `tests/unit/test_lifecycle.py` drives them directly and fails. |
 | Audit redaction, key-name branch | The mutant disables redaction of secret-*named* dict keys. SEC-25's secret arrives inside the user's request string and is redacted by the *value-pattern* branch, which the mutant leaves intact — so SEC-25 still passes. Breaking the value branch instead does fail SEC-25 (verified: 0/1), so the scenario is real; it simply does not cover this half of `redact()`. |
 
 Closing these would mean either a scenario that reaches a branch the safety guards

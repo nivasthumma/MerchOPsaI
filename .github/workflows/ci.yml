@@ -189,7 +189,12 @@ jobs:
     # look "caught" for the wrong reason.
     needs: [test, evaluate]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Each mutant re-runs the whole scenario suite AND the test suite, so the
+    # cost is (mutants x suites). Both grew with the incident spine — 20 mutants
+    # against 115 scenarios — and the run no longer fits in 30 minutes. Raised
+    # rather than trimmed: dropping mutants to fit a timeout would be optimising
+    # the number this job exists to produce.
+    timeout-minutes: 50
     services:
       postgres:
         image: postgres:16

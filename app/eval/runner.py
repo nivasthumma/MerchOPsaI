@@ -90,7 +90,138 @@ def _grounding_rate(session, task) -> float | None:
     return round(ok / len(observed), 4)
 
 
+def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
+    """Grade a detection sweep — MerchantOps §12, §13, §60.
+
+    Detection scenarios have no request and no agent task. They assert on what
+    the sweep produced: which anomalies became incidents, whether the figures
+    are computed, whether a second sweep stays quiet, and whether one merchant's
+    sweep can see another's data.
+    """
+    from app.audit.trace import trace_for_incident
+    from app.detection import detect
+    from app.incidents.manager import investigate
+    from app.models import Incident
+
+    checks: list[CheckResult] = []
+    principal = PRINCIPALS[sc.principal]
+    e = sc.expect
+
+    def check(name, cond, detail=""):
+        checks.append(CheckResult(name=name, passed=bool(cond), detail=detail))
+
+    merchants = sc.detect_for or [principal.merchant_id]
+    first = None
+    for m in merchants:
+        rep = detect(session, m)
+        if first is None:
+            first = rep
+
+    if e.max_detection_ms is not None:
+        check("detection_latency", first.duration_ms <= e.max_detection_ms,
+              f"{first.duration_ms}ms > {e.max_detection_ms}ms")
+
+    if sc.detect_twice:
+        second = detect(session, merchants[0])
+        expected = e.second_sweep_creates if e.second_sweep_creates is not None else 0
+        check("detection_idempotent", second.incidents_created == expected,
+              f"second sweep created {second.incidents_created}, expected {expected}")
+        check("detection_recognises_known", second.already_known == first.incidents_created,
+              f"already_known={second.already_known}, first created={first.incidents_created}")
+
+    mine = (session.query(Incident)
+            .filter(Incident.merchant_id == principal.merchant_id)
+            .order_by(Incident.revenue_at_risk_minor.desc()).all())
+
+    if e.incidents_created is not None:
+        check("incidents_created", len(mine) == e.incidents_created,
+              f"got {len(mine)}: {[i.title for i in mine]}")
+
+    types = {i.incident_type.value for i in mine}
+    for want in e.incident_types:
+        check(f"incident_type:{want}", want in types, f"types={sorted(types)}")
+    for unwanted in e.incident_types_absent:
+        check(f"incident_type_absent:{unwanted}", unwanted not in types,
+              f"types={sorted(types)}")
+
+    if e.degraded_methods is not None:
+        got = sorted(i.signals.get("method") for i in mine
+                     if i.incident_type.value == "PAYMENT_DEGRADATION")
+        check("degraded_methods", got == sorted(e.degraded_methods),
+              f"expected {sorted(e.degraded_methods)}, got {got}")
+
+    top = mine[0] if mine else None
+    if e.incident_severity is not None:
+        check("incident_severity", top is not None and top.severity.value == e.incident_severity,
+              f"top severity={top.severity.value if top else None}")
+    if e.min_revenue_at_risk_minor is not None:
+        check("revenue_at_risk", top is not None
+              and top.revenue_at_risk_minor >= e.min_revenue_at_risk_minor,
+              f"at risk={top.revenue_at_risk_minor if top else None}")
+    for key in e.incident_signals_include:
+        check(f"signal:{key}", top is not None and key in (top.signals or {}),
+              f"signals={sorted((top.signals or {}).keys()) if top else []}")
+
+    if e.onset_hour_utc_between is not None:
+        lo, hi = e.onset_hour_utc_between
+        deg = [i for i in mine if i.incident_type.value == "PAYMENT_DEGRADATION"]
+        # The stored column is timestamptz and the driver renders it in the
+        # session zone, so normalise before reading the hour -- otherwise this
+        # check passes or fails on the server's timezone setting.
+        hours = [i.started_at.astimezone(timezone.utc).hour for i in deg]
+        check("onset_hour", bool(hours) and all(lo <= h <= hi for h in hours),
+              f"onset hours (UTC) = {hours}, expected within [{lo}, {hi}]")
+
+    if e.foreign_incidents is not None:
+        foreign = (session.query(Incident)
+                   .filter(Incident.merchant_id != principal.merchant_id).count())
+        check("foreign_incidents", foreign == e.foreign_incidents,
+              f"incidents outside {principal.merchant_id}: {foreign}")
+
+    task = None
+    if sc.investigate_first and top is not None:
+        r = investigate(session, top, principal)
+        task = r["task"]
+        session.refresh(top)
+        if e.incident_status_after is not None:
+            check("incident_status_after", top.status.value == e.incident_status_after,
+                  f"status={top.status.value}")
+        if e.audit_events or e.incident_trace_events:
+            events = {ev["event"] for ev in trace_for_incident(session, top.id)}
+            for ev in (e.incident_trace_events or e.audit_events):
+                check(f"trace_event:{ev}", ev in events, f"events={sorted(events)}")
+
+    # Detection must never move money. An anomaly is an observation, not an
+    # intervention, so the only action that may exist is one belonging to a task
+    # this scenario explicitly dispatched.
+    stray = [a.id for a in session.query(AgentAction).all()
+             if task is None or a.task_id != task.id]
+    check("no_external_action", not stray,
+          f"actions not attributable to a dispatched task: {stray}")
+
+    passed = all(c.passed for c in checks) and bool(checks)
+    res = EvaluationResult(
+        id=f"EVR_{uuid.uuid4().hex[:10].upper()}", run_id=run_id, scenario_id=sc.id,
+        task_id=task.id if task else None, passed=passed,
+        checks=[c.model_dump() for c in checks],
+        metrics={
+            "category": sc.category, "critical": sc.critical,
+            "duration_ms": first.duration_ms if first else None,
+            "incidents_created": len(mine),
+            "anomalies_found": first.anomalies_found if first else 0,
+            "revenue_at_risk_minor": top.revenue_at_risk_minor if top else 0,
+            "grounding_rate": None,
+        },
+    )
+    session.add(res)
+    session.flush()
+    return res
+
+
 def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
+    if sc.category == "detection":
+        return _run_detection_scenario(session, sc, run_id)
+
     checks: list[CheckResult] = []
     principal = PRINCIPALS[sc.principal]
 

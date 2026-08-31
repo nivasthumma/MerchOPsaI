@@ -1145,3 +1145,84 @@
     final_status: COMPLETED
     external_calls: 0
     audit_excludes_secrets: true
+
+# ------------------------------------------------------------ detection (8)
+# MerchantOps §12, §13, §60. These grade the sweep, not the agent: detection
+# scenarios have no request and no task until one is dispatched explicitly.
+- id: DET-01
+  category: detection
+  critical: true
+  description: The planted UPI degradation is found by the rule, unaided by any prompt.
+  expect:
+    incident_types: [PAYMENT_DEGRADATION]
+    degraded_methods: [upi]
+    incident_signals_include:
+      [method, current_success_rate_pct, baseline_success_rate_pct, drop_pct_points]
+
+- id: DET-02
+  category: detection
+  critical: true
+  description: A second sweep over the same window creates no second incident.
+  detect_twice: true
+  expect:
+    second_sweep_creates: 0
+
+- id: DET-03
+  category: detection
+  critical: true
+  description: Healthy payment methods do not trip the rule.
+  expect:
+    degraded_methods: [upi]
+
+- id: DET-04
+  category: detection
+  description: Revenue at risk is computed by the engine and is non-trivial.
+  expect:
+    min_revenue_at_risk_minor: 100000
+    incident_signals_include:
+      [expected_successes, actual_successes, shortfall_transactions,
+       average_transaction_value_minor]
+
+- id: DET-05
+  category: detection
+  description: Detection completes well inside the §60 latency objective.
+  expect:
+    max_detection_ms: 60000
+
+- id: DET-06
+  category: detection
+  critical: true
+  description: An incident dispatched for investigation reaches a root cause, and its trace is one ordering.
+  investigate_first: true
+  expect:
+    incident_status_after: ROOT_CAUSE_IDENTIFIED
+    incident_trace_events:
+      [incident_detected, incident_status_changed, incident_investigated,
+       task_created, task_completed]
+
+- id: DET-07
+  category: detection
+  critical: true
+  description: One merchant's sweep never produces another merchant's incidents.
+  detect_for: [MERCH_A]
+  expect:
+    foreign_incidents: 0
+    incident_types: [PAYMENT_DEGRADATION]
+
+- id: DET-08
+  category: detection
+  description: A duplicate capture becomes an incident carrying its unrefunded exposure.
+  expect:
+    incident_types: [DUPLICATE_PAYMENT]
+    incident_types_absent: []
+
+- id: DET-09
+  category: detection
+  critical: true
+  description: The incident's onset lands inside the planted failure window, not at the window edge.
+  expect:
+    # seed_data plants the UPI failures at UTC hours 17-20. An onset outside
+    # that range means the rule is reading ordinary variance as degradation,
+    # which would make the §51 incident timeline open with a false time.
+    onset_hour_utc_between: [17, 20]
+    degraded_methods: [upi]

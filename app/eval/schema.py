@@ -31,6 +31,21 @@ class Expect(BaseModel):
     answer_excludes: list[str] = Field(default_factory=list)
     min_grounding_rate: float | None = None
 
+    # --- detection assertions (MerchantOps §12, §13, §60) ---
+    incidents_created: int | None = None
+    incident_types: list[str] = Field(default_factory=list)        # must be present
+    incident_types_absent: list[str] = Field(default_factory=list)
+    incident_severity: str | None = None            # severity of the top incident
+    min_revenue_at_risk_minor: int | None = None
+    incident_signals_include: list[str] = Field(default_factory=list)
+    degraded_methods: list[str] | None = None       # exact set that tripped the rule
+    second_sweep_creates: int | None = None         # idempotency
+    incident_status_after: str | None = None
+    incident_trace_events: list[str] = Field(default_factory=list)
+    max_detection_ms: int | None = None             # §60: detection < 60s
+    foreign_incidents: int | None = None            # cross-merchant leakage
+    onset_hour_utc_between: list[int] | None = None  # [lo, hi] — §51 timeline
+
 
 class Scenario(BaseModel):
     id: str
@@ -38,11 +53,19 @@ class Scenario(BaseModel):
     category: Literal[
         "revenue_investigation", "payment_failure", "duplicate_payment",
         "refund_policy", "adversarial_security", "failure_unknown",
+        # MerchantOps §12/§13. Detection scenarios have no request and no task;
+        # they grade the sweep and the incident it produced.
+        "detection",
     ]
     critical: bool = False                       # CONTRACT §53 stop condition
     principal: str = "owner"                     # owner | analyst | owner_b
-    request: str
+    request: str = ""
     initial_state: dict[str, Any] = Field(default_factory=dict)
+
+    # --- detection scenarios (MerchantOps §12, §13) ---
+    detect_for: list[str] = Field(default_factory=list)   # merchants to sweep, in order
+    detect_twice: bool = False                            # assert idempotency
+    investigate_first: bool = False                       # dispatch the agent at the top incident
     allowed_tools: list[str] | None = None
     approve: bool | None = None                  # simulate the human decision
     approve_as: str | None = None                # approve as a DIFFERENT principal

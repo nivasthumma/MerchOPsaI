@@ -17,13 +17,18 @@ from app.agent.approval import ApprovalError, approve_and_execute, reject, rever
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, Principal
 from app.api.security import DEV_SECRET_IN_USE, current_principal
-from app.audit.trace import record, trace_for
+from app.audit.trace import record, trace_for, trace_for_incident
 from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
+from app.detection import detect
+from app.detection.engine import open_incidents
+from app.incidents.lifecycle import legal_from
+from app.incidents.manager import investigate
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
 from app.models import (
-    AgentAction, AgentTask, Approval, ToolCall, VerificationState, utcnow,
+    AgentAction, AgentTask, Approval, Incident, IncidentEvidence, ToolCall,
+    VerificationState, utcnow,
 )
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
@@ -278,6 +283,116 @@ def list_escalated(max_attempts: int = 5,
         rows = escalated_actions(s, max_attempts=max_attempts)
     # Merchant isolation applies here too.
     return [r for r in rows if r["merchant_id"] == principal.merchant_id]
+
+
+# --------------------------------------------------------------------------
+# Incidents — MerchantOps §13, §65
+# --------------------------------------------------------------------------
+def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
+    view = {
+        "id": inc.id, "merchant_id": inc.merchant_id,
+        "type": inc.incident_type.value, "severity": inc.severity.value,
+        "status": inc.status.value, "title": inc.title, "summary": inc.summary,
+        "revenue_at_risk_minor": inc.revenue_at_risk_minor,
+        "detection_rule": inc.detection_rule,
+        "detection_version": inc.detection_version,
+        "correlation_id": inc.correlation_id,
+        "started_at": inc.started_at.isoformat(),
+        "detected_at": inc.detected_at.isoformat(),
+        "resolved_at": inc.resolved_at.isoformat() if inc.resolved_at else None,
+    }
+    if not detail:
+        return view
+
+    view["signals"] = inc.signals
+    view["evidence"] = [{
+        "id": e.id, "key": e.key, "value": e.value.get("v"),
+        "source": e.source, "untrusted": e.untrusted,
+    } for e in s.query(IncidentEvidence)
+        .filter(IncidentEvidence.incident_id == inc.id)
+        .order_by(IncidentEvidence.id).all()]
+    view["tasks"] = [{
+        "id": t.id, "status": t.status.value, "final_answer": t.final_answer,
+        "tool_calls": t.tool_call_count, "duration_ms": t.duration_ms,
+    } for t in s.query(AgentTask)
+        .filter(AgentTask.incident_id == inc.id)
+        .order_by(AgentTask.created_at).all()]
+    # Which moves are available from here. The UI renders this; it never
+    # computes it, for the same reason it never computes a policy outcome.
+    view["legal_transitions"] = sorted(x.value for x in legal_from(inc.status))
+    return view
+
+
+def _owned_incident(s, incident_id: str, principal: Principal) -> Incident:
+    inc = s.get(Incident, incident_id)
+    if inc is None or inc.merchant_id != principal.merchant_id:
+        # No distinction between absent and forbidden (MerchantOps §54).
+        raise HTTPException(404, "Unknown incident.")
+    return inc
+
+
+@app.get("/incidents")
+def list_incidents(include_closed: bool = False,
+                   principal: Principal = Depends(current_principal)):
+    """The operations console. Scoped to the caller's merchant, ordered by
+    revenue at risk — the largest problem is the one to open first."""
+    with session_scope() as s:
+        if include_closed:
+            rows = (s.query(Incident)
+                    .filter(Incident.merchant_id == principal.merchant_id)
+                    .order_by(Incident.revenue_at_risk_minor.desc(),
+                              Incident.detected_at.desc()).all())
+        else:
+            rows = open_incidents(s, principal.merchant_id)
+        return {"incidents": [_incident_view(s, i) for i in rows],
+                "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows)}
+
+
+@app.get("/incidents/{incident_id}")
+def get_incident(incident_id: str, principal: Principal = Depends(current_principal)):
+    with session_scope() as s:
+        return _incident_view(s, _owned_incident(s, incident_id, principal), detail=True)
+
+
+@app.get("/incidents/{incident_id}/trace")
+def get_incident_trace(incident_id: str,
+                       principal: Principal = Depends(current_principal)):
+    """MerchantOps §58 — detection, every lifecycle move, and every event of
+    every task the incident dispatched, in one ordering."""
+    with session_scope() as s:
+        _owned_incident(s, incident_id, principal)
+        return {"incident_id": incident_id, "trace": trace_for_incident(s, incident_id)}
+
+
+@app.post("/incidents/detect")
+def run_detection(principal: Principal = Depends(current_principal)):
+    """Run the detection sweep for the caller's merchant.
+
+    Idempotent: re-running over the same window records `already_known` rather
+    than creating a second incident for one anomaly.
+    """
+    with session_scope() as s:
+        return detect(s, principal.merchant_id).as_dict()
+
+
+@app.post("/incidents/{incident_id}/investigate")
+def investigate_incident(incident_id: str,
+                         principal: Principal = Depends(current_principal)):
+    """Dispatch the bounded agent against an incident.
+
+    The incident's next state is derived from the task's recorded status, never
+    from the model's prose (MerchantOps §38).
+    """
+    with session_scope() as s:
+        inc = _owned_incident(s, incident_id, principal)
+        try:
+            r = investigate(s, inc, principal)
+        except ValueError as e:
+            raise HTTPException(409, {"error": str(e), "code": "INCIDENT_NOT_OPEN"})
+        except PermissionError:
+            raise HTTPException(404, "Unknown incident.")
+        return {"incident": _incident_view(s, r["incident"], detail=True),
+                "task": _task_view(s, r["task"])}
 
 
 @app.get("/metrics")

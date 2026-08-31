@@ -123,6 +123,36 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "detection: stop deduplicating incidents",
+        "app/detection/rules.py",
+        'detection_key=f"{merchant_id}|PAYMENT_DEGRADATION|{method}|{cut.isoformat()}",',
+        'detection_key=__import__("uuid").uuid4().hex,  # MUTANT',
+    ),
+    (
+        "detection: drop the degradation threshold",
+        "app/detection/rules.py",
+        "        if drop_pp < DEGRADATION_THRESHOLD_PP:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "detection: read ordinary variance as the degradation onset",
+        "app/detection/rules.py",
+        "        if total < MIN_BUCKET_VOLUME:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "lifecycle: allow any incident transition",
+        "app/incidents/lifecycle.py",
+        "    if not is_legal(frm, to):",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "incidents: resolve regardless of what the task actually did",
+        "app/incidents/manager.py",
+        "    target = _OUTCOME.get(out.status, S.ESCALATED)",
+        "    target = S.RESOLVED  # MUTANT",
+    ),
+    (
         "audit: stop redacting secrets",
         "app/audit/trace.py",
         "        return {k: (\"[REDACTED]\" if _SECRET_KEYS.search(str(k)) else redact(v))",
@@ -165,10 +195,26 @@ LOCK = ROOT / ".mutation-in-progress"
 
 
 def main() -> int:
+    # Optional substring filters. A full run is 20 mutants x (scenario suite +
+    # test suite) and takes well over half an hour, which is too slow to sit in
+    # the middle of a change. `mutation_test.py detection lifecycle` runs only
+    # the mutants whose label matches. CI still runs all of them.
+    selectors = [a for a in sys.argv[1:] if not a.startswith("-")]
+    mutations = [m for m in MUTATIONS
+                 if not selectors or any(s.lower() in m[0].lower() for s in selectors)]
+    if not mutations:
+        print(f"No mutation label matches {selectors}.")
+        return 1
+
     print("=" * 78)
     print("Mutation test — breaking each control to prove the suite catches it")
     print("=" * 78)
     print()
+    if selectors:
+        print(f"!! FILTERED RUN: {len(mutations)}/{len(MUTATIONS)} mutants "
+              f"matching {selectors}.")
+        print("!! A filtered run is not a substitute for the full one.")
+        print()
     print("!! Source files under app/ are REWRITTEN while this runs.")
     print("!! Do not commit, branch, or stash until it finishes.")
     print(f"!! Lock file: {LOCK.name}")
@@ -190,7 +236,7 @@ def main() -> int:
     survivors = []
     rows = []
 
-    for label, relpath, find, replace in MUTATIONS:
+    for label, relpath, find, replace in mutations:
         path = ROOT / relpath
         original = path.read_text()
         if find not in original:
@@ -227,7 +273,7 @@ def main() -> int:
 
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
-    print(f"RESULT: {caught_n}/{len(MUTATIONS)} mutations caught")
+    print(f"RESULT: {caught_n}/{len(mutations)} mutations caught")
     if survivors:
         print("\nSURVIVING MUTATIONS — these are gaps in the suite:")
         for s in survivors:

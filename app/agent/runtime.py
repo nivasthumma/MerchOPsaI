@@ -85,7 +85,8 @@ class AgentRuntime:
 
     # ------------------------------------------------------------------
     def run(self, request: str, *, scenario_id: str | None = None,
-            is_replay: bool = False, replayed_from: str | None = None) -> RunOutcome:
+            is_replay: bool = False, replayed_from: str | None = None,
+            incident_id: str | None = None) -> RunOutcome:
         s = self.settings
         started = time.monotonic()
 
@@ -96,6 +97,12 @@ class AgentRuntime:
             agent_version=s.agent_version, model_version=self.provider.model,
             prompt_version=PROMPT_VERSION, scenario_id=scenario_id,
             is_replay=is_replay, replayed_from=replayed_from,
+            # Set at creation, not afterwards. `app.audit.trace.record` reads
+            # incident_id off the task as each event is written, and audit rows
+            # are immutable by database trigger -- a task bound to its incident
+            # after the run leaves every event of that run off the incident's
+            # trace, permanently (MerchantOps §58).
+            incident_id=incident_id,
         )
         self.session.add(task)
         self.session.flush()

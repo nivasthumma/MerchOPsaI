@@ -98,8 +98,12 @@ def build() -> dict:
 
     users = [
         # CONTRACT §20 — permissions live in the backend, never in the model.
+        # `action:recover` is separate from `action:refund` on purpose: sending a
+        # customer a payment link or a message is a different authority from
+        # moving money back to them, and §55 says permissions are per action.
         User(id="USR_A_OWNER", merchant_id=MERCHANT_A, email="owner@kettle.example",
-             role="owner", permissions=["read:metrics", "read:orders", "action:refund"]),
+             role="owner", permissions=["read:metrics", "read:orders",
+                                        "action:refund", "action:recover"]),
         User(id="USR_A_ANALYST", merchant_id=MERCHANT_A, email="analyst@kettle.example",
              role="analyst", permissions=["read:metrics", "read:orders"]),
         # MerchantOps §25 REQUIRE_DUAL_APPROVAL needs two people who can each
@@ -108,9 +112,11 @@ def build() -> dict:
         # thing the control forbids. Added to the literal user list, so it
         # consumes no RNG and the rest of the dataset is unchanged.
         User(id="USR_A_APPROVER", merchant_id=MERCHANT_A, email="approver@kettle.example",
-             role="approver", permissions=["read:metrics", "read:orders", "action:refund"]),
+             role="approver", permissions=["read:metrics", "read:orders",
+                                           "action:refund", "action:recover"]),
         User(id="USR_B_OWNER", merchant_id=MERCHANT_B, email="owner@northwind.example",
-             role="owner", permissions=["read:metrics", "read:orders", "action:refund"]),
+             role="owner", permissions=["read:metrics", "read:orders",
+                                        "action:refund", "action:recover"]),
     ]
 
     customers: list[Customer] = []

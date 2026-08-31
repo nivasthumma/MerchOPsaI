@@ -173,9 +173,14 @@ def test_every_lifecycle_move_is_audited(db, owner):
     inc = db.query(Incident).first()
     investigate(db, inc, owner)
 
-    moves = db.query(AuditLog).filter(
-        AuditLog.incident_id == inc.id,
-        AuditLog.event_type == "incident_status_changed").all()
+    # ORDER BY is not optional here. Without it Postgres may return these rows
+    # in any order, and this test asserts they form a contiguous chain. It
+    # passed for four phases only because the per-test schema drop reset the
+    # audit id sequence, so physical order happened to match insertion order.
+    moves = (db.query(AuditLog)
+             .filter(AuditLog.incident_id == inc.id,
+                     AuditLog.event_type == "incident_status_changed")
+             .order_by(AuditLog.id).all())
     assert moves, "lifecycle moves were not audited"
     chain = [(m.payload["from"], m.payload["to"]) for m in moves]
     # Contiguous: each move starts where the previous one ended.

@@ -123,6 +123,57 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "tools: let a customer-contacting action run on the read path",
+        "app/tools/registry.py",
+        '    "reconcile_transaction": reconcile_transaction,\n}',
+        '    "reconcile_transaction": reconcile_transaction,\n'
+        '    "generate_payment_link": get_payment,  # MUTANT\n}',
+    ),
+    (
+        "tools: drop the permission on customer-contacting actions",
+        "app/tools/recovery_actions.py",
+        '    required_permissions=["action:recover"],\n    risk_class=RiskClass.MEDIUM,\n'
+        '    audit_required=True,\n    idempotent=True,\n    reversible=False,\n)\n\n'
+        'SPEC_NOTIFICATION',
+        '    required_permissions=[],  # MUTANT\n    risk_class=RiskClass.MEDIUM,\n'
+        '    audit_required=True,\n    idempotent=True,\n    reversible=False,\n)\n\n'
+        'SPEC_NOTIFICATION',
+    ),
+    (
+        "tools: send a payment link for a payment that did not fail",
+        "app/tools/recovery_actions.py",
+        '    if row["status"] != "failed":',
+        "    if False:  # MUTANT",
+    ),
+    (
+        "tools: contact a customer who has opted out",
+        "app/tools/recovery_actions.py",
+        '    if row["contact_opted_out"]:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        "tools: stop deduplicating customer contact",
+        "app/tools/recovery_actions.py",
+        '    raw = f"{merchant_id}|{target}|{action_type}|{approval_id}"',
+        '    import uuid as _u; raw = _u.uuid4().hex  # MUTANT',
+    ),
+    (
+        "tools: report an unreadable notification as sent",
+        "app/tools/recovery_actions.py",
+        "        return VerificationResult(\n            VerificationState.UNKNOWN,\n"
+        '            "The provider returned no record for this notification, so whether "',
+        "        return VerificationResult(\n            VerificationState.SUCCESS,  # MUTANT\n"
+        '            "The provider returned no record for this notification, so whether "',
+    ),
+    (
+        "tools: return merchant free text as trusted data",
+        "app/tools/investigation.py",
+        '        ev.append(Evidence(key="customer_notes", value=c["notes"],\n'
+        '                           source="customers.notes", untrusted=True))',
+        '        ev.append(Evidence(key="customer_notes", value=c["notes"],\n'
+        '                           source="customers.notes", untrusted=False))  # MUTANT',
+    ),
+    (
         "recovery: drop the campaign spend bound",
         "app/recovery/stopping.py",
         "        if prospective > plan.max_recovery_minor:",

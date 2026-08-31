@@ -24,6 +24,33 @@ from app.policy.engine import (
     Decision, PolicyContext, approval_is_valid, evaluate,
 )
 from app.tools.actions import execute_refund, reverify_action
+from app.tools.recovery_actions import execute_notification, execute_payment_link
+
+
+def _run_refund(session, adapter, *, task_id, merchant_id, approval_id, **payload):
+    return execute_refund(session, adapter, task_id=task_id, merchant_id=merchant_id,
+                          synthetic_payment_id=payload["synthetic_payment_id"],
+                          amount_minor=int(payload["amount_minor"]),
+                          approval_id=approval_id)
+
+
+# The only operations that may reach the provider, and the only way they may do
+# it. A tool absent from this map cannot execute even if policy approved it --
+# fail-closed, so a new action tool that forgets to register here is inert
+# rather than unguarded.
+EXECUTORS = {
+    "request_refund": _run_refund,
+    "generate_payment_link": execute_payment_link,
+    "send_customer_notification": execute_notification,
+}
+
+# What a successful execution is called, per action type. Refund-specific prose
+# on a notification would tell an operator money moved when none did.
+_SUCCESS_PROSE = {
+    "request_refund": "Refund executed and independently verified.",
+    "generate_payment_link": "Payment link created and independently verified.",
+    "send_customer_notification": "Notification sent and independently verified.",
+}
 
 
 class ApprovalError(Exception):
@@ -180,11 +207,21 @@ def approve_and_execute(session, task_id: str, principal,
            {"approval_id": ap.id, "adapter_mode": adapter.mode,
             "payment": payload.get("synthetic_payment_id")})
 
-    outcome = execute_refund(
-        session, adapter, task_id=task.id, merchant_id=principal.merchant_id,
-        synthetic_payment_id=payload["synthetic_payment_id"],
-        amount_minor=int(payload["amount_minor"]), approval_id=ap.id,
-    )
+    executor = EXECUTORS.get(ap.action_type)
+    if executor is None:
+        # Registered, approved, and still not executable. Better than the
+        # alternative: a tool reaching the provider through a path nobody
+        # reviewed because it was never wired up deliberately.
+        task.status = TaskStatus.FAILED
+        task.failure_code = "TOOL_UNAVAILABLE"
+        task.final_answer = (f"'{ap.action_type}' has no registered executor; "
+                             f"no external call was made.")
+        session.flush()
+        raise ApprovalError(task.final_answer, "TOOL_UNAVAILABLE")
+
+    outcome = executor(session, adapter, task_id=task.id,
+                       merchant_id=principal.merchant_id, approval_id=ap.id,
+                       **payload)
 
     result = outcome.result
     action = outcome.action
@@ -200,26 +237,29 @@ def approve_and_execute(session, task_id: str, principal,
                 "detail": action.verification_detail})
 
     state = action.verification_state if action else None
+    what = _SUCCESS_PROSE.get(ap.action_type, "The action completed and was verified.")
+    noun = {"request_refund": "refund", "generate_payment_link": "payment link",
+            "send_customer_notification": "notification"}.get(ap.action_type, "action")
     if state is VerificationState.SUCCESS:
         task.status = TaskStatus.COMPLETED
-        task.final_answer = (
-            f"Refund executed and independently verified. External reference "
-            f"{action.external_reference}. Verification: SUCCESS.")
+        task.final_answer = (f"{what} External reference {action.external_reference}. "
+                             f"Verification: SUCCESS.")
     elif state is VerificationState.UNKNOWN:
         task.status = TaskStatus.COMPLETED
         task.failure_code = "EXTERNAL_STATE_UNKNOWN"
         task.final_answer = (
-            "The refund was submitted but its final state could not be determined. "
-            "Reported as UNKNOWN. Use re-verify to resolve it; do not assume the "
-            "refund did or did not happen.")
+            f"The {noun} was submitted but its final state could not be determined. "
+            f"Reported as UNKNOWN. Use re-verify to resolve it; do not assume the "
+            f"{noun} did or did not happen.")
     elif state is VerificationState.PARTIAL:
         task.status = TaskStatus.COMPLETED
         task.failure_code = "PARTIAL_EXECUTION"
-        task.final_answer = "The refund was accepted but the resulting state is incomplete (PARTIAL)."
+        task.final_answer = (f"The {noun} was accepted but the resulting state is "
+                             f"incomplete (PARTIAL).")
     else:
         task.status = TaskStatus.FAILED
         task.failure_code = result.error_code or "VERIFICATION_FAILED"
-        task.final_answer = f"The refund did not complete: {result.data}"
+        task.final_answer = f"The {noun} did not complete: {result.data}"
 
     session.flush()
     record(session, task, "task_completed",

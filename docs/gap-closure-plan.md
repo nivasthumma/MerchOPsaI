@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0–4 delivered
+**Status:** in progress — phases 0–5 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -193,7 +193,7 @@ overcount, now one incident per order. And a recovery mutant survived: a clamp a
 a rounding drift was forcing §49's ordering to hold, making a wrong figure
 indistinguishable from a right one. Rounding the aggregate once fixed both.
 
-## Phase 5 — Tool registry expansion · M · ~3d
+## Phase 5 — Tool registry expansion · M · ~3d — **DONE**
 
 **Closes §18 — 6 tools today, 15 specified.**
 
@@ -209,6 +209,19 @@ cannot be unsent. They must take the reserve → execute → verify path in
 Routing them as reads would give the model two un-idempotent external effects with no
 action record, no idempotency key and no verification. `get_customer` also returns
 customer notes — free text, so `Evidence.untrusted=True` is mandatory (§39).
+
+**Delivered** — see [ADR-0021](adr/0021-the-fifteen-tools.md). Nine tools, the
+read/action partition enforced by test, `action:recover` split from `action:refund`,
+`payment_links` and `notifications` provider tables, 10 scenarios, 7 mutants, 34 tests.
+`PAYMENT_LINK` is now executable, which makes the bulk risk path reachable from the seeded
+dataset and closes the ADR-0020 limitation.
+
+**Two things the trap warning did not cover.** A policy control was firing for the wrong
+reason: the refund amount limit ran for any tool carrying `amount_minor`, so a payment link
+was measured against the merchant's refund limit — invisible while only one money-shaped
+tool existed. And extending the deterministic planner to reach the new tools broke the
+recovery dispatcher, because a request naming an incident id was pulled into a read. A
+request that asks for an action is never a lookup, whatever entities it mentions.
 
 ## Phase 6 — Agent output schema · M · ~2d
 
@@ -272,8 +285,7 @@ rendered from post-hoc reconstruction.
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0–4 complete. Phase 5, the tool registry, is next — and it is what makes five of the seven
-recovery interventions actionable rather than merely planned.)
+(0–5 complete. Phase 6, model-emitted structured output, is next.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

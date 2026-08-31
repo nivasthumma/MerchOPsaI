@@ -137,7 +137,7 @@ def db(_seeded_schema, monkeypatch):
 @pytest.fixture
 def owner() -> Principal:
     return Principal("USR_A_OWNER", "MERCH_A", "owner",
-                     ["read:metrics", "read:orders", "action:refund"])
+                     ["read:metrics", "read:orders", "action:refund", "action:recover"])
 
 
 @pytest.fixture
@@ -150,10 +150,10 @@ def analyst() -> Principal:
 def approver() -> Principal:
     """A second person at MERCH_A who may approve — MerchantOps §26."""
     return Principal("USR_A_APPROVER", "MERCH_A", "approver",
-                     ["read:metrics", "read:orders", "action:refund"])
+                     ["read:metrics", "read:orders", "action:refund", "action:recover"])
 
 
 @pytest.fixture
 def owner_b() -> Principal:
     return Principal("USR_B_OWNER", "MERCH_B", "owner",
-                     ["read:metrics", "read:orders", "action:refund"])
+                     ["read:metrics", "read:orders", "action:refund", "action:recover"])

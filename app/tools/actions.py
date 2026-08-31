@@ -302,3 +302,40 @@ def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> V
     }[vr.state]
     session.flush()
     return vr
+
+
+def get_refund_status(session, merchant_id: str, action_id: str) -> ToolResult:
+    """Read the recorded state of a refund action — MerchantOps §18.
+
+    Declared in the registry since the first version and never implemented, so
+    calling it returned TOOL_UNAVAILABLE. A registered tool with no
+    implementation is a trap: the model can see it, the policy engine authorises
+    it, and only the executor knows it does not exist.
+
+    This reports what WE recorded. `get_payment_status` reads the provider, and
+    `reconcile_transaction` reconciles the two.
+    """
+    action = session.get(AgentAction, action_id)
+    if action is None or action.merchant_id != merchant_id:
+        return ToolResult(success=False, error_code="NOT_FOUND",
+                          data={"action_id": action_id}, risk_level="LOW")
+    data = {
+        "action_id": action.id, "action_type": action.action_type,
+        "target_payment_id": action.target_payment_id,
+        "amount_minor": action.amount_minor, "status": action.status.value,
+        "verification_state": (action.verification_state.value
+                               if action.verification_state else None),
+        "verification_detail": action.verification_detail,
+        "external_reference": action.external_reference,
+        "verify_attempts": action.verify_attempts,
+        "settled": action.verification_state is not None
+                   and action.verification_state.value in ("SUCCESS", "FAILED"),
+    }
+    return ToolResult(
+        success=True, data=data, external_reference=action.external_reference,
+        risk_level="LOW",
+        evidence=[
+            Evidence(key="action_status", value=action.status.value, source="agent_actions"),
+            Evidence(key="verification_state", value=data["verification_state"],
+                     source="verification"),
+        ])

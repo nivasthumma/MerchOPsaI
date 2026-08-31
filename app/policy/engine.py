@@ -151,13 +151,21 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
         return PolicyResult(Decision.ALLOW, "Read-only operation, user authorized.",
                             "low_risk_authorized", risk)
 
-    # ---- 5. Financial constraints (HIGH risk only) -----------------------
+    # ---- 5. Financial constraints ---------------------------------------
+    # A positive integer amount is required of ANY tool that names one.
     amount = ctx.arguments.get("amount_minor")
-    if amount is not None:
-        if not isinstance(amount, int) or amount <= 0:
-            return PolicyResult(Decision.DENY, f"Invalid refund amount: {amount!r}.",
-                                "invalid_amount", risk)
+    if amount is not None and (not isinstance(amount, int) or amount <= 0):
+        return PolicyResult(Decision.DENY, f"Invalid amount: {amount!r}.",
+                            "invalid_amount", risk)
 
+    # The rest are REFUND constraints and are scoped to refunds. They were not,
+    # and the moment a second money-shaped tool existed that mattered: a payment
+    # link carrying an amount was measured against the merchant's *refund* limit
+    # and refused with a message about refunds. The denial happened to be
+    # convenient; the reasoning was wrong, and a limit that fires for the wrong
+    # reason is a limit nobody can predict. Each financial tool gets its own
+    # bounds when it has any.
+    if ctx.tool_name == "request_refund" and amount is not None:
         merchant_limit = session.execute(
             text("SELECT policy_config FROM merchants WHERE id = :m"), {"m": ctx.merchant_id}
         ).scalar() or {}

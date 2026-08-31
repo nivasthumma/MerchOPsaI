@@ -284,14 +284,51 @@ def test_a_multi_candidate_refund_plan_is_critical_and_escalates(db, owner):
 
 # ------------------------------------------------------------- dispatch
 def test_a_non_executable_candidate_is_refused(db, owner):
-    """A PAYMENT_LINK candidate is a real recommendation with no tool behind it.
-    It must never be counted as actionable."""
+    """An intervention with no tool is a real recommendation, ranked and costed,
+    that must never be counted as actionable.
+
+    PAYMENT_LINK became executable in Phase 5, so the case is now carried by
+    HUMAN_ESCALATION — which a reconciliation mismatch plans and which by
+    definition has no tool.
+    """
+    from app.models import IncidentSeverity, Intervention
+    from app.incidents.manager import raise_incident
+
+    inc = raise_incident(
+        db, merchant_id="MERCH_A", incident_type=IncidentType.RECONCILIATION_MISMATCH,
+        severity=IncidentSeverity.CRITICAL, title="t", summary="s",
+        detection_key="k-nonexec", detection_rule="r", detection_version="v")
+    r = plan_recovery(db, inc)
+    assert r.plan.intervention is Intervention.HUMAN_ESCALATION
+    assert not any(c.executable for c in r.candidates)
+
+
+def test_payment_link_candidates_are_now_executable(db):
+    """§18's tools closed the Phase 4 limitation: a degraded method's candidates
+    are actionable, not merely advisory."""
     inc = _incident(db, IncidentType.PAYMENT_DEGRADATION)
     r = plan_recovery(db, inc)
-    assert not any(c.executable for c in r.candidates)
+    assert sum(1 for c in r.candidates if c.executable) > 1
+
+
+def test_a_payment_link_campaign_is_bulk_and_escalates_from_the_seed(db, owner):
+    """The bulk risk path is now reachable from the seeded dataset rather than
+    from state a test had to plant. Thirty-odd links in one campaign is bulk,
+    bulk is CRITICAL (§24), and CRITICAL is above the automation ceiling (§28)."""
+    inc = _incident(db, IncidentType.PAYMENT_DEGRADATION)
+    r = plan_recovery(db, inc)
+    executable = executable_candidates(db, r.plan)
+    assert len(executable) > 2
+
+    risk = assess_candidate_risk(db, r.plan, executable[0])
+    assert risk.level == "CRITICAL"
+    assert any(f.name == "bulk_size" for f in risk.factors)
+
     with pytest.raises(RecoveryStopped) as e:
-        dispatch_candidate(db, r.plan, r.candidates[0], owner)
-    assert e.value.decision.rule == "not_executable"
+        dispatch_candidate(db, r.plan, executable[0], owner)
+    assert e.value.decision.rule == "risk_exceeds_allowed_level"
+    db.refresh(r.plan)
+    assert r.plan.status is PlanStatus.ESCALATED
 
 
 def test_dispatch_goes_through_the_ordinary_approval_path(db, owner):

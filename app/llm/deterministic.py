@@ -31,6 +31,16 @@ ORDER_RE = re.compile(r"\b(SYN_ORD_[A-Z0-9]+)\b")
 PAYMENT_RE = re.compile(r"\b(SYN_PAY_[0-9]+)\b")
 AMOUNT_RE = re.compile(r"\bamount\s+([0-9]{2,})\b", re.I)
 SHOW_ORDER_RE = re.compile(r"\b(show|get|fetch|open|display|look up)\b.*\border\b", re.I)
+# MerchantOps §18 added nine tools. These route to them, and each is gated
+# narrowly enough not to change where an existing request already goes -- the
+# planner is what the whole evaluation suite measures through, so a broad
+# trigger here silently rewrites what a hundred scenarios are testing.
+REASON_RE = re.compile(r"\b(error|reason|breakdown|root cause)\b", re.I)
+CUSTOMER_RE = re.compile(r"\b(SYN_CUS_[A-Z0-9]+)\b")
+INCIDENT_RE = re.compile(r"\b(INC_[A-Z0-9]+)\b")
+ACTION_RE = re.compile(r"\b(ACT_[A-Z0-9]+)\b")
+PROVIDER_RE = re.compile(r"\b(provider|external state|reconcile|reconciliation|webhook)\b", re.I)
+PAYMENT_LINK_RE = re.compile(r"\bpayment link\b", re.I)
 
 
 class DeterministicProvider(LLMProvider):
@@ -53,6 +63,28 @@ class DeterministicProvider(LLMProvider):
                     messages, "get_order", {"order_id": oid}):
                 return self._call("get_order", {"order_id": oid})
             return LLMTurn(text=self._order_summary(results, oid), stop_reason="end_turn")
+
+        # ---------------- recovery contact (§18) --------------------------
+        # The model may PROPOSE contacting a customer. Whether it is permitted,
+        # and whether a human signs it off, is decided downstream — which is
+        # what makes this branch worth having: without it the authorization
+        # scenarios assert that a tool nobody calls was not called.
+        if PAYMENT_LINK_RE.search(request) and "generate_payment_link" in available \
+                and "generate_payment_link" not in called:
+            pay = PAYMENT_RE.search(request)
+            if pay:
+                return self._call("generate_payment_link", {
+                    "synthetic_payment_id": pay.group(1),
+                    "reason": "Payment failed during a period of method degradation; "
+                              "offering the customer another route to complete it.",
+                })
+
+        # ---------------- direct lookups (§18) ----------------------------
+        # Placed before the tracks below: a request naming one entity is asking
+        # about that entity, not opening an investigation.
+        direct = self._direct_lookup(request, available, messages, called, results)
+        if direct is not None:
+            return direct
 
         wants_dupe = bool(DUPLICATE_RE.search(request))
         wants_refund = bool(REFUND_RE.search(request))
@@ -96,6 +128,12 @@ class DeterministicProvider(LLMProvider):
             if worst and "get_payment_metrics" in available and not self._called_with(
                     messages, "get_payment_metrics", {"method": worst}):
                 return self._call("get_payment_metrics", {"method": worst})
+
+            # Asking WHY something failed is a different question from asking
+            # WHICH method failed, and §18 gives it its own tool.
+            if REASON_RE.search(request) and "get_failure_breakdown" in available \
+                    and "get_failure_breakdown" not in called:
+                return self._call("get_failure_breakdown", {"method": worst})
 
             return LLMTurn(text=self._revenue_summary(results, worst), stop_reason="end_turn")
 
@@ -222,6 +260,95 @@ class DeterministicProvider(LLMProvider):
                 f"INR {p['amount_minor']/100:,.2f} for the same customer "
                 f"{p['time_separation_seconds']} seconds apart (confidence {p['confidence']}).")
 
+    def _direct_lookup(self, request, available, messages, called, results):
+        """Route a request that names a specific entity straight at it.
+
+        A request that ASKS FOR AN ACTION is never a lookup, whatever entities
+        it happens to mention. The recovery planner dispatches with text like
+        "Refund payment X ... for incident INC_Y", and without this guard the
+        incident id pulled the whole thing into a read and no refund was ever
+        proposed. Four tests caught it; the scenario suite did not, because no
+        scenario names an incident id.
+        """
+        if REFUND_RE.search(request) or DUPLICATE_RE.search(request):
+            return None
+
+        cust = CUSTOMER_RE.search(request)
+        if cust and "get_customer" in available:
+            cid = cust.group(1)
+            if not self._called_with(messages, "get_customer", {"customer_id": cid}):
+                return self._call("get_customer", {"customer_id": cid})
+            return LLMTurn(text=self._entity_summary(results, "customer"),
+                           stop_reason="end_turn")
+
+        inc = INCIDENT_RE.search(request)
+        if inc and "calculate_recovery_candidates" in available:
+            iid = inc.group(1)
+            if not self._called_with(messages, "calculate_recovery_candidates",
+                                     {"incident_id": iid}):
+                return self._call("calculate_recovery_candidates", {"incident_id": iid})
+            return LLMTurn(text=self._entity_summary(results, "recovery"),
+                           stop_reason="end_turn")
+
+        act = ACTION_RE.search(request)
+        if act and PROVIDER_RE.search(request):
+            aid = act.group(1)
+            if "reconcile_transaction" in available and "reconcile_transaction" not in called:
+                return self._call("reconcile_transaction", {"action_id": aid})
+            return LLMTurn(text=self._entity_summary(results, "reconcile"),
+                           stop_reason="end_turn")
+
+        pay = PAYMENT_RE.search(request)
+        if pay and not REFUND_RE.search(request) and not DUPLICATE_RE.search(request):
+            pid = pay.group(1)
+            # "what does the provider say about X" is a question about external
+            # state, and answering it from our own records would substitute one
+            # for the other (§32).
+            if PROVIDER_RE.search(request):
+                if "get_payment_status" in available and "get_payment_status" not in called:
+                    return self._call("get_payment_status", {"payment_id": pid})
+            elif "get_payment" in available and not self._called_with(
+                    messages, "get_payment", {"payment_id": pid}):
+                return self._call("get_payment", {"payment_id": pid})
+            else:
+                return None
+            return LLMTurn(text=self._entity_summary(results, "payment"),
+                           stop_reason="end_turn")
+        return None
+
+    @staticmethod
+    def _entity_summary(results: list[dict], kind: str) -> str:
+        """State what the tools returned. Deliberately flat: the planner has no
+        judgement to add, and prose that sounded like analysis would be prose
+        nothing produced."""
+        data = results[-1].get("data", {}) if results else {}
+        if not data:
+            return "The requested record could not be read."
+        if kind == "customer":
+            return (f"Customer {data.get('id')} ({data.get('segment')}): "
+                    f"{data.get('payments')} payments, {data.get('failed_payments')} failed, "
+                    f"lifetime paid INR {data.get('lifetime_paid_minor', 0)/100:,.2f}. "
+                    f"Contact opted out: {data.get('contact_opted_out')}.")
+        if kind == "recovery":
+            return (f"Incident {data.get('incident_id')}: intervention "
+                    f"{data.get('intervention')}, {data.get('eligible_count')} of "
+                    f"{data.get('candidate_count')} candidates eligible. Expected recovery "
+                    f"INR {data.get('expected_recovery_minor', 0)/100:,.2f} — "
+                    f"{data.get('expected_recovery_basis', '')}")
+        if kind == "reconcile":
+            return (f"Action {data.get('action_id')} reconciled: "
+                    f"{data.get('from')} -> {data.get('to')}. {data.get('reason', '')}")
+        if "provider_status" in data:
+            return (f"Provider reports payment {data.get('external_payment_id')} as "
+                    f"{data.get('provider_status')}, refunded INR "
+                    f"{data.get('provider_amount_refunded_minor', 0)/100:,.2f}. "
+                    f"Internal and provider agree: {data.get('internal_and_provider_agree')}.")
+        return (f"Payment {data.get('id')}: {data.get('status')}, INR "
+                f"{data.get('amount_minor', 0)/100:,.2f} via {data.get('method')}, "
+                f"refundable balance INR "
+                f"{data.get('refundable_balance_minor', 0)/100:,.2f}."
+                + (f" Error: {data['error_reason']}." if data.get("error_reason") else ""))
+
     @staticmethod
     def _revenue_summary(results: list[dict], worst: str | None) -> str:
         rev = next((r["data"] for r in results if "change_pct" in r.get("data", {})), None)
@@ -241,6 +368,12 @@ class DeterministicProvider(LLMProvider):
                 f"The decline is concentrated in {worst}: success fell from "
                 f"{m['previous_success_rate_pct']}% to {m['current_success_rate_pct']}% "
                 f"({m['delta_pct_points']} percentage points), while other methods held steady.")
+        brk = next((r["data"] for r in results if "by_reason" in r.get("data", {})), None)
+        if brk and brk.get("by_reason"):
+            top = brk["by_reason"][0]
+            parts.append(
+                f"The dominant error is {top['error_reason']} ({top['count']} occurrences, "
+                f"{top['share_pct']}% of failures, INR {top['value_minor']/100:,.2f}).")
         if hourly and hourly.get("worst_hours"):
             hrs = ", ".join(f"{h['hour']:02d}:00 ({h['failure_rate_pct']}% failed)"
                             for h in hourly["worst_hours"])

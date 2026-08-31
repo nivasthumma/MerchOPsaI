@@ -278,6 +278,10 @@ class AgentRuntime:
         result = execute_read_tool(
             self.session, req.name, self.principal.merchant_id, req.arguments,
             frozen=self._frozen_for(seq, req.name),
+            # Some §18 verification tools answer questions about PROVIDER state,
+            # so they need the adapter. It is passed here rather than built
+            # inside the tool, so the fault injector reaches them too.
+            adapter=get_adapter(self.session, self.injector),
         )
         tc.success = result.success
         tc.error_code = result.error_code

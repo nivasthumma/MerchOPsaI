@@ -55,6 +55,39 @@ An incident supplies **context**, never authority. Both entry points run the sam
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
 
+## The tool registry
+
+Added in ADR-0021. §18's fifteen tools, and one rule that partitions them:
+
+```
+read    -> executes on request       LOW risk, reversible, no external effect
+action  -> approval, idempotency key, action record, verification
+```
+
+Every tool is one or the other — never both, never neither. Neither is what
+`get_refund_status` was for four phases: registered, visible to the model, authorised by
+policy, and returning `TOOL_UNAVAILABLE` because nothing implemented it. Both would be a
+state-changing action with a route that skips approval.
+
+| | tools |
+|---|---|
+| Investigation (read) | `get_revenue_summary`, `get_payment_metrics`, `get_failure_breakdown`, `find_duplicate_payments`, `get_payment`, `get_order`, `get_customer` |
+| Recovery (read) | `calculate_recovery_candidates` |
+| Recovery (**action**) | `request_refund` (HIGH), `generate_payment_link` (MEDIUM), `send_customer_notification` (MEDIUM) |
+| Verification (read) | `get_refund_status`, `get_payment_status`, `get_provider_event`, `reconcile_transaction` |
+
+The two contacting actions take the refund path exactly: a notification cannot be unsent,
+and a payment link, once a customer has it, has been given to them.
+
+**The model chooses which, never how much or what to say.** `generate_payment_link` takes
+no amount — the figure comes from the failed payment's row. `send_customer_notification`
+takes a template from a fixed enum, not a body. Both are injection sinks, closed the same
+way.
+
+**Reading provider state is a distinct act.** `get_payment` reads our record;
+`get_payment_status` reads the provider's and returns both, with whether they agree. A
+failed provider read is reported as a failed read, never answered from internal state.
+
 ## Recovery planning
 
 Added in ADR-0020. §23's flow, and it ends where §23 ends:

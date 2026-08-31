@@ -39,6 +39,21 @@ class ExternalRefund:
 
 
 @dataclass
+class ExternalPaymentLink:
+    id: str
+    amount_minor: int
+    status: str                 # created | paid | expired | cancelled
+    short_url: str
+
+
+@dataclass
+class ExternalNotification:
+    id: str
+    channel: str                # email | sms
+    status: str                 # queued | sent | failed
+
+
+@dataclass
 class ExternalPayment:
     id: str
     amount_minor: int
@@ -66,6 +81,26 @@ class RazorpayAdapter(ABC):
         timeout we hold no external reference, so the ONLY way to learn whether
         the action landed is to ask the provider about our own key."""
         ...
+
+    # --- MerchantOps §18 recovery actions ---------------------------------
+    # Each create takes an idempotency key for the same reason create_refund
+    # does: these reach a customer, and a retry that sends a second message is
+    # not a no-op just because no money moved.
+    @abstractmethod
+    def create_payment_link(self, *, merchant_id: str, customer_id: str,
+                            amount_minor: int, source_payment_id: str | None,
+                            idempotency_key: str) -> ExternalPaymentLink: ...
+
+    @abstractmethod
+    def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None: ...
+
+    @abstractmethod
+    def create_notification(self, *, merchant_id: str, customer_id: str,
+                            channel: str, template: str,
+                            idempotency_key: str) -> ExternalNotification: ...
+
+    @abstractmethod
+    def get_notification(self, notification_id: str) -> ExternalNotification | None: ...
 
 
 class MockAdapter(RazorpayAdapter):
@@ -192,6 +227,74 @@ class MockAdapter(RazorpayAdapter):
                                amount_refunded_minor=int(row["amount_refunded_minor"]),
                                refund_status=row["refund_status"], status=row["status"])
 
+    # --- §18 recovery actions --------------------------------------------
+    def _link_id(self, key: str) -> str:
+        return "plink_MOCK" + hashlib.sha256(key.encode()).hexdigest()[:14].upper()
+
+    def create_payment_link(self, *, merchant_id, customer_id, amount_minor,
+                            source_payment_id, idempotency_key) -> ExternalPaymentLink:
+        self.last_fault = self.injector.apply("create_payment_link")
+        lid = self._link_id(idempotency_key)
+        # Provider-side idempotency, exactly as for refunds: the same key
+        # returns the original object rather than creating a second one.
+        existing = self.session.execute(text(
+            "SELECT id, amount_minor, status, short_url FROM payment_links WHERE id = :i"),
+            {"i": lid}).mappings().first()
+        if existing:
+            return ExternalPaymentLink(id=lid, amount_minor=int(existing["amount_minor"]),
+                                       status=existing["status"],
+                                       short_url=existing["short_url"])
+        url = f"https://rzp.io/i/{lid[-10:]}"
+        self.session.execute(text("""
+            INSERT INTO payment_links (id, merchant_id, customer_id, source_payment_id,
+                                       amount_minor, currency, status, short_url, created_at)
+            VALUES (:i, :m, :c, :p, :a, 'INR', 'created', :u, now())
+        """), {"i": lid, "m": merchant_id, "c": customer_id, "p": source_payment_id,
+               "a": amount_minor, "u": url})
+        self.session.flush()
+        return ExternalPaymentLink(id=lid, amount_minor=amount_minor,
+                                   status="created", short_url=url)
+
+    def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None:
+        self.injector.apply("get_payment_link")
+        r = self.session.execute(text(
+            "SELECT id, amount_minor, status, short_url FROM payment_links WHERE id = :i"),
+            {"i": link_id}).mappings().first()
+        if r is None:
+            return None
+        return ExternalPaymentLink(id=r["id"], amount_minor=int(r["amount_minor"]),
+                                   status=r["status"], short_url=r["short_url"])
+
+    def _notification_id(self, key: str) -> str:
+        return "notif_MOCK" + hashlib.sha256(key.encode()).hexdigest()[:14].upper()
+
+    def create_notification(self, *, merchant_id, customer_id, channel, template,
+                            idempotency_key) -> ExternalNotification:
+        self.last_fault = self.injector.apply("create_notification")
+        nid = self._notification_id(idempotency_key)
+        existing = self.session.execute(text(
+            "SELECT id, channel, status FROM notifications WHERE id = :i"),
+            {"i": nid}).mappings().first()
+        if existing:
+            return ExternalNotification(id=nid, channel=existing["channel"],
+                                        status=existing["status"])
+        self.session.execute(text("""
+            INSERT INTO notifications (id, merchant_id, customer_id, channel, template,
+                                       status, created_at)
+            VALUES (:i, :m, :c, :ch, :t, 'sent', now())
+        """), {"i": nid, "m": merchant_id, "c": customer_id, "ch": channel, "t": template})
+        self.session.flush()
+        return ExternalNotification(id=nid, channel=channel, status="sent")
+
+    def get_notification(self, notification_id: str) -> ExternalNotification | None:
+        self.injector.apply("get_notification")
+        r = self.session.execute(text(
+            "SELECT id, channel, status FROM notifications WHERE id = :i"),
+            {"i": notification_id}).mappings().first()
+        if r is None:
+            return None
+        return ExternalNotification(id=r["id"], channel=r["channel"], status=r["status"])
+
 
 class LiveTestModeAdapter(RazorpayAdapter):
     """Real Razorpay Test Mode. Activated only when credentials are present.
@@ -268,6 +371,60 @@ class LiveTestModeAdapter(RazorpayAdapter):
             amount_refunded_minor=int(b.get("amount_refunded", 0)),
             refund_status=b.get("refund_status"), status=b.get("status", "unknown"),
         )
+
+
+    # --- §18 recovery actions --------------------------------------------
+    def create_payment_link(self, *, merchant_id, customer_id, amount_minor,
+                            source_payment_id, idempotency_key) -> ExternalPaymentLink:
+        import httpx
+        self.last_fault = self.injector.apply("create_payment_link")
+        try:
+            resp = self._client.post("/payment_links", json={
+                "amount": amount_minor, "currency": "INR",
+                "reference_id": idempotency_key,
+                "notes": {"idempotency_key": idempotency_key,
+                          "source_payment_id": source_payment_id or ""},
+            })
+        except httpx.HTTPError as e:
+            raise ProviderTimeout(str(e), submitted=True) from e
+        if resp.status_code >= 500:
+            raise ProviderError(f"Provider {resp.status_code}", code="EXTERNAL_API_ERROR")
+        if resp.status_code >= 400:
+            raise ProviderError(f"Provider rejected payment link: {resp.text[:200]}",
+                                code="EXTERNAL_API_ERROR")
+        b = resp.json()
+        return ExternalPaymentLink(id=b["id"], amount_minor=int(b["amount"]),
+                                   status=b.get("status", "created"),
+                                   short_url=b.get("short_url", ""))
+
+    def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None:
+        self.injector.apply("get_payment_link")
+        resp = self._client.get(f"/payment_links/{link_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        b = resp.json()
+        return ExternalPaymentLink(id=b["id"], amount_minor=int(b["amount"]),
+                                   status=b.get("status", "created"),
+                                   short_url=b.get("short_url", ""))
+
+    def create_notification(self, *, merchant_id, customer_id, channel, template,
+                            idempotency_key) -> ExternalNotification:
+        """Not available on this path, and it fails closed rather than pretending.
+
+        Razorpay notifies *about a payment link* (`/payment_links/:id/notify_by/:medium`);
+        it is not a general customer-messaging service, and this build has no
+        email or SMS provider configured. Returning a fabricated success here
+        would be the one thing the whole verification design exists to prevent:
+        reporting that a customer was contacted when nobody was.
+        """
+        raise ProviderError(
+            "No live notification channel is configured. send_customer_notification "
+            "executes only against the mock adapter in this build.",
+            code="INTEGRATION_UNAVAILABLE")
+
+    def get_notification(self, notification_id: str) -> ExternalNotification | None:
+        return None
 
 
 def get_adapter(session, injector: FaultInjector | None = None) -> RazorpayAdapter:

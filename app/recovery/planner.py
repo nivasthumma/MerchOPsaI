@@ -67,10 +67,15 @@ from app.models import (
 
 PLANNER_VERSION = "planner-v1"
 
-# Which interventions this build can actually carry out. The other five are
-# legitimate recommendations with no tool behind them yet (§18 adds them), and a
-# candidate proposing one is recorded but never counted as actionable.
-EXECUTABLE = frozenset({Intervention.REFUND})
+# Which interventions this build can actually carry out. §18's tools made
+# PAYMENT_LINK executable; RETRY, SUBSCRIPTION_RETRY and CUSTOMER_NOTIFICATION
+# remain recommendations, and a candidate proposing one is recorded, ranked and
+# costed but never counted as actionable.
+#
+# CUSTOMER_NOTIFICATION has a tool but is not planned as a standalone
+# intervention: no incident type maps to it. It is something an operator or the
+# model reaches for alongside a recovery, not a recovery in itself.
+EXECUTABLE = frozenset({Intervention.REFUND, Intervention.PAYMENT_LINK})
 
 # Incident type -> the intervention that fits it. Deterministic: which remedy
 # suits which failure is a property of the failure, not a judgement call the
@@ -84,6 +89,44 @@ _INTERVENTION = {
     IncidentType.DUPLICATE_PAYMENT: Intervention.REFUND,
     IncidentType.RECONCILIATION_MISMATCH: Intervention.HUMAN_ESCALATION,
 }
+
+
+@dataclass
+class PlanDraft:
+    """The calculation, with nothing written down.
+
+    Split out so that `calculate_recovery_candidates` (§18) and `plan_recovery`
+    cannot disagree. If the tool computed its own figures, the model could be
+    told one number while the system stored another — and the model's answer is
+    what a merchant reads.
+    """
+    intervention: Intervention
+    rate: float
+    attributable: float
+    basis: str
+    total_volume_minor: int
+    eligible_recovery_minor: int
+    expected_recovery_minor: int
+    graded: list[dict]
+
+    def as_dict(self) -> dict:
+        return {
+            "intervention": self.intervention.value,
+            "executable": self.intervention in EXECUTABLE,
+            "candidate_count": len(self.graded),
+            "eligible_count": sum(1 for g in self.graded if g["eligible"]),
+            "total_failed_volume_minor": self.total_volume_minor,
+            "eligible_recovery_minor": self.eligible_recovery_minor,
+            "expected_recovery_minor": self.expected_recovery_minor,
+            "expected_recovery_basis": self.basis,
+            "attributable_fraction": round(self.attributable, 4),
+            "candidates": [{
+                "payment_id": g["id"], "customer_id": g["customer_id"],
+                "amount_minor": int(g["amount_minor"]),
+                "eligible": g["eligible"], "ineligible_reason": g["reason"],
+                "expected_recovery_minor": g["expected"],
+            } for g in self.graded],
+        }
 
 
 @dataclass
@@ -150,9 +193,8 @@ def _eligibility(row: dict, intervention: Intervention) -> tuple[bool, str | Non
     return True, None
 
 
-def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
-    """Build (or return) the recovery plan for one incident."""
-    s = get_settings()
+def compute_plan(session, incident: Incident) -> PlanDraft:
+    """§23's calculation, writing nothing. The only source of these figures."""
     intervention = _INTERVENTION.get(incident.incident_type, Intervention.HUMAN_ESCALATION)
 
     if incident.incident_type is IncidentType.PAYMENT_DEGRADATION:
@@ -208,6 +250,24 @@ def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
     expected_minor = int(round(eligible_exact * rate))
 
     graded.sort(key=lambda r: (not r["eligible"], -r["expected"], r["id"]))
+
+    return PlanDraft(intervention=intervention, rate=rate, attributable=attributable,
+                     basis=basis, total_volume_minor=total_volume,
+                     eligible_recovery_minor=eligible_minor,
+                     expected_recovery_minor=expected_minor, graded=graded)
+
+
+def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
+    """Build (or return) the recovery plan for one incident."""
+    s = get_settings()
+    draft = compute_plan(session, incident)
+    intervention = draft.intervention
+    graded = draft.graded
+    eligible_minor = draft.eligible_recovery_minor
+    expected_minor = draft.expected_recovery_minor
+    basis = draft.basis
+    attributable = draft.attributable
+    total_volume = draft.total_volume_minor
 
     now = datetime.now(timezone.utc)
     plan = RecoveryPlan(

@@ -125,7 +125,8 @@ def test_incident_carries_evidence_and_audit(db):
     assert {"current_success_rate", "baseline_success_rate", "revenue_at_risk"} <= keys
     assert all(e.source in ("payments", "calculation_engine") for e in ev)
 
-    audit = db.query(AuditLog).filter(AuditLog.incident_id == inc.id).all()
+    audit = (db.query(AuditLog).filter(AuditLog.incident_id == inc.id)
+             .order_by(AuditLog.id).all())
     assert [a.event_type for a in audit] == ["incident_detected"]
     assert audit[0].merchant_id == "MERCH_A"
     assert rep.duration_ms >= 0

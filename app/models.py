@@ -270,6 +270,42 @@ class Refund(Base):
 
 
 # --------------------------------------------------------------------------
+# Provider-side objects for the non-refund actions (MerchantOps §18)
+# --------------------------------------------------------------------------
+class PaymentLink(Base):
+    """A request for payment sent to a customer.
+
+    This is the mock provider's state, the same role `refunds` plays for
+    refunds: verification re-reads it rather than trusting what the create call
+    returned. With live credentials Razorpay holds this and the table is only a
+    local mirror.
+    """
+    __tablename__ = "payment_links"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(String(64), index=True)
+    # The failed payment this link is trying to recover, for traceability.
+    source_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    amount_minor: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    status: Mapped[str] = mapped_column(String(32), default="created")  # created|paid|expired|cancelled
+    short_url: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Notification(Base):
+    """A message sent to a customer. Irreversible: it cannot be unsent."""
+    __tablename__ = "notifications"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(String(64), index=True)
+    channel: Mapped[str] = mapped_column(String(16))            # email | sms
+    template: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="queued")  # queued|sent|failed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------------------------
 # Provider events (MerchantOps §11, §34)
 # --------------------------------------------------------------------------
 class WebhookEvent(Base):

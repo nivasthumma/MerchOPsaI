@@ -721,6 +721,52 @@ An earlier implementation withheld HIGH-risk tools during replay, which guarante
 *false* divergence on every action task and made the metric meaningless. That is why
 the distinction exists.
 
+## Failure taxonomy and retries
+
+Added in ADR-0024. §56 asks for six fields on every failure; §57 spends a section on the one
+that matters. `app/failures.py` is that table.
+
+| retryability | means | examples |
+|---|---|---|
+| `NEVER` | the answer will be identical; the attempt is noise | authorization, policy denial, invalid input |
+| `BOUNDED_BACKOFF` | transient; retry with backoff and jitter | tool timeout, provider 5xx, rate limit |
+| `RECONCILE` | **read** provider state; never repeat the action | unknown external state, partial execution |
+| `ESCALATE` | a human decides; retrying is not the question | budget exceeded, grounding failure |
+
+`RECONCILE` is not a kind of retry and `may_retry()` returns False for it. Reconciling is a
+read; retrying repeats an action whose outcome is unknown, which is the most dangerous thing
+this system could do. An unclassified code is `INTERNAL_ERROR` and escalates — defaulting to
+retryable is how a permanent error becomes an infinite loop.
+
+`GET /failures/taxonomy` publishes the whole table.
+
+## Versioning and traces
+
+§41's seven versions are recorded on every run. `tool_registry_version` is **derived** —
+hashed from which tools exist, their risk class, permissions and reversibility — because a
+hand-kept constant stops being true the first time someone adds a tool and forgets it, and
+reproducibility is the only reason the field exists. `policy_version` and `workflow_version`
+stay hand-bumped: they describe rules and shape, not code.
+
+`correlation_id` is a column on `audit_logs`, not a payload key, because joining and indexing
+is the only thing a correlation id is for. An incident-dispatched task inherits the incident's
+own id, so §58's complete trace assembles:
+
+```
+COR_D4EC035EE2C3  (15 spans)
+   IncidentCreated        incident_detected         [incident]
+   IncidentStateChanged   incident_status_changed   [incident]
+   TaskCreated            task_created              [TASK_5353446C87]
+   PolicyEvaluated        policy_decision           [TASK_5353446C87]
+   EvidenceCollected      tool_call                 [TASK_5353446C87]
+   RecommendationCreated  agent_output              [TASK_5353446C87]
+   TaskCompleted          task_completed            [TASK_5353446C87]
+   InvestigationCompleted incident_investigated     [incident]
+```
+
+§47's event names are published alongside ours rather than replacing them; events the spec
+never mentions keep their own name rather than being given an invented one.
+
 ## Failure model
 
 Failures are classified, never collapsed into a generic error:

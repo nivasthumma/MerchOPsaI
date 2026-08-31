@@ -87,6 +87,14 @@ class Expect(BaseModel):
     ledger_unknown_gt_zero: bool | None = None
     candidate_status_after: str | None = None
 
+    # --- observability assertions (MerchantOps §41, §47, §56, §57, §58) ---
+    failure_category: str | None = None
+    failure_retryability: str | None = None
+    failure_owner: str | None = None
+    records_all_versions: bool | None = None
+    one_correlation_id: bool | None = None
+    canonical_events_include: list[str] = Field(default_factory=list)
+
 
 class Scenario(BaseModel):
     id: str

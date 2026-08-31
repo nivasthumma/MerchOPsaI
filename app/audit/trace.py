@@ -5,6 +5,23 @@ import re
 
 from app.models import AuditLog
 
+# MerchantOps §47/§58. Set for the duration of a run so every event it writes
+# carries the same id without every call site having to pass one. Process-local
+# and deliberately not thread-shared: this application is single-threaded per
+# request, and a correlation id that leaked between concurrent runs would tie
+# together traces that have nothing to do with each other.
+_CURRENT_CORRELATION: str | None = None
+
+
+def set_correlation_id(value: str | None) -> None:
+    global _CURRENT_CORRELATION
+    _CURRENT_CORRELATION = value
+
+
+def current_correlation_id() -> str | None:
+    return _CURRENT_CORRELATION
+
+
 _SECRET_KEYS = re.compile(r"(secret|password|api_key|token|authorization|key_secret)", re.I)
 _SECRET_VALUE = re.compile(r"\b(rzp_(test|live)_[A-Za-z0-9]+|sk-[A-Za-z0-9\-_]{16,})\b")
 
@@ -30,6 +47,7 @@ def record(session, task, event_type: str, payload: dict | None = None) -> Audit
         merchant_id=getattr(task, "merchant_id", None),
         user_id=getattr(task, "user_id", None),
         event_type=event_type,
+        correlation_id=_CURRENT_CORRELATION,
         payload=redact(payload or {}),
     )
     session.add(entry)
@@ -52,6 +70,10 @@ def record_incident(session, incident, event_type: str,
         merchant_id=getattr(incident, "merchant_id", None),
         user_id=None,
         event_type=event_type,
+        # An incident's own id is its correlation id when nothing else is set,
+        # so detection and lifecycle events join the same trace as the tasks
+        # they dispatch.
+        correlation_id=_CURRENT_CORRELATION or getattr(incident, "correlation_id", None),
         payload=redact(payload or {}),
     )
     session.add(entry)
@@ -59,11 +81,70 @@ def record_incident(session, incident, event_type: str,
     return entry
 
 
+# MerchantOps §47 names its events in its own vocabulary. Ours are snake_case,
+# they appear in scenario expectations and in stored rows, and renaming them
+# would be a large diff whose only effect is to change strings — the same
+# argument ADR-0016 made about section numbers. So they are published alongside
+# instead, and a reader working from §47 can find the event it means.
+#
+# Events with no §47 name keep their own: the spec's list is explicitly
+# "Examples", not an enumeration, and inventing a canonical name for something
+# it never mentions would be pretending to a correspondence that is not there.
+CANONICAL_EVENT: dict[str, str] = {
+    "task_created": "TaskCreated",
+    "task_completed": "TaskCompleted",
+    "incident_detected": "IncidentCreated",
+    "incident_investigated": "InvestigationCompleted",
+    "incident_status_changed": "IncidentStateChanged",
+    "tool_call": "EvidenceCollected",
+    "agent_output": "RecommendationCreated",
+    "policy_decision": "PolicyEvaluated",
+    "policy_recheck": "PolicyEvaluated",
+    "approval_requested": "ApprovalRequested",
+    "approval_granted": "ApprovalGranted",
+    "approval_rejected": "ApprovalRejected",
+    "action_executing": "ActionStarted",
+    "action_recorded": "ProviderResponseReceived",
+    "verification": "VerificationCompleted",
+    "reverification": "VerificationCompleted",
+    "reconciliation_attempt": "ReconciliationAttempted",
+    "recovery_planned": "RecoveryPlanned",
+    "recovery_dispatched": "ActionStarted",
+    "recovery_stopped": "RecoveryStopped",
+}
+
+
+def canonical(event_type: str) -> str:
+    """§47's name for one of our events, or ours when it has none."""
+    return CANONICAL_EVENT.get(event_type, event_type)
+
+
+def _view(r: AuditLog) -> dict:
+    return {"id": r.id, "at": r.created_at.isoformat(), "event": r.event_type,
+            "canonical_event": canonical(r.event_type),
+            "correlation_id": r.correlation_id, "task_id": r.task_id,
+            "incident_id": r.incident_id, "payload": r.payload}
+
+
+def trace_by_correlation(session, correlation_id: str,
+                         merchant_id: str | None = None) -> list[dict]:
+    """MerchantOps §58's complete trace: everything one operation touched.
+
+    Detection, the incident's lifecycle, the tasks it dispatched, their tool
+    calls, the policy decisions, the approval, the provider call, verification
+    and reconciliation — in one ordering, because they are one story.
+    """
+    q = session.query(AuditLog).filter(AuditLog.correlation_id == correlation_id)
+    if merchant_id is not None:
+        # Merchant isolation applies to a trace exactly as it applies to a task.
+        q = q.filter(AuditLog.merchant_id == merchant_id)
+    return [_view(r) for r in q.order_by(AuditLog.id).all()]
+
+
 def trace_for(session, task_id: str) -> list[dict]:
     rows = session.query(AuditLog).filter(AuditLog.task_id == task_id) \
         .order_by(AuditLog.id).all()
-    return [{"id": r.id, "at": r.created_at.isoformat(), "event": r.event_type,
-             "payload": r.payload} for r in rows]
+    return [_view(r) for r in rows]
 
 
 def trace_for_incident(session, incident_id: str) -> list[dict]:
@@ -72,5 +153,4 @@ def trace_for_incident(session, incident_id: str) -> list[dict]:
     ordering, because they are one story."""
     rows = session.query(AuditLog).filter(AuditLog.incident_id == incident_id) \
         .order_by(AuditLog.id).all()
-    return [{"id": r.id, "at": r.created_at.isoformat(), "event": r.event_type,
-             "task_id": r.task_id, "payload": r.payload} for r in rows]
+    return [_view(r) for r in rows]

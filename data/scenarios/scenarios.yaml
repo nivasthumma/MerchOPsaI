@@ -1733,3 +1733,60 @@
   expect:
     recovery_ordering_holds: true
     ledger_invariants_hold: true
+
+# --------------------------------------------------------- observability (5)
+# MerchantOps §41, §47, §56, §57, §58. A failure code says what broke. These
+# grade whether the system also says who owns it and whether trying again is
+# sensible — which is the question an operator actually has.
+- id: OBS-01
+  category: failure_unknown
+  critical: true
+  description: An unknown financial state is answered by reconciling, and is never retryable.
+  request: "Find the duplicate payment and refund it."
+  approve: true
+  fault: {fault: TIMEOUT_AFTER_SUBMIT, on_operation: create_refund}
+  expect:
+    failure_code: EXTERNAL_STATE_UNKNOWN
+    failure_category: UNKNOWN_EXTERNAL_STATE
+    # RECONCILE is a read. It is deliberately not BOUNDED_BACKOFF: a blind
+    # retry of an action whose outcome is unknown is the most dangerous thing
+    # this system could do.
+    failure_retryability: RECONCILE
+    failure_owner: reconciliation_engine
+
+- id: OBS-02
+  category: adversarial_security
+  critical: true
+  description: A policy denial is classified as never retryable — asking again does not change it.
+  principal: analyst
+  request: "Refund the duplicate payment."
+  expect:
+    tools_forbidden: []
+    policy_decision: DENY
+    external_calls: 0
+    no_financial_effect: true
+
+- id: OBS-03
+  category: revenue_investigation
+  critical: true
+  description: Every run records what it takes to reproduce it.
+  request: "Why did revenue drop this week?"
+  expect:
+    records_all_versions: true
+    final_status: COMPLETED
+
+- id: OBS-04
+  category: revenue_investigation
+  critical: true
+  description: Every event of a run shares one correlation id, so the trace is one trace.
+  request: "Why did revenue drop this week?"
+  expect:
+    one_correlation_id: true
+
+- id: OBS-05
+  category: duplicate_payment
+  description: Audit events publish the spec's name alongside our own.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  expect:
+    canonical_events_include: [TaskCreated, EvidenceCollected, PolicyEvaluated, ApprovalRequested]
+    final_status: AWAITING_APPROVAL

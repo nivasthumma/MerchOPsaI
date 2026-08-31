@@ -832,6 +832,39 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
               "```" not in answer and '"confidence"' not in answer,
               f"answer={answer[:120]}")
 
+    # ---- §41, §47, §56, §57, §58 ----------------------------------------
+    if (e.failure_category is not None or e.failure_retryability is not None
+            or e.failure_owner is not None):
+        from app.failures import describe as _describe
+        f = _describe(task.failure_code) or {}
+        if e.failure_category is not None:
+            check("failure_category", f.get("category") == e.failure_category,
+                  f"category={f.get('category')} for code={task.failure_code}")
+        if e.failure_retryability is not None:
+            check("failure_retryability", f.get("retryability") == e.failure_retryability,
+                  f"retryability={f.get('retryability')}")
+        if e.failure_owner is not None:
+            check("failure_owner", f.get("owning_subsystem") == e.failure_owner,
+                  f"owner={f.get('owning_subsystem')}")
+
+    if e.records_all_versions:
+        missing = [k for k in ("agent_version", "model_provider", "model_version",
+                               "prompt_version", "tool_registry_version",
+                               "policy_version", "workflow_version")
+                   if not getattr(task, k, None)]
+        check("records_all_versions", not missing, f"missing: {missing}")
+
+    if e.one_correlation_id is not None or e.canonical_events_include:
+        from app.audit.trace import trace_for as _trace
+        events = _trace(session, task.id)
+        if e.one_correlation_id is not None:
+            ids = {ev["correlation_id"] for ev in events}
+            check("one_correlation_id", (len(ids) == 1 and None not in ids)
+                  == e.one_correlation_id, f"correlation ids: {ids}")
+        for want in e.canonical_events_include:
+            names = {ev["canonical_event"] for ev in events}
+            check(f"canonical_event:{want}", want in names, f"events={sorted(names)}")
+
     gr = _grounding_rate(session, task)
     if e.min_grounding_rate is not None:
         check("grounding_rate", gr is not None and gr >= e.min_grounding_rate,

@@ -552,9 +552,14 @@ class AgentTask(Base):
     findings: Mapped[list] = mapped_column(JSON, default=list)      # CONTRACT §14 Finding[]
     recommendation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # MerchantOps §41 — everything needed to reproduce and investigate a run.
     agent_version: Mapped[str] = mapped_column(String(64))
+    model_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model_version: Mapped[str] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(64))
+    tool_registry_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    workflow_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     scenario_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # The incident this task investigates, when it was dispatched by one
     # (MerchantOps §13). Null for a task a user started by asking a question --
@@ -691,6 +696,9 @@ class AuditLog(Base):
     merchant_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
+    # MerchantOps §47 names it on every event. As a payload key it could not be
+    # joined on or indexed, which is the one thing a correlation id is for.
+    correlation_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     # server_default: an append-only audit trail must not depend on the
     # application for its timestamps. The database stamps every row.

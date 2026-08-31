@@ -123,6 +123,10 @@ class Settings(BaseSettings):
 
     agent_version: str = "merchantops-agent/0.1.0"
     prompt_version: str = "investigator-v1"
+    # MerchantOps §41. The shape of the loop the agent runs inside: gather,
+    # gate, approve, execute, verify. Bumped when that shape changes, not when
+    # a step's implementation does.
+    workflow_version: str = "workflow-v2"
 
     @property
     def anthropic_credential_source(self) -> str | None:

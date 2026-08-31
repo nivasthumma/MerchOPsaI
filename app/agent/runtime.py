@@ -24,16 +24,19 @@ from sqlalchemy import text
 
 from app.agent.output import check_grounding, parse as parse_output, to_findings
 from app.agent.prompts.investigator_v1 import PROMPT_VERSION, SYSTEM_PROMPT
-from app.audit.trace import record
+from app.audit.trace import record, set_correlation_id
 from app.config import get_settings
+from app.failures import describe
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
 from app.llm import LLMProvider, get_provider
 from app.models import (
     AgentTask, Approval, TaskStatus, ToolCall, VerificationState,
 )
-from app.policy.engine import Decision, PolicyContext, evaluate
-from app.tools.registry import REGISTRY, execute_read_tool, validate_arguments
+from app.policy.engine import POLICY_VERSION, Decision, PolicyContext, evaluate
+from app.tools.registry import (
+    REGISTRY, execute_read_tool, registry_version, validate_arguments,
+)
 
 
 @dataclass
@@ -127,7 +130,8 @@ class AgentRuntime:
     # ------------------------------------------------------------------
     def run(self, request: str, *, scenario_id: str | None = None,
             is_replay: bool = False, replayed_from: str | None = None,
-            incident_id: str | None = None) -> RunOutcome:
+            incident_id: str | None = None,
+            correlation_id: str | None = None) -> RunOutcome:
         s = self.settings
         started = time.monotonic()
 
@@ -136,7 +140,13 @@ class AgentRuntime:
             merchant_id=self.principal.merchant_id, user_id=self.principal.user_id,
             request=request, status=TaskStatus.RUNNING,
             agent_version=s.agent_version, model_version=self.provider.model,
-            prompt_version=PROMPT_VERSION, scenario_id=scenario_id,
+            model_provider=self.provider.name,
+            prompt_version=PROMPT_VERSION,
+            # §41. Derived, so it cannot drift from what actually ran.
+            tool_registry_version=registry_version(),
+            policy_version=POLICY_VERSION,
+            workflow_version=s.workflow_version,
+            scenario_id=scenario_id,
             is_replay=is_replay, replayed_from=replayed_from,
             # Set at creation, not afterwards. `app.audit.trace.record` reads
             # incident_id off the task as each event is written, and audit rows
@@ -147,6 +157,10 @@ class AgentRuntime:
         )
         self.session.add(task)
         self.session.flush()
+        # §47/§58. One id ties every event of this run — and of the incident
+        # that dispatched it — into a single trace.
+        self._correlation_id = correlation_id or f"COR_{uuid.uuid4().hex[:12].upper()}"
+        set_correlation_id(self._correlation_id)
         record(self.session, task, "task_created",
                {"request": request, "provider": self.provider.name,
                 "model": self.provider.model, "replay": is_replay})
@@ -228,7 +242,10 @@ class AgentRuntime:
         record(self.session, task, "task_completed",
                {"status": task.status.value, "tool_calls": seq,
                 "duration_ms": task.duration_ms,
-                "failure_code": task.failure_code})
+                "failure_code": task.failure_code,
+                "failure": describe(task.failure_code,
+                                    correlation_id=self._correlation_id)})
+        set_correlation_id(None)
         return RunOutcome(task, task.status, answer, approval, task.findings)
 
     # ------------------------------------------------------------------

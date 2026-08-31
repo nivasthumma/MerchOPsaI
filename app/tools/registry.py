@@ -133,3 +133,22 @@ def execute_read_tool(session, name: str, merchant_id: str, args: dict,
     if name in _NEEDS_ADAPTER:
         return impl(session, merchant_id, adapter=adapter, **clean)
     return impl(session, merchant_id, **clean)
+
+
+def registry_version() -> str:
+    """MerchantOps §41. Derived from the registry's contents, not maintained.
+
+    A hand-kept constant is a version that stops being true the first time
+    someone adds a tool and forgets it — and §41's whole purpose is
+    reproducibility, which a stale version defeats silently. This hashes the
+    facts that change behaviour: which tools exist, what risk they carry, and
+    what they require. Adding a tool, widening a permission or lowering a risk
+    class all change it; editing a description does not.
+    """
+    import hashlib
+
+    material = "|".join(
+        f"{name}:{spec.risk_class.value}:{','.join(sorted(spec.required_permissions))}"
+        f":{int(spec.reversible)}"
+        for name, spec in sorted(REGISTRY.items()))
+    return "tools-" + hashlib.sha256(material.encode()).hexdigest()[:12]

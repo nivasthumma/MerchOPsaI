@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-272%20passed-brightgreen.svg)](#-measured-results)
-[![Scenarios](https://img.shields.io/badge/scenarios-154%2F154-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-50%2F50-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-291%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-159%2F159-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-55%2F55-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 272 tests · 154/154 scenarios · 50/50 mutations |
+| [📊 Measured results](#-measured-results) | 291 tests · 159/159 scenarios · 55/55 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -79,9 +79,9 @@ and what is architecture.
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
-| Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
+| Audit | Append-only **enforced by PostgreSQL**, secrets redacted, correlation-id traces (§58) | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 154 scenarios + 50-mutation validation, gated in CI | Larger benchmark |
+| Evaluation | 159 scenarios + 55-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -122,28 +122,27 @@ ambiguous between "chosen" and "nothing was detected".
 From `make eval` — actual execution, not targets:
 
 ```
-154/154 scenarios passed      (critical: 98/98)
+159/159 scenarios passed      (critical: 102/102)
 
-  adversarial_security  29/29    recovery              13/13
+  adversarial_security  30/30    recovery              13/13
   detection              9/9     refund_policy         27/27
-  duplicate_payment     15/15    revenue_investigation 16/16
-  failure_unknown       19/19    risk_approval          7/7
+  duplicate_payment     16/16    revenue_investigation 18/18
+  failure_unknown       20/20    risk_approval          7/7
   payment_failure       14/14    webhook                5/5
 
-median task latency 40 ms · mean grounding rate 1.0
+median task latency 39 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-50/50 mutations caught
+55/55 mutations caught
 ```
 
-*Measured in filtered batches, not one 24-mutant pass; a full local run exceeds available
-memory. CI runs all of them in a single job, which is the number that gates a merge.*
+*Measured in one full run — 55 mutants, each re-running the whole scenario and test suite.*
 
-That run is what makes the 154/154 meaningful — and it is how three real gaps
+That run is what makes the 159/159 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
 onset had no volume floor, so ordinary variance was being reported as the moment a
 degradation began.
@@ -154,7 +153,7 @@ risk floor rule, and every recovery bound. Two are caught by unit tests only: al
 incident lifecycle transition, and grading a bulk action as if it stood alone. No scenario
 distinguishes either, for reasons given under coverage limits.
 
-**Five real defects so far, all invisible to a green suite.** A recovery mutant survived
+**Five real defects found by the harness, all invisible to a green suite.** A recovery mutant survived
 because a clamp of mine forced §49's ordering to hold, making a wrong figure
 indistinguishable from a right one. A tooling scenario turned out to be asserting nothing —
 it checked that an unauthorised analyst did not reach a tool the planner never called for
@@ -172,7 +171,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **272 passed** (`make test`) across unit, security and integration, in
+Test suite: **291 passed** (`make test`) across unit, security and integration, in
 under 5 seconds — the suite seeds once and rolls each test back, rather than rebuilding the
 schema 200 times.
 
@@ -381,6 +380,8 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 | Endpoint | Purpose |
 |---|---|
+| `GET /trace/{correlation_id}` | §58 — everything one operation touched, in one ordering |
+| `GET /failures/taxonomy` | §56/§57 — what each failure means and whether to retry it |
 | `GET /dashboard` | §50 — revenue at risk, recovery, incidents, agent activity |
 | `GET /recovery/ledger` | §49 — the six figures, and whether they nest |
 | `POST /incidents/{id}/recovery` | Plan recovery — candidates, expected value, budget |
@@ -504,23 +505,27 @@ are different claims.
 9. **`CUSTOMER_NOTIFICATION` is not planned as a standalone intervention.** No incident
    type maps to it — it is something reached for alongside a recovery, not a recovery in
    itself. The tool exists; the planner never proposes it.
-10. **A paid payment link is discovered only when a plan is settled.** Nothing subscribes
+10. **Nothing in the runtime branches on the failure taxonomy yet.** `app/failures.py`
+    encodes §57's retry rules and is published at `/failures/taxonomy`, but the
+    reconciliation sweep and the webhook path each still implement the same rule
+    independently. The table is correct, tested and unconsumed.
+11. **A paid payment link is discovered only when a plan is settled.** Nothing subscribes
     to a `payment_link.paid` webhook, so conversion is observed on demand rather than as it
     happens. Until then a sent link sits in `attempted`, which is the honest place for it.
-11. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
+12. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
     Against the deterministic planner it is computed from evidence count, which measures
     the planner rather than any judgement; against a real model it would mean something
     different and should be reported separately.
-12. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
+13. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
    unforgeable and permissions are read from the database on every request, but
    there is no expiry, rotation, revocation list, or audience binding.
-13. **Detection observes state, not a stream.** `webhook_events` stores what the provider
+14. **Detection observes state, not a stream.** `webhook_events` stores what the provider
    *tells* us, but the detection rules still read `payments`. A business change that
    never lands on a payment row is invisible to them. Wiring detection onto the event
    store is real work, not a rename.
-14. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
+15. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
     Incidents appear at sweep cadence.
-15. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
+16. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
    not a defect.
 
@@ -537,12 +542,12 @@ are different claims.
     transition a scenario can drive is already a legal one. Two more (registry lookup,
     argument validation) are detected as a *crash* rather than a graded failure — the
     suite dies on `spec is None` instead of reporting SEC-24 red.
-    Counted honestly: **32 of 50 produce a graded scenario failure.** See
+    Counted honestly: **35 of 55 produce a graded scenario failure**, 4 are detected as a
+    crash rather than a graded result, and 18 by unit tests alone. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
 16. **The 45-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
     The test half is now fast (one seed, per-test rollback); the scenario half still
-    rebuilds the schema per scenario, so a complete run is roughly forty minutes and
-    memory-hungry.
+    rebuilds the schema per scenario, so a complete run is around fifty minutes.
     `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
     all of them.
 
@@ -574,7 +579,7 @@ Done: ~~background reconciliation for `UNKNOWN` actions~~ (sweep + escalation qu
 ~~expand to 100 scenarios and wire into CI~~ (115 scenarios, mutation testing, GitHub
 Actions gate); ~~detection and incident management~~ (ADR-0017); ~~webhook ingestion and
 the durable event store~~ (ADR-0018); ~~computed risk, `CRITICAL` and dual approval~~
-(ADR-0019); ~~recovery planning, budgets and stopping rules~~ (ADR-0020); ~~the fifteen tools of §18~~ (ADR-0021); ~~the §37 agent output schema~~ (ADR-0022); ~~the §49 recovery ledger and §50/§51 pages~~ (ADR-0023).
+(ADR-0019); ~~recovery planning, budgets and stopping rules~~ (ADR-0020); ~~the fifteen tools of §18~~ (ADR-0021); ~~the §37 agent output schema~~ (ADR-0022); ~~the §49 recovery ledger and §50/§51 pages~~ (ADR-0023); ~~failure taxonomy, versioning and traces~~ (ADR-0024).
 
 ---
 
@@ -589,6 +594,7 @@ app/
   agent/        runtime (bounded loop), approval, replay, versioned prompts
   tools/        typed registry, contracts, investigation + action tools
   policy/       deterministic policy engine + the computed risk engine
+  failures.py   §56 taxonomy and §57 retry rules, as data
   verification/ read-back verification and state classification
   integrations/ razorpay adapter + fault-injection seam
   llm/          provider abstraction (anthropic | deterministic)
@@ -596,12 +602,12 @@ app/
   api/          FastAPI surface
 ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 168 tests
-data/           154 scenarios + the last evaluation report
+data/           159 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (272 tests)
+tests/          unit · security · integration  (291 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 23 ADRs
+                gap-closure plan, 24 ADRs
 ```
 
 ## 📄 License / disclaimer

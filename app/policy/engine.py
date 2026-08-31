@@ -18,6 +18,13 @@ from app.policy.risk import RiskAssessment, assess
 from app.tools.registry import REGISTRY
 
 
+# MerchantOps §41. Bumped by hand, because a policy version is a statement
+# about the RULES rather than about the code that expresses them: a refactor
+# that leaves every decision identical is not a new policy, and a threshold
+# change with no diff elsewhere is.
+POLICY_VERSION = "policy-v3"
+
+
 class Decision(str, enum.Enum):
     ALLOW = "ALLOW"
     DENY = "DENY"

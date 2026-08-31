@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0–7 delivered
+**Status:** complete — all eight phases delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -281,7 +281,7 @@ reason. Both were mappings that were total when written and became partial when 
 an executable intervention, and neither had a test because at the time there was nothing to
 distinguish.
 
-## Phase 8 — Taxonomy, versioning, observability · S–M · ~2d
+## Phase 8 — Taxonomy, versioning, observability · S–M · ~2d — **DONE**
 
 **Closes §41, §47, §56, §58, §59.**
 
@@ -293,6 +293,16 @@ distinguish.
 - Align audit event names to §47's list; promote `correlation_id` to a column on
   `audit_logs` rather than a payload key.
 - Extend the SPA's trace view to the incident-rooted trace of §58.
+
+**Delivered** — see [ADR-0024](adr/0024-failure-taxonomy-versioning-and-traces.md).
+`app/failures.py` (§56 categories + §57 retryability as data), `correlation_id` as an audit
+column, `tool_registry_version` derived from the registry, `/trace/{correlation_id}` and
+`/failures/taxonomy`, 5 scenarios, 5 mutants, 19 tests.
+
+**One thing worth stating plainly:** nothing in the runtime branches on `may_retry()` yet.
+The reconciliation sweep and the webhook path each independently implement the same rule the
+table now encodes. The table is correct and published and tested; wiring the runtime to
+consume it instead of restating it is real work and is not this phase.
 
 ---
 
@@ -308,8 +318,26 @@ distinguish.
       └──> 6 ────────────> 8
 ```
 
-Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0–7 complete. Phase 8, the failure taxonomy and observability alignment, is the last.)
+Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8** — all delivered.
+
+## What the plan got wrong
+
+Kept because a plan that is only ever right in hindsight teaches nothing.
+
+- **Phase 3's calibration.** The plan implied computed risk should reach CRITICAL on value.
+  §24 grades a ₹5,000 refund — a whole merchant limit — as HIGH and reserves CRITICAL for
+  bulk. Getting it wrong broke nineteen tests, and the tests were right.
+- **Phase 1's `events` table.** Listed as phase 1 work; deferred to phase 2 because a table
+  with no writer is the skeleton component both specs warn against.
+- **Phase 5's trap warning was incomplete.** It named the read/action split, which was real.
+  It did not anticipate that a policy control was firing for the wrong reason, or that
+  extending the planner would break the recovery dispatcher.
+- **Phase 4 and 7 found defects the plan could not have predicted**, because they only became
+  visible once something measured them: a duplicate overcount, a payment link counted as
+  money recovered, every candidate dispatched as a refund.
+
+The pattern across all of them: **a mapping that was total when written and became partial
+when a case was added.** Worth watching for in phase 9, whatever it turns out to be.
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

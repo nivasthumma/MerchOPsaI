@@ -123,6 +123,37 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "failures: let an unknown financial state be retried",
+        "app/failures.py",
+        '        "UNKNOWN_EXTERNAL_STATE", Retryability.RECONCILE, Subsystem.RECONCILIATION,',
+        '        "UNKNOWN_EXTERNAL_STATE", Retryability.BOUNDED_BACKOFF, Subsystem.RECONCILIATION,  # MUTANT',
+    ),
+    (
+        "failures: treat an unclassified failure as retryable",
+        "app/failures.py",
+        '    "INTERNAL_ERROR", Retryability.ESCALATE, Subsystem.PLATFORM,',
+        '    "INTERNAL_ERROR", Retryability.BOUNDED_BACKOFF, Subsystem.PLATFORM,  # MUTANT',
+    ),
+    (
+        "failures: let a policy denial be retried",
+        "app/failures.py",
+        '        "POLICY_DENIED", Retryability.NEVER, Subsystem.POLICY,',
+        '        "POLICY_DENIED", Retryability.BOUNDED_BACKOFF, Subsystem.POLICY,  # MUTANT',
+    ),
+    (
+        "observability: give every audit event its own correlation id",
+        "app/audit/trace.py",
+        "        correlation_id=_CURRENT_CORRELATION,\n        payload=redact(payload or {}),",
+        '        correlation_id=__import__("uuid").uuid4().hex,  # MUTANT\n'
+        "        payload=redact(payload or {}),",
+    ),
+    (
+        "versioning: hardcode the tool registry version",
+        "app/tools/registry.py",
+        '    return "tools-" + hashlib.sha256(material.encode()).hexdigest()[:12]',
+        '    return "tools-v1"  # MUTANT',
+    ),
+    (
         "ledger: count a payment link as recovered the moment it is sent",
         "app/recovery/dispatch.py",
         '        if link is not None and link.status == "paid":',

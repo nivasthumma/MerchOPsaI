@@ -101,7 +101,10 @@ def investigate(session, incident: Incident, principal: Principal,
     runtime = AgentRuntime(session, principal, provider=provider)
     # Bound at creation. Binding after the run would put none of the run's own
     # events on the incident's trace -- see the note in AgentRuntime.run.
-    out = runtime.run(request, incident_id=incident.id)
+    # §58: the incident's id ties detection, its lifecycle and every task it
+    # dispatched into one trace.
+    out = runtime.run(request, incident_id=incident.id,
+                      correlation_id=incident.correlation_id)
 
     record_incident(session, incident, "incident_investigated", {
         "task_id": out.task.id, "task_status": out.status.value,

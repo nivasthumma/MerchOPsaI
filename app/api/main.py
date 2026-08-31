@@ -18,9 +18,12 @@ from app.agent.approval import ApprovalError, approve_and_execute, reject, rever
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, Principal
 from app.api.security import DEV_SECRET_IN_USE, check_rate_limit, current_principal
-from app.audit.trace import record, trace_for, trace_for_incident
+from app.audit.trace import (
+    record, trace_by_correlation, trace_for, trace_for_incident,
+)
 from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
+from app.failures import TAXONOMY, describe
 from app.detection import detect
 from app.detection.engine import open_incidents
 from app.incidents.lifecycle import legal_from
@@ -73,8 +76,22 @@ def _task_view(s, task: AgentTask) -> dict:
         "requires_human": bool(approvals) or task.model_requires_human,
         "model_requires_human": task.model_requires_human,
         "llm_turns": task.llm_turn_count, "duration_ms": task.duration_ms,
+        # MerchantOps §41 — everything needed to reproduce this run.
+        "versions": {
+            "agent": task.agent_version,
+            "model_provider": task.model_provider,
+            "model": task.model_version,
+            "prompt": task.prompt_version,
+            "tool_registry": task.tool_registry_version,
+            "policy": task.policy_version,
+            "workflow": task.workflow_version,
+        },
         "agent_version": task.agent_version, "model_version": task.model_version,
         "prompt_version": task.prompt_version,
+        # MerchantOps §56 — category, retryability, owner and what to do next.
+        # A failure code alone tells an operator what broke and not whether
+        # trying again is sensible, which is the question they actually have.
+        "failure": describe(task.failure_code),
         "is_replay": task.is_replay, "replayed_from": task.replayed_from,
         "approvals": [{
             "id": a.id, "decision": a.decision, "action_type": a.action_type,
@@ -641,6 +658,34 @@ def merchant_dashboard(principal: Principal = Depends(current_principal)):
     """
     with session_scope() as s:
         return dashboard(s, principal.merchant_id)
+
+
+@app.get("/trace/{correlation_id}")
+def get_correlation_trace(correlation_id: str,
+                          principal: Principal = Depends(current_principal)):
+    """MerchantOps §58. Everything one operation touched, in one ordering.
+
+    Scoped to the caller's merchant: a trace is as much a merchant's data as
+    the task it describes.
+    """
+    with session_scope() as s:
+        events = trace_by_correlation(s, correlation_id, principal.merchant_id)
+        if not events:
+            raise HTTPException(404, "Unknown correlation id.")
+        return {"correlation_id": correlation_id, "events": events,
+                "span_count": len(events)}
+
+
+@app.get("/failures/taxonomy")
+def failure_taxonomy(principal: Principal = Depends(current_principal)):
+    """MerchantOps §56/§57. What every failure this system raises means, who
+    owns it, and whether retrying it is sensible.
+
+    Published rather than kept internal so an operator or an integrator can see
+    that `UNKNOWN_EXTERNAL_STATE` is answered by reconciling and never by
+    retrying — the single most important entry in the table.
+    """
+    return {"failures": [cls.as_dict(code) for code, cls in sorted(TAXONOMY.items())]}
 
 
 @app.get("/metrics")

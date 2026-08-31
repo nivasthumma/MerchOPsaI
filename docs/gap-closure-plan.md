@@ -1,6 +1,12 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** complete — all eight phases delivered
+**Status:** all eight phases delivered — **not** the same as every spec section closed
+
+> Eight phases done is a statement about this plan, not about `MerchantOps.md`. A
+> section-by-section audit is in [`docs/spec-coverage.md`](spec-coverage.md): the
+> architecture is closed, the instrumentation is not — most of §59's metrics, one §60 SLO,
+> §16's temperature, two §65 routes, seven §66 tables and the `tenant_id` dimension of §11
+> and §54 all remain open.
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 

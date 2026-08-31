@@ -72,22 +72,66 @@ _TEST_URL = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_URL)
 _ensure_database(_TEST_URL)
 os.environ["DATABASE_URL"] = _TEST_URL
 
+from sqlalchemy.orm import sessionmaker
+
+import app.db as app_db
 import scripts.seed_data as seeder
 from app.agent.runtime import Principal
-from app.db import session_scope
+from app.db import get_engine, session_scope
+
+SEEDED_TABLES = ("merchants", "users", "customers", "products",
+                 "orders", "payments", "refunds")
 
 
-@pytest.fixture(scope="function")
-def db():
+@pytest.fixture(scope="session")
+def _seeded_schema():
+    """Build the dataset ONCE for the whole run.
+
+    It used to be rebuilt per test: drop the schema, recreate it, re-apply the
+    audit triggers, re-insert ~600 payments. 0.35s each, 200 tests, and the
+    mutation harness runs the whole suite once per mutant -- which worked out at
+    eleven thousand reseeds and about an hour of wall clock spent on teardown
+    before any assertion ran.
+
+    Isolation is unchanged. Each test now runs inside a transaction that is
+    rolled back afterwards, which leaves exactly as little behind as dropping
+    the schema did.
+    """
     seeder.reset_schema()
     data = seeder.build()
     with session_scope() as s:
-        for key in ("merchants", "users", "customers", "products",
-                    "orders", "payments", "refunds"):
+        for key in SEEDED_TABLES:
             s.add_all(data[key])
             s.flush()
-    with session_scope() as s:
-        yield s
+
+
+@pytest.fixture(scope="function")
+def db(_seeded_schema, monkeypatch):
+    """A session inside a transaction that is always rolled back.
+
+    `join_transaction_mode="create_savepoint"` is what makes this work with code
+    that commits. A `session.commit()` inside the application releases a
+    SAVEPOINT rather than ending the outer transaction, so committed work is
+    visible for the rest of the test and gone after it.
+
+    The application's own session factory is redirected onto the same
+    connection. Without that, an endpoint calling `session_scope()` would open a
+    second connection, see none of the test's data, and commit its own work
+    permanently -- which is the failure mode the per-test reseed was hiding.
+    """
+    connection = get_engine().connect()
+    outer = connection.begin()
+    factory = sessionmaker(bind=connection, expire_on_commit=False, future=True,
+                           join_transaction_mode="create_savepoint")
+    monkeypatch.setattr(app_db, "_SessionLocal", factory)
+
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.close()
+        outer.rollback()
+        connection.close()
 
 
 @pytest.fixture

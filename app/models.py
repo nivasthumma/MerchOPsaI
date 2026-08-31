@@ -184,9 +184,29 @@ class IncidentStatus(str, enum.Enum):
 # --------------------------------------------------------------------------
 # Business entities
 # --------------------------------------------------------------------------
+class Tenant(Base):
+    """MerchantOps §11, §54 — the outer isolation boundary.
+
+    A tenant owns one or more merchants. Everything before this modelled
+    merchant as if it were the top of the tree, which is correct for one
+    merchant per tenant and has no way to express two: a business with a retail
+    and a wholesale entity would need two unrelated logins, and a support user
+    covering both could not exist.
+
+    It is also a second boundary rather than a replacement. Merchant isolation
+    still does the work on every request; tenant isolation is the check that
+    holds if merchant isolation is ever wrong.
+    """
+    __tablename__ = "tenants"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Merchant(Base):
     __tablename__ = "merchants"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     currency: Mapped[str] = mapped_column(String(8), default="INR")
     policy_config: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -196,6 +216,10 @@ class Merchant(Base):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Both, deliberately. A user belongs to a tenant and is authorised for ONE
+    # merchant within it — being in the right tenant is not authority over
+    # every merchant the tenant owns.
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     email: Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(64))          # owner | analyst | support
@@ -340,6 +364,7 @@ class WebhookEvent(Base):
 
     # Nullable: the event may name an entity this system has never seen, and
     # inventing a merchant for it would be worse than admitting we cannot place it.
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     merchant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 

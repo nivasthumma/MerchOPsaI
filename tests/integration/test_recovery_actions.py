@@ -201,7 +201,7 @@ def test_recovery_actions_need_their_own_permission(db, analyst):
 
     for tool in ("generate_payment_link", "send_customer_notification"):
         pol = evaluate(db, PolicyContext(
-            user_id=analyst.user_id, merchant_id="MERCH_A", role=analyst.role,
+            tenant_id=analyst.tenant_id, user_id=analyst.user_id, merchant_id="MERCH_A", role=analyst.role,
             permissions=analyst.permissions, tool_name=tool, risk_level="MEDIUM",
             arguments={}))
         assert pol.decision is Decision.DENY
@@ -213,7 +213,7 @@ def test_medium_risk_actions_still_require_a_human(db, owner):
 
     pid = _failed_payment(db)
     pol = evaluate(db, PolicyContext(
-        user_id=owner.user_id, merchant_id="MERCH_A", role=owner.role,
+        tenant_id=owner.tenant_id, user_id=owner.user_id, merchant_id="MERCH_A", role=owner.role,
         permissions=owner.permissions, tool_name="generate_payment_link",
         risk_level="MEDIUM", arguments={"synthetic_payment_id": pid, "reason": "r"}))
     assert pol.decision is Decision.REQUIRE_APPROVAL

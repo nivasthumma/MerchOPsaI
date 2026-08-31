@@ -158,7 +158,7 @@ def current_principal(
 
     with session_scope() as s:
         row = s.execute(text("""
-            SELECT id, merchant_id, role, permissions FROM users WHERE id = :u
+            SELECT id, tenant_id, merchant_id, role, permissions FROM users WHERE id = :u
         """), {"u": user_id}).mappings().first()
     if row is None:
         # The token is authentic but the subject no longer exists.
@@ -168,4 +168,5 @@ def current_principal(
 
     # Permissions are read from the database on every request, never from the
     # token. A token therefore cannot carry stale or elevated authority.
-    return Principal(row["id"], row["merchant_id"], row["role"], list(row["permissions"]))
+    return Principal(row["tenant_id"], row["id"], row["merchant_id"],
+                     row["role"], list(row["permissions"]))

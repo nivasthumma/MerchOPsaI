@@ -27,13 +27,13 @@ from app.tools.contracts import Finding
 SCENARIO_FILE = Path(__file__).resolve().parents[2] / "data" / "scenarios" / "scenarios.yaml"
 
 PRINCIPALS = {
-    "owner": Principal("USR_A_OWNER", "MERCH_A", "owner",
+    "owner": Principal("TEN_KETTLE", "USR_A_OWNER", "MERCH_A", "owner",
                        ["read:metrics", "read:orders", "action:refund", "action:recover"]),
-    "analyst": Principal("USR_A_ANALYST", "MERCH_A", "analyst",
+    "analyst": Principal("TEN_KETTLE", "USR_A_ANALYST", "MERCH_A", "analyst",
                          ["read:metrics", "read:orders"]),
-    "approver": Principal("USR_A_APPROVER", "MERCH_A", "approver",
+    "approver": Principal("TEN_KETTLE", "USR_A_APPROVER", "MERCH_A", "approver",
                           ["read:metrics", "read:orders", "action:refund", "action:recover"]),
-    "owner_b": Principal("USR_B_OWNER", "MERCH_B", "owner",
+    "owner_b": Principal("TEN_NORTHWIND", "USR_B_OWNER", "MERCH_B", "owner",
                          ["read:metrics", "read:orders", "action:refund", "action:recover"]),
 }
 
@@ -557,6 +557,16 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
         ).scalar()
         request = request.replace("{{MERCHANT_B_ORDER}}", b_order)
 
+    if sc.initial_state.get("same_tenant_other_merchant"):
+        # MERCH_C belongs to the SAME tenant as MERCH_A and to no user. This is
+        # what separates the merchant boundary from the tenant one: without it
+        # every isolation scenario is also a cross-tenant scenario, and the
+        # merchant check could be deleted with the suite still green.
+        c_order = session.execute(
+            text("SELECT id FROM orders WHERE merchant_id='MERCH_C' ORDER BY id LIMIT 1")
+        ).scalar()
+        request = request.replace("{{SAME_TENANT_ORDER}}", c_order)
+
     provider = get_provider()
     if sc.initial_state.get("malform_arguments"):
         provider = _MalformingProvider(provider)
@@ -909,7 +919,7 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
         seeder.reset_schema()
         data = seeder.build()
         with session_scope() as s:
-            for key in ("merchants", "users", "customers", "products",
+            for key in ("tenants", "merchants", "users", "customers", "products",
                         "orders", "payments", "refunds"):
                 s.add_all(data[key])
                 s.flush()

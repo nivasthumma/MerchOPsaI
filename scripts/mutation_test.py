@@ -43,9 +43,15 @@ MUTATIONS = [
         "    missing = []  # MUTANT",
     ),
     (
+        # NOTE: this anchor moved once already. Tenant isolation rewrote the
+        # ownership check from `owner != ctx.merchant_id` to a mappings row, and
+        # the mutation silently became a SKIP — a control with no mutant, which
+        # the harness reports as a survivor rather than passing quietly. Worth
+        # remembering that the harness is subject to the same drift it exists to
+        # detect: an anchor is a copy of code kept somewhere else.
         "policy: stop enforcing merchant isolation",
         "app/policy/engine.py",
-        "        if owner != ctx.merchant_id:",
+        '        if owner["merchant_id"] != ctx.merchant_id:',
         "        if False:  # MUTANT",
     ),
     (
@@ -121,6 +127,28 @@ MUTATIONS = [
         "app/tools/actions.py",
         "        sp.rollback()",
         "        session.rollback()  # MUTANT",
+    ),
+    (
+        "tenancy: stop enforcing the tenant boundary",
+        "app/policy/engine.py",
+        '        if owner["tenant_id"] != ctx.tenant_id:\n'
+        "            return PolicyResult(\n                Decision.DENY,\n"
+        '                f"Payment {target_payment} belongs to another tenant. Cross-tenant "',
+        "        if False:  # MUTANT\n"
+        "            return PolicyResult(\n                Decision.DENY,\n"
+        '                f"Payment {target_payment} belongs to another tenant. Cross-tenant "',
+    ),
+    (
+        "tenancy: let the tenant check stand in for the merchant check on orders",
+        "app/policy/engine.py",
+        '        if owner is not None and owner["merchant_id"] != ctx.merchant_id:',
+        "        if False:  # MUTANT",
+    ),
+    (
+        "tenancy: take the tenant from the request instead of the database",
+        "app/api/security.py",
+        '    return Principal(row["tenant_id"], row["id"], row["merchant_id"],',
+        '    return Principal("TEN_KETTLE", row["id"], row["merchant_id"],  # MUTANT',
     ),
     (
         "failures: let an unknown financial state be retried",
@@ -456,6 +484,21 @@ def main() -> int:
               f"{LOCK.name} before retrying.")
         return 1
     LOCK.write_text("Mutation test in progress. Source files are being rewritten.\n")
+
+    # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
+    # when the code moves — and a drifted anchor is reported as a SKIP that
+    # counts as a survivor, fifty minutes into a run. Checking first turns that
+    # into a second.
+    stale = [(label, relpath) for label, relpath, find, _ in mutations
+             if find not in (ROOT / relpath).read_text()]
+    if stale:
+        print("ANCHORS NO LONGER MATCH THE SOURCE — the code moved under them:")
+        for label, relpath in stale:
+            print(f"  {label}\n    in {relpath}")
+        print("\nFix the anchors before running. A mutation that cannot be applied "
+              "is a control with no test, not a control that passed.")
+        LOCK.unlink(missing_ok=True)
+        return 1
 
     baseline_pass, baseline_total, baseline_failed = run_suite()
     print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass")

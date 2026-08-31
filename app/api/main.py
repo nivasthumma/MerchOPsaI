@@ -58,11 +58,18 @@ class ProviderRequest(BaseModel):
     provider: str
 
 
+def principal_tenant(s, merchant_id: str) -> str | None:
+    """The tenant a merchant belongs to. Read, never taken from a request."""
+    return s.execute(text("SELECT tenant_id FROM merchants WHERE id = :m"),
+                     {"m": merchant_id}).scalar()
+
+
 def _task_view(s, task: AgentTask) -> dict:
     approvals = s.query(Approval).filter(Approval.task_id == task.id).all()
     actions = s.query(AgentAction).filter(AgentAction.task_id == task.id).all()
     return {
-        "id": task.id, "merchant_id": task.merchant_id, "user_id": task.user_id,
+        "id": task.id, "tenant_id": principal_tenant(s, task.merchant_id),
+        "merchant_id": task.merchant_id, "user_id": task.user_id,
         "request": task.request, "status": task.status.value,
         "final_answer": task.final_answer, "failure_code": task.failure_code,
         "findings": task.findings, "tool_calls": task.tool_call_count,
@@ -160,7 +167,8 @@ def whoami(principal: Principal = Depends(current_principal)):
     acting identity — the same screen behaves differently for an owner and an
     analyst, and an operator should not have to infer which one they are.
     """
-    return {"user_id": principal.user_id, "merchant_id": principal.merchant_id,
+    return {"tenant_id": principal.tenant_id, "user_id": principal.user_id,
+            "merchant_id": principal.merchant_id,
             "role": principal.role, "permissions": principal.permissions}
 
 

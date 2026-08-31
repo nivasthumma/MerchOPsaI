@@ -39,6 +39,7 @@ class Decision(str, enum.Enum):
 class PolicyContext:
     """Everything the engine is allowed to consider. Note what is absent:
     no model output, no free text, no client-supplied role."""
+    tenant_id: str
     user_id: str
     merchant_id: str
     role: str
@@ -122,17 +123,31 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
             "missing_permission", risk, details={"missing": missing, "required": required},
         )
 
-    # ---- 3. Resource ownership / merchant scope (CONTRACT §38) ----------
+    # ---- 3. Resource ownership: tenant, then merchant (§38, §54) --------
+    # Two boundaries, checked outermost first. Merchant isolation does the work
+    # on every request; tenant isolation is the one that still holds if merchant
+    # isolation is ever wrong, and it produces a different rule name so the two
+    # are distinguishable in an audit trail rather than both reading
+    # "isolation".
     target_payment = ctx.arguments.get("synthetic_payment_id") or ctx.arguments.get("payment_id")
     if target_payment:
-        owner = session.execute(
-            text("SELECT merchant_id FROM payments WHERE id = :p"), {"p": target_payment}
-        ).scalar()
+        owner = session.execute(text("""
+            SELECT p.merchant_id, m.tenant_id FROM payments p
+            JOIN merchants m ON m.id = p.merchant_id WHERE p.id = :p
+        """), {"p": target_payment}).mappings().first()
         if owner is None:
             return PolicyResult(Decision.DENY,
                                 f"Payment {target_payment} does not exist.",
                                 "unknown_resource", risk)
-        if owner != ctx.merchant_id:
+        if owner["tenant_id"] != ctx.tenant_id:
+            return PolicyResult(
+                Decision.DENY,
+                f"Payment {target_payment} belongs to another tenant. Cross-tenant "
+                f"access denied.",
+                "tenant_isolation", risk,
+                details={"requested_by_tenant": ctx.tenant_id},
+            )
+        if owner["merchant_id"] != ctx.merchant_id:
             return PolicyResult(
                 Decision.DENY,
                 f"Payment {target_payment} belongs to another merchant. Cross-merchant access denied.",
@@ -142,10 +157,18 @@ def evaluate(session, ctx: PolicyContext) -> PolicyResult:
 
     order_id = ctx.arguments.get("order_id")
     if order_id:
-        owner = session.execute(
-            text("SELECT merchant_id FROM orders WHERE id = :o"), {"o": order_id}
-        ).scalar()
-        if owner is not None and owner != ctx.merchant_id:
+        owner = session.execute(text("""
+            SELECT o.merchant_id, m.tenant_id FROM orders o
+            JOIN merchants m ON m.id = o.merchant_id WHERE o.id = :o
+        """), {"o": order_id}).mappings().first()
+        if owner is not None and owner["tenant_id"] != ctx.tenant_id:
+            return PolicyResult(
+                Decision.DENY,
+                f"Order {order_id} belongs to another tenant. Cross-tenant access denied.",
+                "tenant_isolation", risk,
+                details={"requested_by_tenant": ctx.tenant_id},
+            )
+        if owner is not None and owner["merchant_id"] != ctx.merchant_id:
             return PolicyResult(
                 Decision.DENY,
                 f"Order {order_id} belongs to another merchant. Cross-merchant access denied.",

@@ -51,14 +51,14 @@ def test_read_tools_are_low_and_refund_is_high():
 
 
 def test_high_risk_always_requires_approval(db):
-    ctx = PolicyContext("USR_A_OWNER", "MERCH_A", "owner",
+    ctx = PolicyContext("TEN_KETTLE", "USR_A_OWNER", "MERCH_A", "owner",
                         ["action:refund"], "request_refund", "HIGH",
                         {"synthetic_payment_id": "SYN_PAY_0002", "amount_minor": 499900})
     assert evaluate(db, ctx).decision is Decision.REQUIRE_APPROVAL
 
 
 def test_amount_limit_denies(db):
-    ctx = PolicyContext("USR_A_OWNER", "MERCH_A", "owner",
+    ctx = PolicyContext("TEN_KETTLE", "USR_A_OWNER", "MERCH_A", "owner",
                         ["action:refund"], "request_refund", "HIGH",
                         {"synthetic_payment_id": "SYN_PAY_0005", "amount_minor": 980000})
     r = evaluate(db, ctx)

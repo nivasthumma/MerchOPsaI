@@ -232,3 +232,19 @@ def test_unknown_provider_is_rejected(client, db):
                     headers=token("USR_A_OWNER"))
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "unknown_provider"
+
+
+def test_the_tenant_on_the_principal_is_the_users_own(client):
+    """Found by a surviving mutant: hardcoding a tenant in principal resolution
+    changed nothing any test could see, because every API test authenticated as
+    a user of the same tenant.
+
+    The merchant check would still have refused the cross-merchant read, so this
+    was defence in depth being quietly disabled rather than a live hole — which
+    is exactly the kind of thing a suite stops noticing.
+    """
+    a = client.get("/me", headers=token("USR_A_OWNER")).json()
+    b = client.get("/me", headers=token("USR_B_OWNER")).json()
+    assert a["tenant_id"] == "TEN_KETTLE"
+    assert b["tenant_id"] == "TEN_NORTHWIND"
+    assert a["tenant_id"] != b["tenant_id"]

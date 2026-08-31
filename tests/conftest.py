@@ -79,7 +79,7 @@ import scripts.seed_data as seeder
 from app.agent.runtime import Principal
 from app.db import get_engine, session_scope
 
-SEEDED_TABLES = ("merchants", "users", "customers", "products",
+SEEDED_TABLES = ("tenants", "merchants", "users", "customers", "products",
                  "orders", "payments", "refunds")
 
 
@@ -136,24 +136,24 @@ def db(_seeded_schema, monkeypatch):
 
 @pytest.fixture
 def owner() -> Principal:
-    return Principal("USR_A_OWNER", "MERCH_A", "owner",
+    return Principal("TEN_KETTLE", "USR_A_OWNER", "MERCH_A", "owner",
                      ["read:metrics", "read:orders", "action:refund", "action:recover"])
 
 
 @pytest.fixture
 def analyst() -> Principal:
-    return Principal("USR_A_ANALYST", "MERCH_A", "analyst",
+    return Principal("TEN_KETTLE", "USR_A_ANALYST", "MERCH_A", "analyst",
                      ["read:metrics", "read:orders"])
 
 
 @pytest.fixture
 def approver() -> Principal:
     """A second person at MERCH_A who may approve — MerchantOps §26."""
-    return Principal("USR_A_APPROVER", "MERCH_A", "approver",
+    return Principal("TEN_KETTLE", "USR_A_APPROVER", "MERCH_A", "approver",
                      ["read:metrics", "read:orders", "action:refund", "action:recover"])
 
 
 @pytest.fixture
 def owner_b() -> Principal:
-    return Principal("USR_B_OWNER", "MERCH_B", "owner",
+    return Principal("TEN_NORTHWIND", "USR_B_OWNER", "MERCH_B", "owner",
                      ["read:metrics", "read:orders", "action:refund", "action:recover"])

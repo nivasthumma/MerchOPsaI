@@ -69,7 +69,7 @@ def _critical_setup(db, owner) -> str:
 def test_critical_risk_demands_two_signatures(db, owner):
     payment = _critical_setup(db, owner)
     pol = evaluate(db, PolicyContext(
-        user_id=owner.user_id, merchant_id=owner.merchant_id, role=owner.role,
+        tenant_id=owner.tenant_id, user_id=owner.user_id, merchant_id=owner.merchant_id, role=owner.role,
         permissions=owner.permissions, tool_name="request_refund", risk_level="HIGH",
         arguments={"synthetic_payment_id": payment, "amount_minor": 10000,
                    "reason": "test"}))
@@ -81,7 +81,7 @@ def test_critical_risk_demands_two_signatures(db, owner):
 
 def test_ordinary_high_risk_still_needs_only_one(db, owner):
     pol = evaluate(db, PolicyContext(
-        user_id=owner.user_id, merchant_id=owner.merchant_id, role=owner.role,
+        tenant_id=owner.tenant_id, user_id=owner.user_id, merchant_id=owner.merchant_id, role=owner.role,
         permissions=owner.permissions, tool_name="request_refund", risk_level="HIGH",
         arguments={"synthetic_payment_id": "SYN_PAY_0002", "amount_minor": 499900,
                    "reason": "duplicate"}))

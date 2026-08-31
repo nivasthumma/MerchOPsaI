@@ -42,7 +42,14 @@ from app.tools.registry import (
 @dataclass
 class Principal:
     """The authenticated session. This — never model output — is the source of
-    authorization truth (CONTRACT §11)."""
+    authorization truth (CONTRACT §11, MerchantOps §54).
+
+    `tenant_id` is first and has no default on purpose. A default would let a
+    Principal be constructed without one, which is precisely the silent
+    single-tenant assumption this field exists to remove: every call site has to
+    say which tenant it is acting in.
+    """
+    tenant_id: str
     user_id: str
     merchant_id: str
     role: str
@@ -341,6 +348,7 @@ class AgentRuntime:
 
         # ---- policy (CONTRACT §20) -------------------------------------
         ctx = PolicyContext(
+            tenant_id=self.principal.tenant_id,
             user_id=self.principal.user_id, merchant_id=self.principal.merchant_id,
             role=self.principal.role, permissions=self.principal.permissions,
             tool_name=req.name, risk_level=spec.risk_class.value, arguments=req.arguments,

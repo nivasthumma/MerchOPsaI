@@ -187,6 +187,7 @@ def approve_and_execute(session, task_id: str, principal,
     # The approver's permissions are re-derived from the session, never taken
     # from the request body.
     ctx = PolicyContext(
+        tenant_id=principal.tenant_id,
         user_id=principal.user_id, merchant_id=principal.merchant_id,
         role=principal.role, permissions=principal.permissions,
         tool_name=ap.action_type, risk_level=ap.risk_level, arguments=payload,

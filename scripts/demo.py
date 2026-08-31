@@ -22,9 +22,9 @@ from app.db import session_scope
 from app.integrations.razorpay.faults import Fault, FaultInjector
 from app.models import Refund
 
-OWNER = Principal("USR_A_OWNER", "MERCH_A", "owner",
+OWNER = Principal("TEN_KETTLE", "USR_A_OWNER", "MERCH_A", "owner",
                   ["read:metrics", "read:orders", "action:refund"])
-ANALYST = Principal("USR_A_ANALYST", "MERCH_A", "analyst",
+ANALYST = Principal("TEN_KETTLE", "USR_A_ANALYST", "MERCH_A", "analyst",
                     ["read:metrics", "read:orders"])
 
 

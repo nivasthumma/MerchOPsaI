@@ -20,7 +20,7 @@ from sqlalchemy import text
 
 from app.db import get_engine, session_scope
 from app.models import (
-    Base, Customer, Merchant, Order, Payment, Product, Refund, User,
+    Base, Customer, Merchant, Order, Payment, Product, Refund, Tenant, User,
 )
 
 SEED = 20260825
@@ -32,8 +32,17 @@ DATASET_VERSION = "synthetic-v1"
 # window silently collects ~8 days of traffic against the previous window's ~6.
 ANCHOR = datetime(2026, 8, 20, 0, 0, 0, tzinfo=timezone.utc)
 
+TENANT_A = "TEN_KETTLE"
+TENANT_B = "TEN_NORTHWIND"
+
 MERCHANT_A = "MERCH_A"
 MERCHANT_B = "MERCH_B"          # CONTRACT §38 — isolation needs a second merchant
+# MerchantOps §54 needs a merchant in the SAME tenant as MERCH_A that no user is
+# authorised for. Without it, every isolation test is also a cross-tenant test
+# and nothing distinguishes the two boundaries — a merchant check could be
+# deleted entirely and the suite would still pass on the strength of the tenant
+# check alone. It carries no traffic: its whole job is to be refused.
+MERCHANT_C = "MERCH_C"
 
 # CONTRACT §6 — the mapped set. These are the only payments that may reach
 # the external provider. In mock mode the ids are synthesised deterministically;
@@ -89,10 +98,18 @@ def build() -> dict:
     rng = random.Random(SEED)
     stats: dict[str, int] = {}
 
+    tenants = [
+        Tenant(id=TENANT_A, name="Kettle Group"),
+        Tenant(id=TENANT_B, name="Northwind Holdings"),
+    ]
+
     merchants = [
-        Merchant(id=MERCHANT_A, name="Kettle & Co", currency="INR",
+        Merchant(id=MERCHANT_A, tenant_id=TENANT_A, name="Kettle & Co", currency="INR",
                  policy_config={"refund_limit_minor": 500000, "auto_approve_below_minor": 0}),
-        Merchant(id=MERCHANT_B, name="Northwind Traders", currency="INR",
+        # Same tenant as A, and nobody's merchant. See MERCHANT_C above.
+        Merchant(id=MERCHANT_C, tenant_id=TENANT_A, name="Kettle Wholesale", currency="INR",
+                 policy_config={"refund_limit_minor": 500000, "auto_approve_below_minor": 0}),
+        Merchant(id=MERCHANT_B, tenant_id=TENANT_B, name="Northwind Traders", currency="INR",
                  policy_config={"refund_limit_minor": 200000, "auto_approve_below_minor": 0}),
     ]
 
@@ -101,20 +118,20 @@ def build() -> dict:
         # `action:recover` is separate from `action:refund` on purpose: sending a
         # customer a payment link or a message is a different authority from
         # moving money back to them, and §55 says permissions are per action.
-        User(id="USR_A_OWNER", merchant_id=MERCHANT_A, email="owner@kettle.example",
+        User(id="USR_A_OWNER", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="owner@kettle.example",
              role="owner", permissions=["read:metrics", "read:orders",
                                         "action:refund", "action:recover"]),
-        User(id="USR_A_ANALYST", merchant_id=MERCHANT_A, email="analyst@kettle.example",
+        User(id="USR_A_ANALYST", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="analyst@kettle.example",
              role="analyst", permissions=["read:metrics", "read:orders"]),
         # MerchantOps §25 REQUIRE_DUAL_APPROVAL needs two people who can each
         # approve. With one approver per merchant, dual approval could only ever
         # be demonstrated by the same person signing twice -- which is the exact
         # thing the control forbids. Added to the literal user list, so it
         # consumes no RNG and the rest of the dataset is unchanged.
-        User(id="USR_A_APPROVER", merchant_id=MERCHANT_A, email="approver@kettle.example",
+        User(id="USR_A_APPROVER", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="approver@kettle.example",
              role="approver", permissions=["read:metrics", "read:orders",
                                            "action:refund", "action:recover"]),
-        User(id="USR_B_OWNER", merchant_id=MERCHANT_B, email="owner@northwind.example",
+        User(id="USR_B_OWNER", tenant_id=TENANT_B, merchant_id=MERCHANT_B, email="owner@northwind.example",
              role="owner", permissions=["read:metrics", "read:orders",
                                         "action:refund", "action:recover"]),
     ]
@@ -458,11 +475,33 @@ def build() -> dict:
     stats["users"] = len(users)
     stats["customers"] = len(customers)
     stats["products"] = len(products)
+    # MERCHANT_C: one order and one payment, and nothing else. It exists so the
+    # SAME-TENANT, different-merchant refusal is testable. Without a resource to
+    # be refused over, every isolation test is also a cross-tenant test and the
+    # merchant check could be deleted without the suite noticing.
+    c_cust = Customer(id="SYN_CUS_C0001", merchant_id=MERCHANT_C,
+                      name="Wholesale Customer", email="c0001@wholesale.example",
+                      segment="standard", contact_opted_out=False, notes=None)
+    c_prod = Product(id="SYN_PRD_C000", merchant_id=MERCHANT_C, name="Wholesale item",
+                     category="home", price_minor=99900, description="Catalogue item.")
+    customers.append(c_cust)
+    products.append(c_prod)
+    # Dated outside both comparison windows, like the other edge records.
+    c_when = ANCHOR - timedelta(days=30)
+    orders.append(Order(id="SYN_ORD_C0001", merchant_id=MERCHANT_C,
+                        customer_id=c_cust.id, product_id=c_prod.id,
+                        amount_minor=99900, status="paid", created_at=c_when, notes=None))
+    payments.append(Payment(id="SYN_PAY_C0001", merchant_id=MERCHANT_C,
+                            order_id="SYN_ORD_C0001", customer_id=c_cust.id,
+                            amount_minor=99900, method="card", status="captured",
+                            created_at=c_when, notes=None))
+
     stats["orders"] = len(orders)
     stats["payments"] = len(payments)
     stats["refunds"] = len(refunds)
 
     return {
+        "tenants": tenants,
         "merchants": merchants, "users": users, "customers": customers,
         "products": products, "orders": orders, "payments": payments,
         "refunds": refunds, "stats": stats,
@@ -507,12 +546,12 @@ def main() -> None:
     data = build()
     with session_scope() as s:
         # Flush per group: FK parents must land before their children.
-        for key in ("merchants", "users", "customers", "products", "orders", "payments", "refunds"):
+        for key in ("tenants", "merchants", "users", "customers", "products", "orders", "payments", "refunds"):
             s.add_all(data[key])
             s.flush()
     st = data["stats"]
     print("\nSeeded:")
-    for k in ("merchants", "users", "customers", "products", "orders", "payments",
+    for k in ("tenants", "merchants", "users", "customers", "products", "orders", "payments",
               "refunds", "mapped_payments", "injection_sites"):
         print(f"  {k:20s} {st.get(k)}")
 

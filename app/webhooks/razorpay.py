@@ -109,23 +109,27 @@ def _extract(payload: dict) -> tuple[str, str | None, datetime | None]:
     return event_type, entity_id, occurred_at
 
 
-def _merchant_for_entity(session, entity_id: str | None) -> str | None:
-    """Resolve the owning merchant from our own records, never from the payload.
+def _owner_for_entity(session, entity_id: str | None) -> tuple[str | None, str | None]:
+    """(tenant_id, merchant_id) from our own records, never from the payload.
 
     The event names a provider id; which merchant that belongs to is a fact this
     system already holds. Trusting an `account_id` in the body would let a
     forged delivery address another tenant (MerchantOps §54).
     """
     if not entity_id:
-        return None
-    row = session.execute(text("""
+        return None, None
+    merchant = session.execute(text("""
         SELECT merchant_id FROM payments WHERE external_payment_id = :e
         UNION
         SELECT merchant_id FROM agent_actions
          WHERE external_payment_id = :e OR external_reference = :e
         LIMIT 1
     """), {"e": entity_id}).scalar()
-    return row
+    if merchant is None:
+        return None, None
+    tenant = session.execute(
+        text("SELECT tenant_id FROM merchants WHERE id = :m"), {"m": merchant}).scalar()
+    return tenant, merchant
 
 
 def ingest(session, raw_body: bytes, signature: str | None,
@@ -166,12 +170,13 @@ def ingest(session, raw_body: bytes, signature: str | None,
     if not event_id_header:
         note = (note + " " if note else "") + "No event id header; deduplicating on payload hash."
 
-    merchant_id = _merchant_for_entity(session, entity_id) if sig_ok else None
+    tenant_id, merchant_id = _owner_for_entity(session, entity_id) if sig_ok else (None, None)
 
     row = WebhookEvent(
         id=f"WHE_{uuid.uuid4().hex[:10].upper()}",
         event_id=event_id, provider="razorpay", event_type=event_type,
-        schema_version=SCHEMA_VERSION, merchant_id=merchant_id, entity_id=entity_id,
+        schema_version=SCHEMA_VERSION, tenant_id=tenant_id, merchant_id=merchant_id,
+        entity_id=entity_id,
         status=status, signature_valid=sig_ok, payload=payload,
         payload_hash=payload_hash, correlation_id=correlation_id,
         occurred_at=occurred_at, processing_note=note or None,

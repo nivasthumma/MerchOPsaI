@@ -446,12 +446,25 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
             setattr(plan, k, v)
         session.flush()
 
+    if sc.single_candidate:
+        for c in executable_candidates(session, plan)[1:]:
+            c.executable = False
+        session.flush()
+
     refused = None
+    target = None
     if sc.dispatch_top_candidate:
         target = (executable_candidates(session, plan) or candidates)[0]
         try:
-            dispatch_candidate(session, plan, target, principal)
+            dispatched = dispatch_candidate(session, plan, target, principal)
             refused = False
+            if sc.approve_dispatched:
+                from app.agent.approval import ApprovalError as _ApErr
+                try:
+                    approve_and_execute(session, dispatched["task"].id, principal,
+                                        injector=FaultInjector.from_scenario(sc.fault))
+                except _ApErr:
+                    pass
         except RecoveryStopped as exc:
             refused = True
             if e.stop_rule is not None:
@@ -464,6 +477,33 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
         check("refusal_moved_no_money",
               (not refused) or (session.query(Refund).count() == money_before[0]),
               "a refused dispatch still created a refund")
+
+    if sc.settle_after_dispatch:
+        from app.recovery.dispatch import settle_plan
+        settle_plan(session, plan)
+
+    if e.candidate_status_after is not None and target is not None:
+        session.refresh(target)
+        check("candidate_status_after", target.status.value == e.candidate_status_after,
+              f"candidate is {target.status.value}")
+
+    if (e.ledger_invariants_hold is not None or e.ledger_recovered_minor is not None
+            or e.ledger_attempted_gt_zero is not None
+            or e.ledger_unknown_gt_zero is not None):
+        from app.recovery.ledger import build_ledger
+        led = build_ledger(session, principal.merchant_id)
+        if e.ledger_invariants_hold is not None:
+            check("ledger_invariants", (led.invariants() == []) == e.ledger_invariants_hold,
+                  f"broken: {led.invariants()}")
+        if e.ledger_recovered_minor is not None:
+            check("ledger_recovered", led.recovered_minor == e.ledger_recovered_minor,
+                  f"recovered={led.recovered_minor}")
+        if e.ledger_attempted_gt_zero is not None:
+            check("ledger_attempted", (led.attempted_minor > 0) == e.ledger_attempted_gt_zero,
+                  f"attempted={led.attempted_minor}")
+        if e.ledger_unknown_gt_zero is not None:
+            check("ledger_unknown", (led.unknown_minor > 0) == e.ledger_unknown_gt_zero,
+                  f"unknown={led.unknown_minor}")
 
     session.refresh(plan)
     if e.plan_status is not None:

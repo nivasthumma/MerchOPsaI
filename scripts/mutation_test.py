@@ -123,6 +123,42 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "ledger: count a payment link as recovered the moment it is sent",
+        "app/recovery/dispatch.py",
+        '        if link is not None and link.status == "paid":',
+        "        if True:  # MUTANT",
+    ),
+    (
+        "ledger: fold the unknown bucket into recovered",
+        "app/recovery/dispatch.py",
+        "    if state is not VerificationState.SUCCESS:\n"
+        "        return _FROM_VERIFICATION.get(state, CandidateStatus.UNKNOWN), 0",
+        "    if state is not VerificationState.SUCCESS:\n"
+        "        return CandidateStatus.RECOVERED, action.amount_minor  # MUTANT",
+    ),
+    (
+        "ledger: report gross charges instead of attributed exposure",
+        "app/recovery/ledger.py",
+        '          COALESCE(SUM(attributed_amount_minor) FILTER (\n'
+        "              WHERE status <> 'INELIGIBLE'), 0)                       AS recoverable,",
+        '          COALESCE(SUM(amount_minor) FILTER (\n'
+        "              WHERE status <> 'INELIGIBLE'), 0)                       AS recoverable,  -- MUTANT",
+    ),
+    (
+        "ledger: keep resolved incidents in the at-risk figure",
+        "app/recovery/ledger.py",
+        "        WHERE merchant_id = :m AND status = ANY(:open)\n"
+        '    """), {"m": merchant_id, "open": list(_OPEN)}).scalar() or 0)',
+        "        WHERE merchant_id = :m\n"
+        '    """), {"m": merchant_id}).scalar() or 0)  # MUTANT',
+    ),
+    (
+        "recovery: dispatch every intervention as a refund",
+        "app/recovery/dispatch.py",
+        "    template = _REQUEST.get(candidate.intervention)",
+        "    template = _REQUEST[Intervention.REFUND]  # MUTANT",
+    ),
+    (
         "output: accept a claim citing evidence that does not exist",
         "app/agent/output.py",
         "        if not any(e in known_evidence_ids for e in f.evidence_ids):",

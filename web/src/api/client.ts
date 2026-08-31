@@ -6,6 +6,9 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
+  Dashboard,
+  IncidentDetail,
+  IncidentSummary,
   EscalatedAction, Health, Metrics, ReconcileReport, ReplayResult, Scenario,
   Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
 } from "./types";
@@ -160,6 +163,17 @@ export const api = {
 
   /** Counts for the operations strip. Authenticated: see types.Metrics. */
   metrics: () => request<Metrics>("/metrics"),
+
+  /** MerchantOps §50. Deliberately a different endpoint from `metrics`:
+   *  one counts operations, the other reports money. */
+  dashboard: () => request<Dashboard>("/dashboard"),
+
+  incidents: () =>
+    request<{ incidents: IncidentSummary[]; total_revenue_at_risk_minor: number }>(
+      "/incidents"),
+
+  getIncident: (id: string) =>
+    request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}`),
 
   /** Selects among providers the server can already reach. It never carries a
    *  credential — CONTRACT §37 keeps those in the environment. */

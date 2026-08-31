@@ -3,6 +3,8 @@ import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
 import { AppErrorBoundary } from "./components/ErrorBoundary";
+import Dashboard from "./routes/Dashboard";
+import IncidentDetail from "./routes/IncidentDetail";
 import Investigate from "./routes/Investigate";
 import TaskDetail from "./routes/TaskDetail";
 import Scenarios from "./routes/Scenarios";
@@ -17,6 +19,8 @@ const router = createBrowserRouter([
     errorElement: <AppErrorBoundary />,
     children: [
       { index: true, element: <Investigate /> },
+      { path: "dashboard", element: <Dashboard /> },
+      { path: "incidents/:incidentId", element: <IncidentDetail /> },
       { path: "tasks/:taskId", element: <TaskDetail /> },
       { path: "scenarios", element: <Scenarios /> },
       { path: "operations", element: <Operations /> },

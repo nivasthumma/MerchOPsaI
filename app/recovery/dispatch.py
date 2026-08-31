@@ -15,8 +15,8 @@ from __future__ import annotations
 from app.agent.runtime import AgentRuntime
 from app.audit.trace import record_incident
 from app.models import (
-    AgentAction, CandidateStatus, Incident, PlanStatus, RecoveryCandidate,
-    RecoveryPlan, VerificationState,
+    AgentAction, CandidateStatus, Incident, Intervention, PlanStatus,
+    RecoveryCandidate, RecoveryPlan, VerificationState,
 )
 from app.policy.risk import assess
 from app.recovery.stopping import Disposition, StopDecision, apply_stop, evaluate_stopping_rules
@@ -56,6 +56,35 @@ def assess_candidate_risk(session, plan: RecoveryPlan, candidate: RecoveryCandid
                   spec=REGISTRY["request_refund"], bulk_size=bulk)
 
 
+# What to ask the agent for, per intervention. This was a single hardcoded
+# "Refund payment X" string, which was correct while REFUND was the only
+# executable intervention and silently wrong the moment PAYMENT_LINK joined it:
+# a link candidate was dispatched as a refund request, which the policy engine
+# then refused because a failed payment is not refundable. It failed safe and it
+# failed for the wrong reason, and a recovery that never happens because the
+# system asked the wrong question is still a recovery that never happens.
+_REQUEST = {
+    Intervention.REFUND: (
+        "Refund payment {payment} amount {amount} as recovery for incident "
+        "{incident} (candidate {candidate})."),
+    Intervention.PAYMENT_LINK: (
+        "Send a payment link for payment {payment} as recovery for incident "
+        "{incident} (candidate {candidate})."),
+}
+
+
+def _request_for(plan: RecoveryPlan, candidate: RecoveryCandidate) -> str:
+    template = _REQUEST.get(candidate.intervention)
+    if template is None:
+        raise RecoveryStopped(StopDecision(
+            Disposition.STOP, "no_request_template",
+            f"{candidate.intervention.value} has no dispatch form; it cannot be "
+            f"asked for."))
+    return template.format(payment=candidate.payment_id,
+                           amount=candidate.amount_minor,
+                           incident=plan.incident_id, candidate=candidate.id)
+
+
 def dispatch_candidate(session, plan: RecoveryPlan, candidate: RecoveryCandidate,
                        principal, *, provider_available: bool = True):
     """Check the bounds, then hand the candidate to the ordinary agent path."""
@@ -79,9 +108,7 @@ def dispatch_candidate(session, plan: RecoveryPlan, candidate: RecoveryCandidate
             session.flush()
         raise RecoveryStopped(decision)
 
-    request = (f"Refund payment {candidate.payment_id} amount "
-               f"{candidate.amount_minor} as recovery for incident "
-               f"{plan.incident_id} (candidate {candidate.id}).")
+    request = _request_for(plan, candidate)
     out = AgentRuntime(session, principal).run(request, incident_id=plan.incident_id)
 
     candidate.task_id = out.task.id
@@ -104,21 +131,66 @@ def dispatch_candidate(session, plan: RecoveryPlan, candidate: RecoveryCandidate
 
 # --- outcome ---------------------------------------------------------------
 _FROM_VERIFICATION = {
-    VerificationState.SUCCESS: CandidateStatus.RECOVERED,
     VerificationState.FAILED: CandidateStatus.FAILED,
     VerificationState.PARTIAL: CandidateStatus.FAILED,
     VerificationState.UNKNOWN: CandidateStatus.UNKNOWN,
 }
 
 
-def settle_plan(session, plan: RecoveryPlan) -> dict:
+def _settle_one(session, cand: RecoveryCandidate, action: AgentAction,
+                adapter) -> tuple[CandidateStatus, int]:
+    """What one verified action means for its candidate — MerchantOps §49.
+
+    A verified SUCCESS does not mean the same thing for every intervention, and
+    treating it as if it did is how a platform ends up reporting money it never
+    recovered.
+
+        refund        SUCCESS = the money went back        -> RECOVERED
+        payment link  SUCCESS = a link now exists          -> ATTEMPTED
+        notification  SUCCESS = a message was sent         -> ATTEMPTED
+
+    A link is recovery only once somebody pays it, which is a fact about the
+    LINK's state and not about our request to create one. Before this
+    distinction existed, dispatching a payment link and verifying it reported
+    the full payment amount as recovered while no customer had paid anything —
+    exactly the claim §49 says the platform should never make.
+    """
+    state = action.verification_state
+    if state is None:
+        return cand.status, cand.actual_recovery_minor
+    if state is not VerificationState.SUCCESS:
+        return _FROM_VERIFICATION.get(state, CandidateStatus.UNKNOWN), 0
+
+    if action.action_type == "refund":
+        return CandidateStatus.RECOVERED, action.amount_minor
+
+    if action.action_type == "payment_link":
+        link = None
+        if action.external_reference:
+            try:
+                link = adapter.get_payment_link(action.external_reference)
+            except Exception:                                   # noqa: BLE001
+                link = None
+        if link is not None and link.status == "paid":
+            return CandidateStatus.RECOVERED, cand.attributed_amount_minor
+        # Sent and outstanding. Not failed — the customer may still pay.
+        return CandidateStatus.ATTEMPTED, 0
+
+    # A message was delivered. Nothing has been recovered by delivering it.
+    return CandidateStatus.ATTEMPTED, 0
+
+
+def settle_plan(session, plan: RecoveryPlan, adapter=None) -> dict:
     """Read each dispatched candidate's outcome back from its action.
 
-    The candidate does not decide what happened; the verified action does.
-    `actual_recovery_minor` is populated ONLY from a SUCCESS -- MerchantOps §49
-    keeps expected and actual apart, and an UNKNOWN action has not been shown to
-    have moved anything.
+    The candidate does not decide what happened; the verified action does, and
+    what a verified action MEANS depends on what was done. MerchantOps §49 keeps
+    expected and actual apart, and an UNKNOWN action has not been shown to have
+    moved anything.
     """
+    from app.integrations.razorpay.adapter import get_adapter
+
+    adapter = adapter or get_adapter(session)
     counts = {s.value: 0 for s in CandidateStatus}
     recovered = 0
 
@@ -130,12 +202,8 @@ def settle_plan(session, plan: RecoveryPlan) -> dict:
                       .order_by(AgentAction.created_at.desc()).first())
             if action is not None:
                 action.recovery_candidate_id = cand.id
-                if action.verification_state is not None:
-                    cand.status = _FROM_VERIFICATION.get(
-                        action.verification_state, CandidateStatus.UNKNOWN)
-                    cand.actual_recovery_minor = (
-                        action.amount_minor
-                        if action.verification_state is VerificationState.SUCCESS else 0)
+                cand.status, cand.actual_recovery_minor = _settle_one(
+                    session, cand, action, adapter)
         counts[cand.status.value] += 1
         recovered += cand.actual_recovery_minor
 

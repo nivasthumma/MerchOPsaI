@@ -26,6 +26,7 @@ from app.detection.engine import open_incidents
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
 from app.recovery import plan_recovery
+from app.recovery.ledger import build_ledger, dashboard
 from app.recovery.dispatch import (
     RecoveryStopped, dispatch_candidate, executable_candidates, settle_plan,
 )
@@ -523,6 +524,17 @@ def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
     } for e in s.query(IncidentEvidence)
         .filter(IncidentEvidence.incident_id == inc.id)
         .order_by(IncidentEvidence.id).all()]
+    plan = (s.query(RecoveryPlan)
+            .filter(RecoveryPlan.incident_id == inc.id).one_or_none())
+    view["recovery"] = _plan_view(s, plan, detail=True) if plan else None
+    # §51's timeline. Read from the audit trail, so it reports what the
+    # application did rather than a narrative assembled beside it.
+    view["timeline"] = [{
+        "at": e["at"], "event": e["event"], "task_id": e["task_id"],
+        "detail": {k: v for k, v in (e["payload"] or {}).items()
+                   if k in ("from", "to", "reason", "decision", "rule",
+                            "plan_id", "intervention", "state", "status")},
+    } for e in trace_for_incident(s, inc.id)]
     view["tasks"] = [{
         "id": t.id, "status": t.status.value, "final_answer": t.final_answer,
         "tool_calls": t.tool_call_count, "duration_ms": t.duration_ms,
@@ -605,6 +617,30 @@ def investigate_incident(incident_id: str,
             raise HTTPException(404, "Unknown incident.")
         return {"incident": _incident_view(s, r["incident"], detail=True),
                 "task": _task_view(s, r["task"])}
+
+
+@app.get("/recovery/ledger")
+def recovery_ledger(principal: Principal = Depends(current_principal)):
+    """MerchantOps §49. Six figures that nest, in one unit.
+
+    `invariants_broken` is returned rather than enforced by refusing to answer:
+    a violated ordering is a reporting defect that has to be visible, and a
+    dashboard that will not render is a dashboard nobody can use to find out why.
+    """
+    with session_scope() as s:
+        return build_ledger(s, principal.merchant_id).as_dict()
+
+
+@app.get("/dashboard")
+def merchant_dashboard(principal: Principal = Depends(current_principal)):
+    """MerchantOps §50. Revenue at risk, recovery, incidents and agent activity.
+
+    Deliberately separate from `/metrics`, which counts operations. Merging a
+    revenue figure into an ops counter strip is how "12" comes to mean tasks on
+    one row and rupees on the next.
+    """
+    with session_scope() as s:
+        return dashboard(s, principal.merchant_id)
 
 
 @app.get("/metrics")

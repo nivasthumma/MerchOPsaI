@@ -1208,3 +1208,43 @@ button.primary:disabled {
 .card.cta button.primary:disabled { background: var(--surface-2); border-color: var(--border);
   color: var(--text-dim); }
 button.primary:disabled .kbd-hint { opacity: 0.5; }
+
+/* --- §49 recovery ledger -------------------------------------------------
+   The chain narrows. Rendering these as a row of equal tiles is what lets a
+   reader take "at risk" as the headline and "recovered" as a footnote, which
+   is the wrong way round and the specific misreading §49 warns against. */
+.ledger-chain { list-style: none; margin: 0 0 .35rem; padding: 0; display: grid; gap: .55rem; }
+.ledger-chain li { display: grid; grid-template-columns: 1fr; gap: .2rem; }
+.ledger-chain dl { display: flex; align-items: baseline; justify-content: space-between;
+                   gap: 1rem; margin: 0; }
+.ledger-chain dt { font-weight: 600; }
+.ledger-chain dd { margin: 0; font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+.ledger-chain p { margin: 0; font-size: .82rem; }
+.ledger-bar { height: 6px; border-radius: 3px; background: var(--line, #e6e6e6); overflow: hidden; }
+.ledger-bar > span { display: block; height: 100%; background: var(--accent); opacity: .55; }
+.ledger-chain li[data-k="recovered"] .ledger-bar > span { opacity: 1; }
+.basis { margin: 0 0 1.1rem; font-size: .82rem; max-width: 62ch; }
+[data-tone="bad"] { color: var(--danger, #b3261e); }
+[data-tone="warn"] { color: var(--warn, #8a6100); }
+table.grid { width: 100%; border-collapse: collapse; margin-bottom: 1.1rem; }
+table.grid th, table.grid td { text-align: left; padding: .38rem .5rem;
+                               border-bottom: 1px solid var(--line, #e6e6e6); }
+table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- §51 incident page --------------------------------------------------- */
+.evidence, .timeline, .tasks { list-style: none; margin: 0 0 1.1rem; padding: 0; }
+.evidence li { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap;
+               padding: .3rem 0; border-bottom: 1px solid var(--line, #e6e6e6); }
+.evidence .k { font-weight: 600; min-width: 13rem; }
+.evidence .src { font-size: .78rem; }
+/* Merchant free text is shown as quarantined, not as system text. Dropping the
+   marker here would push the judgement onto whoever reads the page. */
+.evidence li[data-untrusted] { background: var(--warn-bg, #fff8e6); }
+.evidence li[data-untrusted] .v { font-family: ui-monospace, monospace; }
+.tag.warn { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em;
+            padding: .1rem .35rem; border-radius: 3px; background: var(--warn, #8a6100);
+            color: #fff; }
+.timeline li { display: flex; gap: .7rem; align-items: baseline; padding: .22rem 0; }
+.timeline .ev { font-weight: 600; }
+.tasks li { padding: .35rem 0; border-bottom: 1px solid var(--line, #e6e6e6); }
+.tasks p { margin: .25rem 0 0; font-size: .9rem; }

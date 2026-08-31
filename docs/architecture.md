@@ -55,6 +55,37 @@ An incident supplies **context**, never authority. Both entry points run the sam
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
 
+## Measuring recovery
+
+Added in ADR-0023. §49's six figures, in one unit, and they nest:
+
+```
+revenue at risk  >=  recoverable  >=  attempted  >=  recovered + failed + unknown
+```
+
+The unit is **attributed exposure** — each charge counted only to the extent its incident is
+responsible for it. Mixing gross charges into the chain is how a total ends up larger than
+the thing it is a share of.
+
+What "recovered" is allowed to mean depends on what was done:
+
+| action | a verified SUCCESS means | counts as |
+|---|---|---|
+| refund | the money went back | **recovered** |
+| payment link | a link now exists | attempted — recovered only once the provider says it was *paid* |
+| notification | a message was sent | attempted |
+
+That distinction is not pedantry: before it existed, dispatching a payment link and verifying
+it reported the entire charge as recovered while no customer had paid anything — the exact
+claim §49 ends by forbidding.
+
+`unknown` is its own bucket, folded into neither neighbour. `invariants_broken` is reported
+rather than raised, and the dashboard renders it: a ledger whose figures do not nest is a
+defect that has to be visible.
+
+The dashboard shows the chain narrowing rather than four equal tiles, because the misreading
+§49 warns against is a layout as much as a number.
+
 ## The agent's output
 
 Added in ADR-0022. §37's typed object, validated by the backend:

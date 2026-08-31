@@ -1,0 +1,29 @@
+{
+  "recovery": {
+    "merchant_id": "MERCH_A",
+    "at_risk_minor": 3575906,
+    "recoverable_minor": 3448647,
+    "attempted_minor": 499900,
+    "recovered_minor": 0,
+    "failed_minor": 0,
+    "unknown_minor": 0,
+    "outstanding_minor": 499900,
+    "by_incident": [
+      {"incident_id": "INC_AAA", "incident_type": "PAYMENT_DEGRADATION",
+       "severity": "MEDIUM", "status": "DETECTED", "title": "UPI payment degradation",
+       "revenue_at_risk_minor": 2926106, "recoverable_minor": 2948700, "recovered_minor": 0},
+      {"incident_id": "INC_BBB", "incident_type": "DUPLICATE_PAYMENT",
+       "severity": "LOW", "status": "DETECTED", "title": "Duplicate payment on SYN_ORD_DUP01",
+       "revenue_at_risk_minor": 499900, "recoverable_minor": 499900, "recovered_minor": 0}
+    ],
+    "by_method": [
+      {"method": "upi", "recoverable_minor": 2948700, "recovered_minor": 0, "candidates": 33},
+      {"method": "card", "recoverable_minor": 499900, "recovered_minor": 0, "candidates": 1}
+    ],
+    "invariants_broken": [],
+    "basis": "Attributed exposure: each charge counted only to the extent the incident is responsible for it. `recovered` is money confirmed by independent verification — a payment link counts only once the provider reports it paid, never when it is merely sent."
+  },
+  "incidents": {"by_status": {"DETECTED": 2, "RESOLVED": 1}, "open": 2, "resolved": 1},
+  "agent_activity": {"investigations": 4, "tool_calls": 11, "recommendations": 3,
+                     "awaiting_approval": 1, "escalations": 2}
+}

@@ -1664,3 +1664,72 @@
     answer_excludes_output_block: true
     final_status: COMPLETED
     external_calls: 0
+
+# --------------------------------------------------------------- ledger (5)
+# MerchantOps §49. "The platform should never call the entire INR 4.72L
+# recovered." Every scenario here is a way of getting that wrong.
+- id: LDG-01
+  category: recovery
+  critical: true
+  description: Planning recovers nothing, and the six figures nest.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    ledger_invariants_hold: true
+    ledger_recovered_minor: 0
+    ledger_attempted_gt_zero: false
+
+- id: LDG-02
+  category: recovery
+  critical: true
+  description: A payment link that was sent is attempted, not recovered — nobody has paid it.
+  plan_for: PAYMENT_DEGRADATION
+  single_candidate: true
+  dispatch_top_candidate: true
+  approve_dispatched: true
+  settle_after_dispatch: true
+  expect:
+    dispatch_refused: false
+    candidate_status_after: ATTEMPTED
+    ledger_attempted_gt_zero: true
+    # The action verified SUCCESS. SUCCESS means a link exists.
+    ledger_recovered_minor: 0
+    ledger_invariants_hold: true
+
+- id: LDG-03
+  category: recovery
+  critical: true
+  description: A refund that verified is recovered, at its attributed share.
+  plan_for: DUPLICATE_PAYMENT
+  single_candidate: true
+  dispatch_top_candidate: true
+  approve_dispatched: true
+  settle_after_dispatch: true
+  expect:
+    candidate_status_after: RECOVERED
+    ledger_recovered_minor: 499900
+    ledger_invariants_hold: true
+
+- id: LDG-04
+  category: recovery
+  critical: true
+  description: An action whose outcome is unknown lands in the unknown bucket, not in either neighbour.
+  plan_for: DUPLICATE_PAYMENT
+  single_candidate: true
+  dispatch_top_candidate: true
+  approve_dispatched: true
+  settle_after_dispatch: true
+  fault: {fault: TIMEOUT_AFTER_SUBMIT, on_operation: create_refund}
+  expect:
+    candidate_status_after: UNKNOWN
+    ledger_unknown_gt_zero: true
+    ledger_recovered_minor: 0
+    ledger_invariants_hold: true
+
+- id: LDG-05
+  category: recovery
+  critical: true
+  description: Candidate shares sum to the plan's own eligible figure, so the parts define the whole.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    recovery_ordering_holds: true
+    ledger_invariants_hold: true

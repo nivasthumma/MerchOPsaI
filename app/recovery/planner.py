@@ -123,6 +123,7 @@ class PlanDraft:
             "candidates": [{
                 "payment_id": g["id"], "customer_id": g["customer_id"],
                 "amount_minor": int(g["amount_minor"]),
+                "attributed_amount_minor": g["attributed"],
                 "eligible": g["eligible"], "ineligible_reason": g["reason"],
                 "expected_recovery_minor": g["expected"],
             } for g in self.graded],
@@ -176,6 +177,26 @@ def _duplicate_candidates(session, incident: Incident) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _allocate(amounts: list[int], fraction: float) -> list[int]:
+    """Split `fraction` of each amount so the parts sum to the rounded whole.
+
+    Rounding each share independently and summing them drifts: thirty-three
+    halves of a paise is enough to put a total above the figure it is a share
+    of. ADR-0020 fixed that at the plan level by rounding the aggregate once,
+    but the ledger needs the PARTS too — attempted recovery is a sum over the
+    candidates actually dispatched. So the residual is allocated rather than
+    left to accumulate, onto the largest share, where a few paise is
+    proportionally least significant.
+    """
+    exact = [a * fraction for a in amounts]
+    total = int(round(sum(exact)))
+    parts = [int(round(x)) for x in exact]
+    residual = total - sum(parts)
+    if residual and parts:
+        parts[max(range(len(parts)), key=lambda k: parts[k])] += residual
+    return parts
+
+
 def _eligibility(row: dict, intervention: Intervention) -> tuple[bool, str | None]:
     """Deterministic. Returns (eligible, reason_if_not)."""
     if int(row["amount_minor"]) <= 0:
@@ -224,15 +245,24 @@ def compute_plan(session, incident: Incident) -> PlanDraft:
     else:
         attributable = min(1.0, incident.revenue_at_risk_minor / total_volume)
 
-    eligible_volume = 0
     graded: list[dict] = []
     for row in rows:
         ok, why = _eligibility(row, intervention)
-        amount = int(row["amount_minor"])
-        expected = int(round(amount * attributable * rate)) if ok else 0
-        if ok:
-            eligible_volume += amount
-        graded.append({**row, "eligible": ok, "reason": why, "expected": expected})
+        graded.append({**row, "eligible": ok, "reason": why})
+
+    # Attribute only the eligible volume, and allocate it exactly, so that the
+    # candidates' shares sum to the plan's own eligible figure with nothing
+    # lost or invented between them.
+    eligible_rows = [g for g in graded if g["eligible"]]
+    shares = _allocate([int(g["amount_minor"]) for g in eligible_rows], attributable)
+    for g, share in zip(eligible_rows, shares):
+        g["attributed"] = share
+        g["expected"] = int(round(share * rate))
+    for g in graded:
+        g.setdefault("attributed", 0)
+        g.setdefault("expected", 0)
+
+    eligible_volume = sum(int(g["amount_minor"]) for g in eligible_rows)
 
     # Round ONCE, from the exact aggregate. Rounding each candidate and then
     # summing accumulates: thirty-three shares rounded up by half a paise each
@@ -245,9 +275,9 @@ def compute_plan(session, incident: Incident) -> PlanDraft:
     # claimed the whole failed volume was at risk survived the entire suite.
     # Computing it correctly once is both the better arithmetic and the version
     # that can be checked.
-    eligible_exact = eligible_volume * attributable
-    eligible_minor = int(round(eligible_exact))
-    expected_minor = int(round(eligible_exact * rate))
+    # The whole is the sum of the parts, by construction of _allocate.
+    eligible_minor = sum(g["attributed"] for g in graded)
+    expected_minor = int(round(eligible_minor * rate))
 
     graded.sort(key=lambda r: (not r["eligible"], -r["expected"], r["id"]))
 
@@ -310,6 +340,7 @@ def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
             amount_minor=int(row["amount_minor"]), intervention=intervention,
             status=CandidateStatus.ELIGIBLE if row["eligible"] else CandidateStatus.INELIGIBLE,
             ineligible_reason=row["reason"],
+            attributed_amount_minor=row["attributed"],
             expected_recovery_minor=row["expected"],
             executable=(intervention in EXECUTABLE) and row["eligible"],
             rank=rank,

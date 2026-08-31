@@ -295,3 +295,71 @@ export interface TaskEvidence {
   task_id: string;
   tool_calls: EvidenceToolCall[];
 }
+
+/** MerchantOps §49. Six figures that nest, in one unit — see `basis`. */
+export interface RecoveryLedger {
+  merchant_id: string;
+  at_risk_minor: number;
+  recoverable_minor: number;
+  attempted_minor: number;
+  recovered_minor: number;
+  failed_minor: number;
+  unknown_minor: number;
+  outstanding_minor: number;
+  by_incident: {
+    incident_id: string; incident_type: string; severity: string; status: string;
+    title: string; revenue_at_risk_minor: number;
+    recoverable_minor: number; recovered_minor: number;
+  }[];
+  by_method: {
+    method: string; recoverable_minor: number; recovered_minor: number;
+    candidates: number;
+  }[];
+  /** Empty when the §49 orderings hold. Rendered when it is not: a reporting
+   *  defect has to be visible, not swallowed. */
+  invariants_broken: string[];
+  basis: string;
+}
+
+/** MerchantOps §50. */
+export interface Dashboard {
+  recovery: RecoveryLedger;
+  incidents: { by_status: Record<string, number>; open: number; resolved: number };
+  agent_activity: {
+    investigations: number; tool_calls: number; recommendations: number;
+    awaiting_approval: number; escalations: number;
+  };
+}
+
+/** MerchantOps §13 / §51. */
+export interface IncidentSummary {
+  id: string; merchant_id: string; type: string; severity: string; status: string;
+  title: string; summary: string; revenue_at_risk_minor: number;
+  detection_rule: string; detection_version: string; correlation_id: string;
+  started_at: string; detected_at: string; resolved_at: string | null;
+}
+
+export interface IncidentDetail extends IncidentSummary {
+  signals: Record<string, unknown>;
+  evidence: { id: string; key: string; value: unknown; source: string; untrusted: boolean }[];
+  tasks: { id: string; status: string; final_answer: string | null;
+           tool_calls: number; duration_ms: number | null }[];
+  legal_transitions: string[];
+  recovery: RecoveryPlanView | null;
+  timeline: { at: string; event: string; task_id: string | null;
+              detail: Record<string, unknown> }[];
+}
+
+export interface RecoveryPlanView {
+  id: string; incident_id: string; status: string; intervention: string;
+  revenue_at_risk_minor: number; eligible_recovery_minor: number;
+  expected_recovery_minor: number; expected_recovery_basis: string;
+  budget: { max_recovery_minor: number; max_actions: number;
+            max_attempts_per_customer: number; max_duration_seconds: number };
+  stop_rule: string | null; stop_reason: string | null;
+  candidates?: { id: string; rank: number; payment_id: string; customer_id: string;
+                 amount_minor: number; attributed_amount_minor: number;
+                 intervention: string; status: string; ineligible_reason: string | null;
+                 expected_recovery_minor: number; actual_recovery_minor: number;
+                 executable: boolean; attempts: number; task_id: string | null }[];
+}

@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0–6 delivered
+**Status:** in progress — phases 0–7 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -254,7 +254,7 @@ asserted what the API told a client. A second mutant, resetting evidence numberi
 call, also survived — the test drove the renderer directly, so breaking its caller was
 invisible. Both gaps were tests aimed at the wrong layer rather than tests that were missing.
 
-## Phase 7 — Revenue measurement + dashboard · M · ~3d
+## Phase 7 — Revenue measurement + dashboard · M · ~3d — **DONE**
 
 **Closes §49, §50, §51. Requires phases 1 and 4.**
 
@@ -267,6 +267,19 @@ invisible. Both gaps were tests aimed at the wrong layer rather than tests that 
 - Dashboard (§50) and incident detail (§51) in the existing React SPA
   (`web/src/routes/`). `/metrics` today reports ops counters, not revenue; these are
   separate surfaces and should stay separate.
+
+**Delivered** — see [ADR-0023](adr/0023-the-recovery-ledger.md). `app/recovery/ledger.py`,
+`attributed_amount_minor` on candidates, two routes, `/dashboard` and `/incidents/:id` in the
+SPA, 5 scenarios, 5 mutants, 13 backend tests, 13 web tests.
+
+**Two live defects that building the report exposed**, neither findable before it because
+nothing reported recovery to contradict. A payment link that had merely been *sent* was
+counted as the full charge recovered — precisely what §49 forbids. And every recovery
+candidate was dispatched as a *refund* request whatever intervention had been planned, so a
+payment-link candidate was refused for being an unrefundable payment: safe, and for the wrong
+reason. Both were mappings that were total when written and became partial when phase 5 added
+an executable intervention, and neither had a test because at the time there was nothing to
+distinguish.
 
 ## Phase 8 — Taxonomy, versioning, observability · S–M · ~2d
 
@@ -296,8 +309,7 @@ invisible. Both gaps were tests aimed at the wrong layer rather than tests that 
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0–6 complete. Phase 7, the revenue-recovery ledger and dashboard, is next — and it is the
-first phase whose output a merchant sees directly.)
+(0–7 complete. Phase 8, the failure taxonomy and observability alignment, is the last.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

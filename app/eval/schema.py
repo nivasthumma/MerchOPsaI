@@ -80,6 +80,13 @@ class Expect(BaseModel):
     plan_is_idempotent: bool | None = None
     no_financial_effect_from_planning: bool = False
 
+    # --- ledger assertions (MerchantOps §49) ---
+    ledger_invariants_hold: bool | None = None
+    ledger_recovered_minor: int | None = None
+    ledger_attempted_gt_zero: bool | None = None
+    ledger_unknown_gt_zero: bool | None = None
+    candidate_status_after: str | None = None
+
 
 class Scenario(BaseModel):
     id: str
@@ -114,6 +121,10 @@ class Scenario(BaseModel):
     plan_for: str | None = None            # incident type to plan recovery for
     budget_override: dict = Field(default_factory=dict)   # shrink a bound to make it bite
     dispatch_top_candidate: bool = False
+    # Shrink a campaign to one action so it is not bulk and can be dispatched.
+    single_candidate: bool = False
+    approve_dispatched: bool = False
+    settle_after_dispatch: bool = False
     allowed_tools: list[str] | None = None
     approve: bool | None = None                  # simulate the human decision
     approve_as: str | None = None                # approve as a DIFFERENT principal

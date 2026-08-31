@@ -511,6 +511,10 @@ class RecoveryCandidate(Base):
         Enum(CandidateStatus, native_enum=False), default=CandidateStatus.ELIGIBLE, index=True)
     ineligible_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
+    # The share of this candidate's amount attributable to the incident. The
+    # ledger measures at-risk, recoverable and attempted in this unit so the
+    # figures nest (MerchantOps §49); `amount_minor` is the gross charge.
+    attributed_amount_minor: Mapped[int] = mapped_column(Integer, default=0)
     expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
     actual_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
 

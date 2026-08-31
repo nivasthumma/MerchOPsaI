@@ -6,6 +6,7 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
+  AgentMessage,
   Dashboard,
   IncidentDetail,
   IncidentSummary,
@@ -172,6 +173,13 @@ export const api = {
     request<{ incidents: IncidentSummary[]; total_revenue_at_risk_minor: number }>(
       "/incidents"),
 
+  /** Idempotent: a second sweep over the same window reports `already_known`
+   *  rather than raising a second incident for one anomaly. */
+  detect: () =>
+    request<{ merchant_id: string; anomalies_found: number; incidents_created: number;
+              already_known: number; duration_ms: number }>(
+      "/incidents/detect", { method: "POST" }),
+
   getIncident: (id: string) =>
     request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}`),
 
@@ -189,6 +197,12 @@ export const api = {
   /** CONTRACT §21: the evidence the human reviews before approving. */
   getEvidence: (id: string) =>
     request<TaskEvidence>(`/tasks/${encodeURIComponent(id)}/evidence`),
+
+  /** MerchantOps §66. Distinct from the trace: the trace is what the
+   *  application DID, this is what the model was looking at when it decided. */
+  getMessages: (id: string) =>
+    request<{ task_id: string; messages: AgentMessage[]; total_chars: number }>(
+      `/tasks/${encodeURIComponent(id)}/messages`),
 
   getTrace: (id: string) =>
     request<{ task_id: string; trace: TraceEvent[] }>(`/tasks/${encodeURIComponent(id)}/trace`),

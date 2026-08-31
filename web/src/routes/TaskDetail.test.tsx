@@ -47,12 +47,21 @@ const { api } = await import("../api/client");
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 const BASE: Task = {
-  id: "TASK_ABC", merchant_id: "MERCH_A", user_id: "USR_A_OWNER",
+  id: "TASK_ABC", tenant_id: "TEN_KETTLE", merchant_id: "MERCH_A",
+  user_id: "USR_A_OWNER",
   request: "Find the duplicate payment and refund it",
   status: "AWAITING_APPROVAL", final_answer: null, failure_code: null,
   findings: [], tool_calls: 3, llm_turns: 3, duration_ms: 40,
   agent_version: "merchantops-agent/0.1.0", model_version: "deterministic-planner-v1",
-  prompt_version: "investigator-v1", is_replay: false, replayed_from: null,
+  prompt_version: "investigator-v2", is_replay: false, replayed_from: null,
+  intent: "duplicate_payment",
+  recommendation: { type: "refund_duplicate", detail: "Proposed for human approval." },
+  agent_confidence: 0.9, requires_human: true, model_requires_human: true,
+  failure: null,
+  versions: { agent: "merchantops-agent/0.1.0", model_provider: "deterministic",
+              model: "deterministic-planner-v1", prompt: "investigator-v2",
+              tool_registry: "tools-fdebfe546427", policy: "policy-v3",
+              workflow: "workflow-v2" },
   approvals: [{
     id: "APR_1", decision: "PENDING", action_type: "request_refund",
     action_payload: { synthetic_payment_id: "SYN_PAY_0002", amount_minor: 499900,

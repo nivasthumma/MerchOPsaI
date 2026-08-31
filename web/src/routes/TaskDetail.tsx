@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type {
+  AgentMessage,
   Approval, EvidenceToolCall, PlaybackResult, Principal, ReplayResult, ReReasonResult, Task,
   TraceEvent,
 } from "../api/types";
@@ -18,10 +19,10 @@ import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
 
 /** The panes below the gate. Everything the old page stacked vertically is
  *  here; none of it was dropped, it is one click instead of one scroll. */
-type Pane = "trace" | "evidence" | "actions" | "history" | "replay";
+type Pane = "trace" | "evidence" | "actions" | "history" | "replay" | "transcript";
 const PANES: [Pane, string][] = [
-  ["trace", "Trace"], ["evidence", "Evidence"], ["actions", "Actions"],
-  ["history", "Approvals"], ["replay", "Replay"],
+  ["trace", "Trace"], ["transcript", "Transcript"], ["evidence", "Evidence"],
+  ["actions", "Actions"], ["history", "Approvals"], ["replay", "Replay"],
 ];
 
 export default function TaskDetail() {
@@ -183,6 +184,9 @@ export default function TaskDetail() {
         ["Prompt", task.prompt_version],
       ]} />
 
+      <Conclusion task={task} />
+      <FailureDetail failure={task.failure} />
+
       {/* One screen, no page scroll. The gate is always visible; everything
           else lives in a pane below it that scrolls inside itself. The reason
           is not tidiness: on a page that scrolls, the approval button moves,
@@ -231,6 +235,8 @@ export default function TaskDetail() {
         </div>
 
         <div className="deck-body" role="tabpanel">
+          {shown === "transcript" ? <TranscriptPanel taskId={task.id} /> : null}
+
           {shown === "trace" ? <TracePanel events={trace} /> : null}
 
           {shown === "trace" && task.final_answer ? (
@@ -713,6 +719,115 @@ const FILTERS: { key: TraceGroup | "all"; label: string }[] = [
   { key: "action", label: "Action" },
   { key: "verification", label: "Verification" },
 ];
+
+/** MerchantOps §37. The model's own typed output, which the task carried and
+ *  this page did not show.
+ *
+ *  `confidence` is rendered as what it is — a number the model reported —
+ *  rather than as a quality score, because it is consulted by nothing. And
+ *  `requires_human` is the OR of policy and the model: the model may raise the
+ *  bar and never lower it, so a model saying "no" next to a pending approval
+ *  would read as a disagreement it is not entitled to have. */
+function Conclusion({ task }: { task: Task }) {
+  if (!task.intent && !task.recommendation && task.agent_confidence == null) return null;
+  return (
+    <div className="card conclusion">
+      <SectionHead title="What the agent concluded" />
+      <StatStrip items={[
+        ["Intent", task.intent ?? <span className="muted">—</span>],
+        ["Recommends", task.recommendation
+          ? <code>{task.recommendation.type}</code>
+          : <span className="muted">no action</span>],
+        ["Model confidence", task.agent_confidence == null
+          ? <span className="muted">—</span>
+          : <span title="Reported by the model. Consulted by nothing.">
+              {task.agent_confidence.toFixed(2)}
+            </span>],
+        ["Human required", task.requires_human ? "yes" : "no"],
+      ]} />
+      {task.recommendation?.detail
+        ? <p className="muted">{task.recommendation.detail}</p> : null}
+      {task.requires_human && !task.model_requires_human ? (
+        <p className="muted">
+          Policy requires a human here; the model did not ask for one. The model
+          can raise that bar and never lower it.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** MerchantOps §56. A code says what broke. It does not say whether trying
+ *  again is sensible, which is the question an operator actually has. */
+function FailureDetail({ failure }: { failure: Task["failure"] }) {
+  if (!failure) return null;
+  // No client-side copy of what each retryability means. The backend already
+  // sends `recommended_next_action` per code, and a second phrasing here would
+  // be a second source of truth that drifts — and drifted immediately: the two
+  // rendered the same sentence twice.
+  return (
+    <div className="card failure" data-retry={failure.retryability}>
+      <SectionHead title="Failure">
+        <code>{failure.category}</code>
+      </SectionHead>
+      <StatStrip items={[
+        ["Code", <code key="c">{failure.error_code}</code>],
+        ["Owner", failure.owning_subsystem],
+        ["Retry", failure.retryability],
+      ]} />
+      <p><strong>{failure.recommended_next_action}</strong></p>
+      {!failure.is_classified ? (
+        <p className="muted">
+          This code is not in the failure taxonomy, so it is treated as an
+          internal error and escalates. That is a gap in the taxonomy, not a
+          transient condition.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** MerchantOps §66. What the model was looking at, as distinct from what the
+ *  application did — which is the trace, one tab over. */
+function TranscriptPanel({ taskId }: { taskId: string }) {
+  const [rows, setRows] = useState<AgentMessage[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getMessages(taskId)
+      .then((r) => { if (!cancelled) setRows(r.messages); })
+      .catch((e) => { if (!cancelled) setError(e); });
+    return () => { cancelled = true; };
+  }, [taskId]);
+
+  if (error) return <ErrorBanner error={error} />;
+  if (!rows) return <Skeleton rows={4} />;
+  if (!rows.length) return <Empty>No conversation was recorded.</Empty>;
+
+  return (
+    <div className="card">
+      <SectionHead title="What the model saw" count={`${rows.length}`} />
+      <ol className="transcript" aria-label="Transcript">
+        {rows.map((m) => (
+          <li key={m.seq} data-role={m.role} data-untrusted={m.contains_untrusted || undefined}>
+            <div className="meta">
+              <span className="role">{m.role}</span>
+              <span className="muted">turn {m.turn} · {m.char_count} chars</span>
+              {m.contains_untrusted ? (
+                <span className="tag warn"
+                      title="Merchant free text. Quarantined when the model saw it.">
+                  untrusted
+                </span>
+              ) : null}
+            </div>
+            <pre>{JSON.stringify(m.content, null, 2)}</pre>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 function TracePanel({ events }: { events: TraceEvent[] }) {
   // In the URL rather than in state: "look at the verification stage of this

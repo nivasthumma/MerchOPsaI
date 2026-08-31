@@ -56,8 +56,32 @@ export interface AgentAction {
   verify_attempts: number;
 }
 
+/** MerchantOps §56. Every failure carries more than a code: a code says what
+ *  broke, not whether trying again is sensible. */
+export interface FailureClass {
+  error_code: string;
+  category: string;
+  retryability: "NEVER" | "BOUNDED_BACKOFF" | "RECONCILE" | "ESCALATE";
+  owning_subsystem: string;
+  recommended_next_action: string;
+  correlation_id: string | null;
+  is_classified: boolean;
+}
+
+/** MerchantOps §41 — what it takes to reproduce a run. */
+export interface RunVersions {
+  agent: string;
+  model_provider: string | null;
+  model: string;
+  prompt: string;
+  tool_registry: string | null;
+  policy: string | null;
+  workflow: string | null;
+}
+
 export interface Task {
   id: string;
+  tenant_id: string | null;
   merchant_id: string;
   user_id: string;
   request: string;
@@ -75,6 +99,28 @@ export interface Task {
   replayed_from: string | null;
   approvals: Approval[];
   actions: AgentAction[];
+
+  /** MerchantOps §37. The model's own typed output. `agent_confidence` is
+   *  displayed and consulted by nothing; `requires_human` is the OR of policy
+   *  and the model, because the model may raise the bar and never lower it. */
+  intent: string | null;
+  recommendation: { type: string; detail: string | null } | null;
+  agent_confidence: number | null;
+  requires_human: boolean;
+  model_requires_human: boolean;
+  versions: RunVersions;
+  failure: FailureClass | null;
+}
+
+/** MerchantOps §66 — the conversation the model actually saw. */
+export interface AgentMessage {
+  seq: number;
+  turn: number;
+  role: "user" | "assistant";
+  content: unknown[];
+  contains_untrusted: boolean;
+  char_count: number;
+  at: string;
 }
 
 export interface TraceEvent {

@@ -5,6 +5,7 @@ import App from "./App";
 import { AppErrorBoundary } from "./components/ErrorBoundary";
 import Dashboard from "./routes/Dashboard";
 import IncidentDetail from "./routes/IncidentDetail";
+import Incidents from "./routes/Incidents";
 import Investigate from "./routes/Investigate";
 import TaskDetail from "./routes/TaskDetail";
 import Scenarios from "./routes/Scenarios";
@@ -20,6 +21,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Investigate /> },
       { path: "dashboard", element: <Dashboard /> },
+      { path: "incidents", element: <Incidents /> },
       { path: "incidents/:incidentId", element: <IncidentDetail /> },
       { path: "tasks/:taskId", element: <TaskDetail /> },
       { path: "scenarios", element: <Scenarios /> },

@@ -1248,3 +1248,20 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
 .timeline .ev { font-weight: 600; }
 .tasks li { padding: .35rem 0; border-bottom: 1px solid var(--line, #e6e6e6); }
 .tasks p { margin: .25rem 0 0; font-size: .9rem; }
+
+/* --- §37 conclusion, §56 failure, §66 transcript ------------------------- */
+.conclusion p, .failure p { margin: .35rem 0 0; max-width: 68ch; }
+.failure { border-left: 3px solid var(--warn, #8a6100); }
+/* A failure nobody should retry must not look like one they might. */
+.failure[data-retry="NEVER"] { border-left-color: var(--danger, #b3261e); }
+.failure[data-retry="RECONCILE"] { border-left-color: var(--warn, #8a6100); }
+.transcript { list-style: none; margin: 0; padding: 0; display: grid; gap: .55rem; }
+.transcript li { border: 1px solid var(--line, #e6e6e6); border-radius: 4px; padding: .45rem .6rem; }
+.transcript li[data-role="assistant"] { background: var(--surface-2, #fafafa); }
+/* Quarantined when the model saw it, and rendered as quarantined here. */
+.transcript li[data-untrusted] { border-color: var(--warn, #8a6100); }
+.transcript .meta { display: flex; gap: .6rem; align-items: baseline; margin-bottom: .3rem; }
+.transcript .role { font-weight: 600; text-transform: uppercase; font-size: .72rem;
+                    letter-spacing: .05em; }
+.transcript pre { margin: 0; max-height: 16rem; overflow: auto; font-size: .78rem;
+                  white-space: pre-wrap; word-break: break-word; }

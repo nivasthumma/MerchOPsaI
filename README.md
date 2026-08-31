@@ -1,6 +1,6 @@
 # 🏦 MerchantOps Agent
 
-[![CI](https://github.com/nivasthumma/Merchantagent/actions/workflows/ci.yml/badge.svg)](https://github.com/nivasthumma/Merchantagent/actions/workflows/ci.yml)
+[![CI](https://github.com/nivasthumma/MerchOPsaI/actions/workflows/ci.yml/badge.svg)](https://github.com/nivasthumma/MerchOPsaI/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)

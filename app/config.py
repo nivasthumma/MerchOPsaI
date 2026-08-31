@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None
     razorpay_mode: str = "auto"         # auto | live_test_mode | mock
+    # MerchantOps §34. Separate from the API key secret: Razorpay signs webhooks
+    # with a secret you choose per endpoint, and reusing the API secret here
+    # would mean one leak compromises both directions.
+    razorpay_webhook_secret: str | None = None
 
     # --- Policy (CONTRACT §20) ---
     refund_amount_limit_minor: int = 5_000_00   # paise
@@ -133,6 +137,18 @@ class Settings(BaseSettings):
         if self.llm_provider != "auto":
             return self.llm_provider
         return "anthropic" if self.anthropic_credential_source else "deterministic"
+
+    @property
+    def webhook_verification_enabled(self) -> bool:
+        """False when no webhook secret is configured.
+
+        Reported rather than silently assumed either way. Refusing every
+        delivery would make the endpoint untestable without a secret; accepting
+        every delivery without saying so would be a forgery hole nobody could
+        see. `/health` publishes this, and unverified events are stored with
+        `signature_valid=False` so they can never be mistaken for verified ones.
+        """
+        return bool(self.razorpay_webhook_secret)
 
     @property
     def resolved_razorpay_mode(self) -> str:

@@ -46,6 +46,12 @@ class Expect(BaseModel):
     foreign_incidents: int | None = None            # cross-merchant leakage
     onset_hour_utc_between: list[int] | None = None  # [lo, hi] — §51 timeline
 
+    # --- webhook assertions (MerchantOps §34, §35) ---
+    webhook_status: str | None = None            # status of the LAST delivery
+    webhook_events_stored: int | None = None     # rows in the durable store
+    webhook_actions_reverified: int | None = None
+    webhook_raises_incident: bool | None = None
+
 
 class Scenario(BaseModel):
     id: str
@@ -56,6 +62,9 @@ class Scenario(BaseModel):
         # MerchantOps §12/§13. Detection scenarios have no request and no task;
         # they grade the sweep and the incident it produced.
         "detection",
+        # MerchantOps §34/§35. Delivery, deduplication, signature, and what a
+        # provider event is and is not allowed to decide.
+        "webhook",
     ]
     critical: bool = False                       # CONTRACT §53 stop condition
     principal: str = "owner"                     # owner | analyst | owner_b
@@ -74,6 +83,10 @@ class Scenario(BaseModel):
     fault: dict | None = None                    # CONTRACT §35A injection
     reverify: bool = False
     reconcile: bool = False                      # run the reconciliation sweep
+    # MerchantOps §34. Delivered after the action exists, so the scenario grades
+    # what an event does to a real action rather than to an empty database.
+    #   {event, sign, event_id, deliver_times, break_provider_state}
+    webhook: dict | None = None
     repeat_request: bool = False                 # run the same request again as a 2nd task
     expect: Expect = Field(default_factory=Expect)
 

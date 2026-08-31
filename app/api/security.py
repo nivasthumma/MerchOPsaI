@@ -86,12 +86,20 @@ LIMITS: dict[str, Limit] = {
     "read": Limit(120, 60),      # status, trace, listings
     "write": Limit(20, 60),      # creating agent tasks — each runs a model loop
     "action": Limit(10, 60),     # approve / reject / reverify / reconcile
+    # Webhooks are unauthenticated by necessity: the provider holds no bearer
+    # token, so the signature is the gate. The ceiling is high because providers
+    # legitimately burst and retry, and low enough to bound an unsigned flood --
+    # rejected deliveries still cost a database write, which is the point of
+    # storing them and also the reason to cap them.
+    "webhook": Limit(300, 60),
 }
 
 _hits: dict[tuple[str, str], list[float]] = defaultdict(list)
 
 
 def _class_for(path: str, method: str) -> str:
+    if path.startswith("/webhooks/"):
+        return "webhook"
     if any(p in path for p in ("/approve", "/reject", "/reverify", "/reconcile")):
         return "action"
     if method == "POST":

@@ -25,10 +25,16 @@ human, not to make the chain look complete.
 """
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
+
 from app.agent.runtime import AgentRuntime, Principal
 from app.audit.trace import record_incident
 from app.incidents.lifecycle import transition
-from app.models import Incident, IncidentStatus as S, TaskStatus
+from app.models import (
+    Incident, IncidentEvidence, IncidentSeverity, IncidentStatus as S,
+    IncidentType, TaskStatus,
+)
 
 # Where an investigation leaves the incident, by the task's recorded status.
 # Anything not listed escalates: an unrecognised outcome is not a resolved one.
@@ -115,3 +121,53 @@ def investigate(session, incident: Incident, principal: Principal,
                    actor="system", payload={"task_id": out.task.id})
 
     return {"incident": incident, "task": out.task, "outcome": out}
+
+
+def raise_incident(session, *, merchant_id: str, incident_type: IncidentType,
+                   severity: IncidentSeverity, title: str, summary: str,
+                   detection_key: str, detection_rule: str,
+                   detection_version: str, revenue_at_risk_minor: int = 0,
+                   signals: dict | None = None,
+                   evidence: list[dict] | None = None,
+                   started_at: datetime | None = None) -> Incident | None:
+    """Create an incident from outside the detection sweep, once.
+
+    Returns None when `detection_key` is already taken, exactly as the sweep
+    does. Callers that raise on a recurring condition -- a reconciliation
+    mismatch re-observed on every webhook redelivery, say -- therefore get one
+    incident rather than one per observation, without having to check first.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    inc = Incident(
+        id=f"INC_{uuid.uuid4().hex[:10].upper()}", merchant_id=merchant_id,
+        incident_type=incident_type, severity=severity, status=S.DETECTED,
+        title=title, summary=summary, detection_key=detection_key,
+        revenue_at_risk_minor=revenue_at_risk_minor, signals=signals or {},
+        detection_rule=detection_rule, detection_version=detection_version,
+        correlation_id=f"COR_{uuid.uuid4().hex[:12].upper()}",
+        started_at=started_at or datetime.now(timezone.utc),
+    )
+    sp = session.begin_nested()
+    try:
+        session.add(inc)
+        session.flush()
+        sp.commit()
+    except IntegrityError:
+        sp.rollback()
+        return None
+
+    for ev in (evidence or []):
+        session.add(IncidentEvidence(
+            id=f"IEV_{uuid.uuid4().hex[:10].upper()}", incident_id=inc.id,
+            key=ev["key"], value={"v": ev["value"]}, source=ev["source"],
+            untrusted=bool(ev.get("untrusted", False)),
+        ))
+    session.flush()
+    record_incident(session, inc, "incident_detected", {
+        "incident_type": inc.incident_type.value, "severity": inc.severity.value,
+        "rule": inc.detection_rule, "detection_version": inc.detection_version,
+        "revenue_at_risk_minor": inc.revenue_at_risk_minor,
+        "correlation_id": inc.correlation_id, "signals": inc.signals,
+    })
+    return inc

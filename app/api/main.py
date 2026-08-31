@@ -5,7 +5,7 @@ frontend is never the authority (CONTRACT §20, §41).
 """
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel
 from types import SimpleNamespace
 
@@ -16,7 +16,7 @@ from sqlalchemy import case, func, select, text
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, Principal
-from app.api.security import DEV_SECRET_IN_USE, current_principal
+from app.api.security import DEV_SECRET_IN_USE, check_rate_limit, current_principal
 from app.audit.trace import record, trace_for, trace_for_incident
 from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
@@ -28,8 +28,9 @@ from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
 from app.models import (
     AgentAction, AgentTask, Approval, Incident, IncidentEvidence, ToolCall,
-    VerificationState, utcnow,
+    VerificationState, WebhookEvent, WebhookStatus, utcnow,
 )
+from app.webhooks import ingest
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
@@ -106,6 +107,10 @@ def health():
         "razorpay_execution_is_real": s.resolved_razorpay_mode == "live_test_mode",
         "auth": "bearer_hmac",
         "auth_secret_is_development_default": DEV_SECRET_IN_USE,
+        # Without a secret the webhook endpoint stores deliveries but refuses to
+        # act on them. Published so "nothing happened" is never ambiguous
+        # between "no events" and "events arrived unverified".
+        "webhook_signature_verification": s.webhook_verification_enabled,
     }
 
 
@@ -283,6 +288,71 @@ def list_escalated(max_attempts: int = 5,
         rows = escalated_actions(s, max_attempts=max_attempts)
     # Merchant isolation applies here too.
     return [r for r in rows if r["merchant_id"] == principal.merchant_id]
+
+
+# --------------------------------------------------------------------------
+# Provider webhooks — MerchantOps §34, §65
+# --------------------------------------------------------------------------
+@app.post("/webhooks/razorpay")
+async def razorpay_webhook(
+    request: Request,
+    x_razorpay_signature: str | None = Header(default=None),
+    x_razorpay_event_id: str | None = Header(default=None),
+):
+    """Ingest one provider delivery.
+
+    Deliberately outside `current_principal`: the provider holds no bearer token,
+    so the HMAC signature is the authentication, not a token. This is a distinct
+    trust path and it is the only unauthenticated write in the application.
+
+    Always returns 200 once the delivery is stored, including for a signature
+    that failed. A provider that receives a non-2xx retries, and retrying a
+    forged or malformed delivery achieves nothing except load — the outcome is
+    in the body, and in `webhook_events`.
+    """
+    # The RAW bytes. The signature covers exactly what was sent; re-serialising
+    # parsed JSON changes key order and whitespace, and the check would never
+    # pass again.
+    raw = await request.body()
+
+    # Rate limited on the endpoint rather than on an identity, because there is
+    # no authenticated identity here to limit.
+    check_rate_limit("webhook:razorpay", request.url.path, "POST")
+
+    with session_scope() as s:
+        return ingest(s, raw, x_razorpay_signature, x_razorpay_event_id).as_dict()
+
+
+@app.get("/webhooks/events")
+def list_webhook_events(limit: int = 50, status: str | None = None,
+                        principal: Principal = Depends(current_principal)):
+    """The event store, scoped to the caller's merchant.
+
+    Events we could not attribute to a merchant — an unknown entity, or a
+    delivery that failed its signature and was therefore never resolved — are
+    visible only in aggregate. Showing their bodies to whoever asks first would
+    make an unauthenticated endpoint into a cross-tenant read.
+    """
+    with session_scope() as s:
+        q = s.query(WebhookEvent).filter(WebhookEvent.merchant_id == principal.merchant_id)
+        if status:
+            q = q.filter(WebhookEvent.status == WebhookStatus(status.upper()))
+        rows = q.order_by(WebhookEvent.received_at.desc()).limit(min(limit, 200)).all()
+
+        unattributed = s.query(WebhookEvent).filter(
+            WebhookEvent.merchant_id.is_(None)).count()
+        return {
+            "events": [{
+                "id": e.id, "event_id": e.event_id, "event_type": e.event_type,
+                "status": e.status.value, "signature_valid": e.signature_valid,
+                "entity_id": e.entity_id, "correlation_id": e.correlation_id,
+                "occurred_at": e.occurred_at.isoformat() if e.occurred_at else None,
+                "received_at": e.received_at.isoformat(),
+                "processed_at": e.processed_at.isoformat() if e.processed_at else None,
+                "note": e.processing_note,
+            } for e in rows],
+            "unattributed_count": unattributed,
+        }
 
 
 # --------------------------------------------------------------------------

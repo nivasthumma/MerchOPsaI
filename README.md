@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-122%20passed-brightgreen.svg)](#-measured-results)
-[![Scenarios](https://img.shields.io/badge/scenarios-115%2F115-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-20%2F20-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-137%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-120%2F120-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-24%2F24-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 122 tests · 115/115 scenarios · 20/20 mutations |
+| [📊 Measured results](#-measured-results) | 137 tests · 120/120 scenarios · 24/24 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -68,8 +68,9 @@ and what is architecture.
 
 | Area | Built and running | Designed, not built |
 |---|---|---|
-| Detection | Deterministic sweep over payment history: success-rate degradation, duplicate capture. Idempotent, merchant-scoped | Streaming event pipeline, provider-event ingestion |
-| Incidents | Full §13 lifecycle, evidence, computed revenue-at-risk, incident-rooted trace | Recovery planner, budgets, stopping rules |
+| Detection | Deterministic sweep over payment history: success-rate degradation, duplicate capture. Idempotent, merchant-scoped | Internal event sourcing |
+| Webhooks | Signed ingestion, event dedup, durable event store. A webhook triggers an independent read — it never writes state | Async queue; replay of stored events |
+| Incidents | Full §13 lifecycle, evidence, computed revenue-at-risk, incident-rooted trace, reconciliation mismatches | Recovery planner, budgets, stopping rules |
 | Agent | One bounded agent, 6 typed tools | Specialised multi-agent orchestration |
 | Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources | Model routing, cost-aware selection |
 | Policy | Deterministic engine: RBAC, merchant isolation, risk, amount limits, duplicate guard | Per-merchant configurable policy, approval chains |
@@ -79,8 +80,8 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 115 scenarios + 20-mutation validation, gated in CI | Larger benchmark |
-| Data | Seeded synthetic dataset, 2 merchants | Streaming / generated datasets; durable event store |
+| Evaluation | 120 scenarios + 24-mutation validation, gated in CI | Larger benchmark |
+| Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`) | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
 
@@ -120,42 +121,41 @@ ambiguous between "chosen" and "nothing was detected".
 From `make eval` — actual execution, not targets:
 
 ```
-115/115 scenarios passed      (critical: 65/65)
+120/120 scenarios passed      (critical: 69/69)
 
   adversarial_security  25/25    payment_failure       12/12
   detection              9/9     refund_policy         25/25
   duplicate_payment     14/14    revenue_investigation 12/12
-  failure_unknown       18/18
+  failure_unknown       18/18    webhook                5/5
 
-median task latency 41 ms · mean grounding rate 1.0
+median task latency 44 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-20/20 mutations caught
+24/24 mutations caught
 ```
 
-*Measured as two filtered runs — the 15 pre-existing mutants and the 5 new ones — not one
-20-mutant pass; a full local run exceeds available memory. CI runs all twenty in a single
-job, which is the number that gates a merge.*
+*Measured in filtered batches, not one 24-mutant pass; a full local run exceeds available
+memory. CI runs all of them in a single job, which is the number that gates a merge.*
 
-That run is what makes the 115/115 meaningful — and it is how three real gaps
+That run is what makes the 120/120 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
 onset had no volume floor, so ordinary variance was being reported as the moment a
 degradation began.
 
-Counted honestly, as before: of the five detection and lifecycle mutants,
-**four produce a graded scenario failure** and one — allowing any incident lifecycle
-transition — is caught by unit tests only. No scenario distinguishes it, because every
-transition a scenario can drive is a legal one.
+Counted honestly, as before. Of the nine mutants added since: **eight produce a graded
+scenario failure** — including all four webhook controls — and one, allowing any incident
+lifecycle transition, is caught by unit tests only. No scenario distinguishes that one,
+because every transition a scenario can drive is already a legal one.
 
 Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **122 passed** (`make test`) across unit, security and integration.
+Test suite: **137 passed** (`make test`) across unit, security and integration.
 
 ---
 
@@ -362,6 +362,8 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 | Endpoint | Purpose |
 |---|---|
+| `POST /webhooks/razorpay` | Provider event ingestion — **HMAC-signed, unauthenticated** |
+| `GET /webhooks/events` | The durable event store, merchant-scoped |
 | `POST /incidents/detect` | Run the detection sweep (idempotent) |
 | `GET /incidents` | Open incidents, ordered by revenue at risk |
 | `GET /incidents/{id}` | Detail: signals, evidence, tasks, legal next states |
@@ -381,6 +383,12 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 Every endpoint enforces authentication and merchant isolation server-side. A
 cross-merchant read returns 404, not 403 — existence is not leaked.
+
+`POST /webhooks/razorpay` is the one exception and the only unauthenticated write: the
+provider holds no bearer token, so an HMAC signature over the raw body is the
+authentication. It returns 200 once the delivery is stored — including for a signature
+that failed, because a non-2xx only makes the provider retry a forgery. What actually
+happened is in the response body and in `webhook_events`.
 
 ---
 
@@ -452,20 +460,22 @@ are different claims.
 
 ### Deliberate scope decisions
 
-4. **Reconciliation is a sweep, not a daemon.** An always-on worker means Redis or
-   Celery, which the MVP scope excludes. Actions settle at sweep cadence, not
-   instantly — bounded, escalated, and visible, but not real time.
+4. **Reconciliation is a sweep plus webhooks, still not a daemon.** A signed provider
+   event now settles an action the moment it arrives, so the common path is no longer
+   sweep-cadence. The sweep remains the backstop for actions no webhook ever arrives
+   for — a lost delivery, an event type the provider does not send — and that path is
+   still bounded by cron, not real time. An always-on worker means Redis or Celery,
+   which the MVP scope excludes.
 5. **Single-process, synchronous.** No queue, no horizontal scale.
 6. **Rate limiting is per-worker.** The counter is in-process, so with several
    workers the limit is approximate. A shared counter needs Redis.
 7. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
    unforgeable and permissions are read from the database on every request, but
    there is no expiry, rotation, revocation list, or audience binding.
-8. **Detection observes state, not a stream.** There is no durable event store yet, so
-   the sweep reads `payments` rather than an event log. A change that never lands on a
-   payment row is invisible to it. The event store arrives with webhook ingestion — see
-   [ADR-0017 §1](docs/adr/0017-detection-engine-and-incident-spine.md) for why building
-   it early would have been a table with no writer.
+8. **Detection observes state, not a stream.** `webhook_events` stores what the provider
+   *tells* us, but the detection rules still read `payments`. A business change that
+   never lands on a payment row is invisible to them. Wiring detection onto the event
+   store is real work, not a rename.
 9. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
    Incidents appear at sweep cadence.
 10. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
@@ -500,10 +510,7 @@ for the §-number crosswalk). The ordered plan to close the distance between the
 
 Next, in order:
 
-1. **Webhook ingestion and the durable event store** (§34, §11) — signature validation,
-   event dedup, and provider events feeding reconciliation as *evidence* rather than
-   authority.
-2. **A computed risk engine** (§24) — risk derived from value, reversibility and bulk
+1. **A computed risk engine** (§24) — risk derived from value, reversibility and bulk
    size rather than a static per-tool constant, with `CRITICAL` and dual approval.
 3. **Recovery planner, budgets and stopping rules** (§23, §27, §28).
 4. The remaining nine tools of §18; model-emitted structured output (§37); the
@@ -518,7 +525,8 @@ Independent of the plan, and still blocked on credentials:
 
 Done: ~~background reconciliation for `UNKNOWN` actions~~ (sweep + escalation queue);
 ~~expand to 100 scenarios and wire into CI~~ (115 scenarios, mutation testing, GitHub
-Actions gate); ~~detection and incident management~~ (ADR-0017).
+Actions gate); ~~detection and incident management~~ (ADR-0017); ~~webhook ingestion and
+the durable event store~~ (ADR-0018).
 
 ---
 
@@ -526,6 +534,7 @@ Actions gate); ~~detection and incident management~~ (ADR-0017).
 
 ```
 app/
+  webhooks/     signed ingestion, dedup, the durable provider-event store
   detection/    deterministic rules + the idempotent incident sweep
   incidents/    §13 lifecycle state machine, investigation dispatch
   agent/        runtime (bounded loop), approval, replay, versioned prompts
@@ -538,12 +547,12 @@ app/
   api/          FastAPI surface
 ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015)
-data/           115 scenarios + the last evaluation report
+data/           120 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (122 tests)
+tests/          unit · security · integration  (137 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 17 ADRs
+                gap-closure plan, 18 ADRs
 ```
 
 ## 📄 License / disclaimer

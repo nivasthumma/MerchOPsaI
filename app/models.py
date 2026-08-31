@@ -82,6 +82,21 @@ class IncidentType(str, enum.Enum):
     """MerchantOps §12 — what the detection engine found."""
     PAYMENT_DEGRADATION = "PAYMENT_DEGRADATION"
     DUPLICATE_PAYMENT = "DUPLICATE_PAYMENT"
+    # MerchantOps §35: internal state and provider state disagree. Not an
+    # anomaly in the merchant's business — an anomaly in our own record of it,
+    # which is why it is raised rather than silently corrected.
+    RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
+
+
+class WebhookStatus(str, enum.Enum):
+    """MerchantOps §34. Every delivery lands in exactly one of these, including
+    the ones we refuse — a rejected webhook that leaves no row is a delivery
+    nobody can investigate."""
+    RECEIVED = "RECEIVED"        # stored, not yet processed
+    PROCESSED = "PROCESSED"      # acted on (verification re-run)
+    IGNORED = "IGNORED"          # valid, but nothing here subscribes to it
+    DUPLICATE = "DUPLICATE"      # event_id already seen
+    INVALID = "INVALID"          # signature failed
 
 
 class IncidentSeverity(str, enum.Enum):
@@ -204,6 +219,57 @@ class Refund(Base):
     status: Mapped[str] = mapped_column(String(32))        # processed | pending | failed
     external_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------------------------
+# Provider events (MerchantOps §11, §34)
+# --------------------------------------------------------------------------
+class WebhookEvent(Base):
+    """The durable event store — MerchantOps §11's field list, §34's pipeline.
+
+    A webhook is **evidence, not authority**. This row records that a provider
+    said something; it never decides what is true. Deciding is reconciliation's
+    job, and reconciliation re-reads provider state through the adapter rather
+    than believing this payload (MerchantOps §32: a delivered message is not
+    verified business state, for the same reason an HTTP 200 is not).
+
+    Rows are written for rejected deliveries too. A webhook refused for a bad
+    signature that leaves no trace is an attack nobody can investigate.
+    """
+    __tablename__ = "webhook_events"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    # The provider's own event id. UNIQUE is the deduplication mechanism
+    # (MerchantOps §34): a redelivered webhook collides here and is recorded as
+    # DUPLICATE rather than processed twice. Providers retry by design, so this
+    # is the ordinary path, not the exceptional one.
+    event_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+
+    provider: Mapped[str] = mapped_column(String(32), default="razorpay", index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    schema_version: Mapped[str] = mapped_column(String(16), default="v1")
+
+    # Nullable: the event may name an entity this system has never seen, and
+    # inventing a merchant for it would be worse than admitting we cannot place it.
+    merchant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    status: Mapped[WebhookStatus] = mapped_column(
+        Enum(WebhookStatus, native_enum=False), default=WebhookStatus.RECEIVED, index=True)
+    signature_valid: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Hash of the exact bytes the signature was computed over, so a stored event
+    # can be tied back to what was actually delivered.
+    payload_hash: Mapped[str] = mapped_column(String(64))
+
+    correlation_id: Mapped[str] = mapped_column(String(64), index=True)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processing_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (Index("ix_webhook_entity_type", "entity_id", "event_type"),)
 
 
 # --------------------------------------------------------------------------

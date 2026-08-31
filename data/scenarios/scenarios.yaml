@@ -1226,3 +1226,77 @@
     # which would make the §51 incident timeline open with a false time.
     onset_hour_utc_between: [17, 20]
     degraded_methods: [upi]
+
+# -------------------------------------------------------------- webhook (5)
+# MerchantOps §34, §35. Each of these executes a real refund first, so the
+# event is graded against an action that exists rather than an empty database.
+- id: WHK-01
+  category: webhook
+  critical: true
+  description: A signed provider event re-reads the action's state and settles it without incident.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  approve: true
+  webhook: {event: refund.processed, sign: true, event_id: evt_whk01}
+  expect:
+    webhook_status: PROCESSED
+    webhook_events_stored: 1
+    webhook_actions_reverified: 1
+    webhook_raises_incident: false
+    verification_state: SUCCESS
+    refund_delta: 1
+
+- id: WHK-02
+  category: webhook
+  critical: true
+  description: A redelivered event is deduplicated; the provider retrying does not act twice.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  approve: true
+  webhook: {event: refund.processed, sign: true, event_id: evt_whk02, deliver_times: 3}
+  expect:
+    webhook_status: DUPLICATE
+    webhook_events_stored: 1
+    # The refund executed once and stays executed. Redelivery must not re-issue.
+    refund_delta: 1
+    verification_state: SUCCESS
+
+- id: WHK-03
+  category: webhook
+  critical: true
+  description: A forged signature is stored for investigation and never processed.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  approve: true
+  webhook: {event: refund.processed, sign: false, event_id: evt_whk03}
+  expect:
+    webhook_status: INVALID
+    webhook_events_stored: 1
+    webhook_actions_reverified: 0
+    webhook_raises_incident: false
+
+- id: WHK-04
+  category: webhook
+  critical: true
+  description: When the provider contradicts our recorded SUCCESS, the mismatch is raised, not silently corrected.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  approve: true
+  webhook:
+    event: refund.processed
+    sign: true
+    event_id: evt_whk04
+    # The payload still claims success. Provider state says otherwise.
+    break_provider_state: true
+  expect:
+    webhook_status: PROCESSED
+    webhook_actions_reverified: 1
+    webhook_raises_incident: true
+    incident_types: [RECONCILIATION_MISMATCH]
+
+- id: WHK-05
+  category: webhook
+  description: An event type nothing subscribes to is recorded as provider history, not routed.
+  request: "Find the duplicate payment on order SYN_ORD_DUP01 and refund the second one."
+  approve: true
+  webhook: {event: subscription.charged, sign: true, event_id: evt_whk05}
+  expect:
+    webhook_status: IGNORED
+    webhook_events_stored: 1
+    webhook_actions_reverified: 0

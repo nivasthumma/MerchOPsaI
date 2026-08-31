@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0 and 1 delivered
+**Status:** in progress — phases 0, 1 and 2 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -97,7 +97,7 @@ flat window, illegal lifecycle transition rejected.
 ingestion exists — a table nothing writes to is the skeleton component both specs warn
 against. It moves to phase 2, where it has a writer. Reasoning in ADR-0017 §1.
 
-## Phase 2 — Webhook ingestion · M · ~2–3d
+## Phase 2 — Webhook ingestion · M · ~2–3d — **DONE**
 
 **Closes §34, completes §35.**
 
@@ -119,6 +119,12 @@ backstop rather than the only mechanism.
 
 Scenarios: duplicate delivery (same `event_id` twice → exactly one state change),
 invalid signature rejected, webhook/internal contradiction → incident.
+
+**Delivered** — see [ADR-0018](adr/0018-webhooks-as-evidence.md). `app/webhooks/`
+(ingestion + processing), the `webhook_events` durable store deferred from phase 1, two
+routes, `RECONCILIATION_MISMATCH` incidents, 5 scenarios, 4 mutants, 15 tests. The store
+holds MerchantOps §11's field list; it carries provider-delivered events only, and
+detection still reads `payments` rather than the event log.
 
 ## Phase 3 — Risk engine + policy expansion · M · ~2d
 
@@ -244,7 +250,8 @@ rendered from post-hoc reconstruction.
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0 and 1 complete; 2 is next, and now also carries the `events` table deferred from 1.)
+(0, 1 and 2 complete. Phase 3, the computed risk engine, is next — and still carries the
+registry/policy dual-registration fix, which phase 5 walks straight into otherwise.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

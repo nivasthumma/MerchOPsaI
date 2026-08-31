@@ -123,6 +123,30 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "webhooks: accept any signature",
+        "app/webhooks/razorpay.py",
+        "    return hmac.compare_digest(expected, signature)",
+        "    return True  # MUTANT",
+    ),
+    (
+        "webhooks: stop deduplicating deliveries",
+        "app/webhooks/razorpay.py",
+        '    event_id = event_id_header or f"sha256:{payload_hash}"',
+        '    event_id = __import__("uuid").uuid4().hex  # MUTANT',
+    ),
+    (
+        "webhooks: process a delivery that failed its signature",
+        "app/webhooks/razorpay.py",
+        "    if status is not WebhookStatus.RECEIVED:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "webhooks: stop treating a provider contradiction as a mismatch",
+        "app/webhooks/processing.py",
+        "CONTRADICTS_SUCCESS = frozenset({VerificationState.FAILED, VerificationState.PARTIAL})",
+        "CONTRADICTS_SUCCESS = frozenset()  # MUTANT",
+    ),
+    (
         "detection: stop deduplicating incidents",
         "app/detection/rules.py",
         'detection_key=f"{merchant_id}|PAYMENT_DEGRADATION|{method}|{cut.isoformat()}",',

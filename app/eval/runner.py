@@ -90,6 +90,77 @@ def _grounding_rate(session, task) -> float | None:
     return round(ok / len(observed), 4)
 
 
+_WEBHOOK_SECRET = "whsec_evaluation_suite"
+
+
+def _deliver_webhook(session, sc: Scenario, task) -> dict:
+    """Deliver the scenario's provider event(s) — MerchantOps §34.
+
+    `ingest` is called directly rather than over HTTP. The signature check, the
+    dedup constraint and the processing path are all exercised either way, and
+    the transport is not what these scenarios are grading.
+    """
+    import hashlib
+    import hmac
+    import json
+
+    from sqlalchemy import text as _text
+
+    from app.models import WebhookEvent
+    from app.webhooks import ingest
+
+    spec = sc.webhook or {}
+    action = (session.query(AgentAction)
+              .filter(AgentAction.task_id == task.id)
+              .order_by(AgentAction.created_at).first())
+
+    if spec.get("break_provider_state") and action is not None:
+        # Reverse provider-side state underneath a settled action, so the
+        # independent read-back genuinely contradicts our record. Without this
+        # a "mismatch" scenario would only be testing that nothing happened.
+        session.execute(_text(
+            "UPDATE payments SET amount_refunded_minor = 0, refund_status = NULL "
+            "WHERE external_payment_id = :e"), {"e": action.external_payment_id})
+        session.execute(_text("DELETE FROM refunds"))
+        session.flush()
+
+    body = {
+        "entity": "event", "event": spec.get("event", "refund.processed"),
+        "contains": ["refund"], "created_at": 1787000000,
+        "payload": {"refund": {"entity": {
+            "id": (action.external_reference if action else None) or "rfnd_UNKNOWN",
+            "payment_id": (action.external_payment_id if action else None) or "pay_UNKNOWN",
+            "amount": action.amount_minor if action else 0,
+            # Deliberately the happy status even in the mismatch scenario: the
+            # payload claims success, and the system must report what it reads.
+            "status": "processed"}}},
+    }
+    raw = json.dumps(body).encode()
+    sig = (hmac.new(_WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+           if spec.get("sign", True) else "f" * 64)
+
+    settings = get_settings()
+    saved = getattr(settings, "razorpay_webhook_secret", None)
+    settings.razorpay_webhook_secret = _WEBHOOK_SECRET
+    try:
+        results = []
+        for n in range(int(spec.get("deliver_times", 1))):
+            results.append(ingest(session, raw, sig,
+                                  f"{spec.get('event_id', 'evt_eval')}_{n}"
+                                  if spec.get("unique_ids") else
+                                  spec.get("event_id", "evt_eval")))
+    finally:
+        settings.razorpay_webhook_secret = saved
+
+    last = results[-1]
+    return {
+        "last": last,
+        "stored": session.query(WebhookEvent).count(),
+        "reverified": len(last.reverified or []),
+        "incident_id": last.incident_id,
+    }
+
+
 def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     """Grade a detection sweep — MerchantOps §12, §13, §60.
 
@@ -288,6 +359,8 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     if sc.reconcile:
         reconcile(session, min_age_seconds=0)
 
+    webhook = _deliver_webhook(session, sc, task) if sc.webhook else None
+
     if sc.repeat_request:
         # A SECOND, independent task making the same request. The first task's
         # action now exists, so the policy duplicate-action guard must deny it.
@@ -406,6 +479,26 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
         check(f"answer_contains:{frag}", frag.lower() in answer, f"answer={answer[:160]}")
     for frag in e.answer_excludes:
         check(f"answer_excludes:{frag}", frag.lower() not in answer, f"answer={answer[:160]}")
+
+    if webhook is not None:
+        from app.models import Incident as _Incident
+        if e.webhook_status is not None:
+            check("webhook_status", webhook["last"].status.value == e.webhook_status,
+                  f"got {webhook['last'].status.value}: {webhook['last'].note}")
+        if e.webhook_events_stored is not None:
+            check("webhook_events_stored", webhook["stored"] == e.webhook_events_stored,
+                  f"durable store holds {webhook['stored']} row(s)")
+        if e.webhook_actions_reverified is not None:
+            check("webhook_actions_reverified",
+                  webhook["reverified"] == e.webhook_actions_reverified,
+                  f"re-verified {webhook['reverified']} action(s)")
+        if e.webhook_raises_incident is not None:
+            raised = webhook["incident_id"] is not None
+            check("webhook_raises_incident", raised == e.webhook_raises_incident,
+                  f"incident_id={webhook['incident_id']}")
+        for want in e.incident_types:
+            got = {i.incident_type.value for i in session.query(_Incident).all()}
+            check(f"incident_type:{want}", want in got, f"incidents={sorted(got)}")
 
     gr = _grounding_rate(session, task)
     if e.min_grounding_rate is not None:

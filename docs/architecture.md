@@ -55,6 +55,41 @@ An incident supplies **context**, never authority. Both entry points run the sam
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
 
+## Webhooks — evidence, not authority
+
+Added in ADR-0018. MerchantOps §34's pipeline, with one rule holding it together:
+
+```
+delivery -> signature -> dedup -> durable store -> processing -> reconciliation
+                                                        │
+                                    the webhook says WHEN to look
+                                    the adapter says WHAT was found
+```
+
+Nothing in `app/webhooks/` writes `verification_state` from a payload. A verified,
+subscribed event finds the actions touching that entity and re-reads provider state
+through the adapter. The payload's own `status` is stored and never consulted.
+
+That is why forging a delivery is uninteresting: an attacker who defeats the signature can
+make the system re-read state it would have read anyway, and cannot say what that state is.
+
+| Outcome | When | Acted on |
+|---|---|---|
+| `PROCESSED` | signed, subscribed type, entity we own | yes — re-verification runs |
+| `IGNORED` | no subscriber, unknown entity, **or no secret configured** | no |
+| `INVALID` | signature failed | no — stored for investigation |
+| `DUPLICATE` | `event_id` already seen | no |
+
+Every delivery is stored, including the refused ones: a rejected webhook that leaves no row
+is an attack nobody can investigate. The merchant is resolved from our own records, never
+from the envelope's `account_id` — reading it from the body would let a forged delivery
+address another tenant.
+
+When re-verification regresses an action away from `SUCCESS`, that is §35's reconciliation
+incident: `RECONCILIATION_MISMATCH`, raised at `CRITICAL`, **with no correction applied**.
+Overwriting the record would erase the only evidence the two ever disagreed. `UNKNOWN` is
+excluded — that is a failure to read, not a disagreement, and it belongs to the sweep.
+
 ## Detection and incidents
 
 Added in ADR-0017. MerchantOps §12 is explicit that the model does not inspect raw events:
@@ -527,11 +562,10 @@ EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 
 ## Future state (not built)
 
-Ordered in `docs/gap-closure-plan.md`. Nearest first: webhook ingestion and the durable
-event store (§34, §11); a computed risk engine with `CRITICAL` and dual approval (§24);
-the recovery planner, its budgets and stopping rules (§23, §27, §28); the remaining nine
-tools of §18; model-emitted structured output (§37); the revenue-recovery ledger and
-dashboard (§49, §50).
+Ordered in `docs/gap-closure-plan.md`. Nearest first: a computed risk engine with
+`CRITICAL` and dual approval (§24); the recovery planner, its budgets and stopping rules
+(§23, §27, §28); the remaining nine tools of §18; model-emitted structured output (§37);
+the revenue-recovery ledger and dashboard (§49, §50).
 
 Beyond that: specialised agents; Next.js frontend; Redis/Celery for durable retries;
 per-merchant policy configuration; distributed tracing; containerised deployment.

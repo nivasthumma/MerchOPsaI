@@ -303,6 +303,19 @@ def list_approvals(pending_only: bool = True,
         } for a in rows]}
 
 
+# Declared before /actions/{action_id}: Starlette matches in declaration order,
+# so with the parametrised route first "escalated" is captured as an action_id
+# and the endpoint 404s as "Unknown action."
+@app.get("/actions/escalated")
+def list_escalated(max_attempts: int = 5,
+                   principal: Principal = Depends(current_principal)):
+    """Actions automatic reconciliation could not settle — the operator queue."""
+    with session_scope() as s:
+        rows = escalated_actions(s, max_attempts=max_attempts)
+    # Merchant isolation applies here too.
+    return [r for r in rows if r["merchant_id"] == principal.merchant_id]
+
+
 @app.get("/actions/{action_id}")
 def get_action(action_id: str, principal: Principal = Depends(current_principal)):
     """One external action — MerchantOps §65.
@@ -430,16 +443,6 @@ def run_reconcile(min_age_seconds: int = 30, max_attempts: int = 5,
     with session_scope() as s:
         rep = reconcile(s, min_age_seconds=min_age_seconds, max_attempts=max_attempts)
         return rep.as_dict()
-
-
-@app.get("/actions/escalated")
-def list_escalated(max_attempts: int = 5,
-                   principal: Principal = Depends(current_principal)):
-    """Actions automatic reconciliation could not settle — the operator queue."""
-    with session_scope() as s:
-        rows = escalated_actions(s, max_attempts=max_attempts)
-    # Merchant isolation applies here too.
-    return [r for r in rows if r["merchant_id"] == principal.merchant_id]
 
 
 # --------------------------------------------------------------------------

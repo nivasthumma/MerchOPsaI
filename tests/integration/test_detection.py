@@ -144,6 +144,38 @@ def test_duplicate_payments_become_incidents(db):
     assert found, "the seeded duplicate pair was not detected"
     a = found[0]
     assert a.incident_type is IncidentType.DUPLICATE_PAYMENT
-    assert a.signals["first_payment_id"] != a.signals["second_payment_id"]
+    # The earliest capture is the real payment and is never listed as excess.
+    assert a.signals["first_payment_id"] not in a.signals["excess_payment_ids"]
+    excess = len(a.signals["excess_payment_ids"])
     assert a.revenue_at_risk_minor == (
-        a.signals["amount_minor"] - a.signals["already_refunded_minor"])
+        excess * a.signals["amount_minor"] - a.signals["already_refunded_minor"])
+
+
+def test_one_incident_per_order_not_per_pair(db):
+    """An order captured N times is ONE duplicate problem with N-1 excess
+    charges. Emitting a pair at a time made a triple into three incidents each
+    claiming the full amount, for 3x an exposure that is really 2x."""
+    from sqlalchemy import text
+
+    # Plant a third capture on the seeded duplicate order, inside the window.
+    row = db.execute(text("""
+        SELECT order_id, customer_id, amount_minor, method, created_at
+        FROM payments WHERE id = 'SYN_PAY_0002'
+    """)).mappings().one()
+    db.execute(text("""
+        INSERT INTO payments (id, merchant_id, order_id, customer_id, amount_minor,
+                              currency, method, status, amount_refunded_minor, created_at)
+        VALUES ('SYN_PAY_TRIPLE', 'MERCH_A', :o, :c, :a, 'INR', :m, 'captured', 0,
+                :t + interval '60 seconds')
+    """), {"o": row["order_id"], "c": row["customer_id"], "a": row["amount_minor"],
+           "m": row["method"], "t": row["created_at"]})
+    db.flush()
+
+    found = [a for a in detect_duplicate_payments(db, "MERCH_A")
+             if a.signals["order_id"] == row["order_id"]]
+    assert len(found) == 1, f"one order produced {len(found)} incidents"
+    a = found[0]
+    assert a.signals["capture_count"] == 3
+    assert len(a.signals["excess_payment_ids"]) == 2
+    # Two excess captures, not three overlapping claims of one.
+    assert a.revenue_at_risk_minor == 2 * int(row["amount_minor"])

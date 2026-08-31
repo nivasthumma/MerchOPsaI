@@ -137,7 +137,14 @@ def build() -> dict:
             customers.append(Customer(
                 id=cid, merchant_id=m, name=f"Customer {i:04d}",
                 email=f"c{i:04d}@example.com",
-                segment=SEGMENTS[i % len(SEGMENTS)], notes=None,
+                segment=SEGMENTS[i % len(SEGMENTS)],
+                # MerchantOps §28 makes opt-out a stopping condition, so the
+                # dataset needs customers who have opted out -- otherwise the
+                # rule is written but never exercised. Chosen by index rather
+                # than by rng: consumes no randomness, so the rest of the
+                # dataset stays byte-identical.
+                contact_opted_out=(i % 17 == 3),
+                notes=None,
             ))
 
     a_products = [p for p in products if p.merchant_id == MERCHANT_A]
@@ -216,6 +223,22 @@ def build() -> dict:
                 make(MERCHANT_A, cust, prod, when, method,
                      "captured" if ok else "failed",
                      None if ok else "GATEWAY_DECLINED")
+
+    # MerchantOps §28's opt-out stopping rule has to be reachable from a real
+    # incident, not merely present in the table. The index rule above opts out
+    # ~6% of customers, but whether any of them owns a FAILED UPI payment in the
+    # incident window is luck -- and on this seed, none did. So two customers
+    # who actually appear in the planted degradation are opted out explicitly.
+    # Chosen by sorted id, so it stays deterministic.
+    _failed_upi_customers = sorted({
+        p.customer_id for p in payments
+        if p.method == "upi" and p.status == "failed" and p.merchant_id == MERCHANT_A
+    })
+    _opted = set(_failed_upi_customers[:2])
+    for c in customers:
+        if c.id in _opted:
+            c.contact_opted_out = True
+    stats["opted_out_customers"] = sum(1 for c in customers if c.contact_opted_out)
 
     stats["base_payments"] = len(payments)
 

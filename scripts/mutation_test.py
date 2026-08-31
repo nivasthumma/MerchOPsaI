@@ -123,6 +123,36 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "recovery: drop the campaign spend bound",
+        "app/recovery/stopping.py",
+        "        if prospective > plan.max_recovery_minor:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "recovery: drop the campaign action-count bound",
+        "app/recovery/stopping.py",
+        "    if taken >= plan.max_actions:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "recovery: record the stop instead of acting on it",
+        "app/recovery/dispatch.py",
+        "        raise RecoveryStopped(decision)\n\n    request = ",
+        "        pass  # MUTANT\n\n    request = ",
+    ),
+    (
+        "recovery: claim the whole failed volume was at risk",
+        "app/recovery/planner.py",
+        "        attributable = min(1.0, incident.revenue_at_risk_minor / total_volume)",
+        "        attributable = 1.0  # MUTANT",
+    ),
+    (
+        "recovery: grade a bulk action as if it stood alone",
+        "app/recovery/dispatch.py",
+        "    bulk = len(executable_candidates(session, plan))",
+        "    bulk = 1  # MUTANT",
+    ),
+    (
         "risk: let computed risk replace the declared floor instead of raising it",
         "app/policy/risk.py",
         "    final = risk_at_least(declared, computed)",

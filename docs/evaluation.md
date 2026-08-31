@@ -26,7 +26,7 @@ Running the same suite against `claude-opus-5` would measure something different
 (agent reasoning quality) and must be reported separately. That number has not been
 collected; the README says so.
 
-## Suite composition (127)
+## Suite composition (135)
 
 | Category | Count | What it exercises |
 |---|---|---|
@@ -37,6 +37,7 @@ collected; the README says so.
 | payment_failure | 12 | Method isolation, hourly concentration, error attribution, no-action guarantee |
 | revenue_investigation | 12 | Period comparison, method ranking, grounding, no-action guarantee |
 | detection | 9 | Rule discrimination, idempotency, computed revenue-at-risk, onset accuracy, latency, incident-rooted trace, merchant scoping, lifecycle outcome |
+| recovery | 8 | The §49 ordering, campaign bounds that bite, stopping applied rather than logged, and planning that moves no money |
 | risk_approval | 7 | The floor rule in both directions, the one path to CRITICAL, and a two-person control that one person cannot satisfy |
 | webhook | 5 | Signature, redelivery dedup, unsubscribed types, and the one that matters: a payload claiming success against provider state that says otherwise |
 
@@ -53,7 +54,7 @@ inflating a metric.
 
 ## Mutation testing — does the suite actually work?
 
-> A full run is 28 mutants, each re-running the whole scenario and test suite: over half
+> A full run is 33 mutants, each re-running the whole scenario and test suite: over half
 > an hour, and memory-hungry enough to be worth running detached. Pass substrings to run
 > a subset during development — `scripts/mutation_test.py webhooks detection` — but a
 > filtered run is not a substitute for the full one, and CI runs all of them.
@@ -101,9 +102,9 @@ kinds of catching. The measured breakdown, from the run itself:
 
 | How the mutant is caught | Count | Mutants |
 |---|---|---|
-| A named scenario grades it red | 22 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05) |
+| A named scenario grades it red | 26 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05), campaign spend bound (RCV-05), action-count bound (RCV-08), stop applied not logged (RCV-05/08), volume attribution (RCV-03) |
 | The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
-| Unit tests only — no scenario distinguishes it | 4 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality |
+| Unit tests only — no scenario distinguishes it | 5 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality, bulk-size grading |
 
 Read strictly, **10 of 15 mutants produce a graded scenario failure.** The other five
 are still detected, and the suite is still doing real work — but "15/15 caught" and
@@ -122,6 +123,7 @@ The three unit-only mutants each sit behind a guard that fires first:
 |---|---|
 | Idempotency-key derivation (fresh key per call) | Observable only when one approval executes twice; the approval state machine prevents a second execution, and the refundable-balance precondition fires before the key is ever consulted. |
 | Duplicate-action SAVEPOINT → full rollback | Same branch: it needs a key collision, which needs the balance check bypassed. Three integration tests cover it, including one that swaps in a random key to prove they measure the key and not another guard. |
+| Bulk-size grading (treat a campaign action as standalone) | REFUND is the only executable intervention and each seeded duplicate incident yields one refundable candidate, so no scenario can build a plan with two. Reachable from the seed as soon as PAYMENT_LINK executes; covered directly by an integration test that plants a third capture. |
 | Incident lifecycle legality check | The mutant lets any transition through. No scenario separates it because every transition a scenario can drive is already a legal one — the illegal moves exist only as states the application never attempts. `tests/unit/test_lifecycle.py` drives them directly and fails. |
 | Audit redaction, key-name branch | The mutant disables redaction of secret-*named* dict keys. SEC-25's secret arrives inside the user's request string and is redacted by the *value-pattern* branch, which the mutant leaves intact — so SEC-25 still passes. Breaking the value branch instead does fail SEC-25 (verified: 0/1), so the scenario is real; it simply does not cover this half of `redact()`. |
 

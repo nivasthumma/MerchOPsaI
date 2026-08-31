@@ -1,6 +1,6 @@
 # Gap-closure plan — CONTRACT.md → MerchantOps.md
 
-**Status:** in progress — phases 0–3 delivered
+**Status:** in progress — phases 0–4 delivered
 **Governing spec:** `MerchantOps.md` (supersedes `docs/CONTRACT.md`)
 **Baseline:** `master` @ `e151ebd`, 2026-08-26 — 106/106 scenarios, 15/15 mutants, 95 tests
 
@@ -162,7 +162,7 @@ refund require two approvers and broke nineteen tests; the tests were right. Val
 caps at HIGH, and the one path to CRITICAL is a further action on a payment whose previous
 action never settled. Bulk arrives with phase 4, which is what creates bulk actions.
 
-## Phase 4 — Recovery planner, budget, stopping rules · L · ~4d
+## Phase 4 — Recovery planner, budget, stopping rules · L · ~4d — **DONE**
 
 **Closes §22, §23, §27, §28.**
 
@@ -181,6 +181,17 @@ action never settled. Bulk arrives with phase 4, which is what creates bulk acti
 Note the axis distinction: `config.py:91-94` bounds *agent compute* (12 tool calls, 8
 turns, 60s). §27 bounds *financial exposure*. They are unrelated limits and conflating
 them would let a cheap agent run spend an unbounded amount.
+
+**Delivered** — see [ADR-0020](adr/0020-recovery-planning-budgets-and-stopping.md).
+`app/recovery/`, `recovery_plans` + `recovery_candidates`, `customers.contact_opted_out`,
+four routes, 8 scenarios, 5 mutants, 27 tests. Bulk size is now a real risk input, closing
+the ADR-0019 deferral.
+
+**Two things found on the way.** Phase 1's duplicate detection emitted one incident per
+*pair*, so an in-window triple would have claimed 3x a 2x exposure — a latent revenue
+overcount, now one incident per order. And a recovery mutant survived: a clamp added to fix
+a rounding drift was forcing §49's ordering to hold, making a wrong figure
+indistinguishable from a right one. Rounding the aggregate once fixed both.
 
 ## Phase 5 — Tool registry expansion · M · ~3d
 
@@ -261,9 +272,8 @@ rendered from post-hoc reconstruction.
 ```
 
 Recommended sequence: **0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8**
-(0–3 complete, including the registry/policy dual-registration fix. Phase 4, the recovery
-planner, is next — and it is what turns bulk size from a deferred risk factor into a real
-one.)
+(0–4 complete. Phase 5, the tool registry, is next — and it is what makes five of the seven
+recovery interventions actionable rather than merely planned.)
 
 Rationale: 1 is the spine and gates the product framing. 2 is small, independently
 valuable, and makes reconciliation evidence-driven. 3 precedes 4 and 5 because both

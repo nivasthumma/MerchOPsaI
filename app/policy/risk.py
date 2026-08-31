@@ -31,15 +31,20 @@ Value is still assessed and recorded, because §26 requires the approver to see
 the evidence behind the risk, and because the nine tools of §18 include
 MEDIUM-floor actions where value genuinely changes the gate.
 
-Bulk size and number of affected users are not computed: no tool in the registry
-takes more than one target, so there is nothing to count. They arrive with the
-recovery planner (§23), which is what creates bulk actions in the first place.
+Two factors reach CRITICAL:
 
-The one factor that reaches CRITICAL today is **uncertainty** -- a further action
-on a payment whose previous action never settled. That is not a theoretical case:
-the duplicate-action guard permits it, because an UNKNOWN action is not one of
-the states it blocks on, and it is precisely the path along which a double refund
-could occur.
+**uncertainty** -- a further action on a payment whose previous action never
+settled. Not theoretical: the duplicate-action guard permits it, because an
+UNKNOWN action is not one of the states it blocks on, and it is precisely the
+path along which a double refund could occur.
+
+**bulk_size** -- more than one financial action in one campaign, which is §24's
+"Bulk refund -> CRITICAL". Passed in by the recovery planner; a caller acting on
+a single payment leaves it None and it does not apply.
+
+Number of affected users is still not computed. It is a customer-impact measure
+rather than a breadth-of-action one, and nothing in the current interventions
+distinguishes the two, so scoring it would be scoring `bulk_size` twice.
 """
 from __future__ import annotations
 
@@ -65,6 +70,15 @@ from app.models import RISK_ORDER, risk_at_least
 # the top of its permitted range is the most serious ordinary action, not an
 # extraordinary one.
 HIGH_FRACTION_OF_LIMIT = 0.40
+
+# MerchantOps §24: "Bulk refund -> CRITICAL". Bulk is more than one financial
+# action in one campaign -- the distinguishing feature is that a single mistake
+# repeats itself, which is exactly what makes breadth its own risk dimension
+# rather than a multiple of value.
+#
+# ADR-0019 deferred this factor because no tool took more than one target. The
+# recovery planner is what creates multi-action campaigns, so it arrives here.
+BULK_THRESHOLD = 2
 
 
 @dataclass
@@ -102,7 +116,7 @@ def _merchant_refund_limit(session, merchant_id: str) -> int:
 
 
 def assess(session, *, tool_name: str, declared: str, merchant_id: str,
-           arguments: dict, spec=None) -> RiskAssessment:
+           arguments: dict, spec=None, bulk_size: int | None = None) -> RiskAssessment:
     """Grade one call. Reads only the registry, the session and the database —
     never model prose, and never a risk level supplied by the caller."""
     factors: list[RiskFactor] = []
@@ -129,6 +143,14 @@ def assess(session, *, tool_name: str, declared: str, merchant_id: str,
                 f"{amount / 100:,.2f} is {fraction:.0%} of this merchant's limit.")
         factors.append(RiskFactor("financial_value", lvl, why))
         computed = risk_at_least(computed, lvl)
+
+    # ---- bulk size (§24) -------------------------------------------------
+    if bulk_size is not None and bulk_size >= BULK_THRESHOLD:
+        factors.append(RiskFactor(
+            "bulk_size", "CRITICAL",
+            f"This action is one of {bulk_size} in a single campaign; a mistake "
+            f"in it repeats across all of them."))
+        computed = risk_at_least(computed, "CRITICAL")
 
     # ---- uncertainty (§24) ----------------------------------------------
     # Acting on a payment that already carries an unsettled action is riskier

@@ -229,62 +229,98 @@ def detect_duplicate_payments(session, merchant_id: str, *,
                               window_seconds: int = 600,
                               as_of: datetime | None = None) -> list[Anomaly]:
     """Duplicate charges against one order. A revenue-integrity problem the
-    merchant owes the customer money for, so it is an incident, not a metric."""
+    merchant owes the customer money for, so it is an incident, not a metric.
+
+    One incident per ORDER, not per pair. The first implementation emitted a
+    pair at a time, which is right for two captures and wrong for three: an
+    order charged three times produced three overlapping incidents, each
+    claiming the full amount at risk, for a total of 3x an exposure that is
+    actually 2x. Nothing on the shipped dataset triggers it -- the seeded triple
+    sits outside the detection window -- so this is a latent overcount rather
+    than an observed one, and a revenue figure that is wrong only on data we
+    happen not to have is still wrong.
+
+    The earliest capture is the legitimate payment. Everything after it is
+    excess, and the exposure is what remains unrefunded across the excess.
+    """
     as_of = as_of or ANCHOR
     cut = as_of - timedelta(days=PERIOD_DAYS)
 
     rows = session.execute(text("""
-        SELECT a.id AS a_id, b.id AS b_id, a.order_id, a.customer_id,
-               a.amount_minor, a.method, b.created_at AS b_at,
-               EXTRACT(EPOCH FROM (b.created_at - a.created_at))::int AS gap_s,
-               b.amount_refunded_minor AS b_refunded
-        FROM payments a
-        JOIN payments b
-          ON a.order_id = b.order_id AND a.customer_id = b.customer_id
-         AND a.amount_minor = b.amount_minor AND a.merchant_id = b.merchant_id
-         AND a.created_at < b.created_at
-        WHERE a.merchant_id = :m
-          AND a.status IN ('captured','refunded') AND b.status IN ('captured','refunded')
-          AND EXTRACT(EPOCH FROM (b.created_at - a.created_at)) <= :w
-          AND b.created_at >= :cut
-        ORDER BY b.created_at DESC
-    """), {"m": merchant_id, "w": window_seconds, "cut": cut}).mappings().all()
+        SELECT p.order_id, p.customer_id, p.amount_minor, p.method,
+               p.id, p.created_at, p.amount_refunded_minor
+        FROM payments p
+        JOIN (
+            SELECT order_id, customer_id, amount_minor
+            FROM payments
+            WHERE merchant_id = :m AND status IN ('captured','refunded')
+            GROUP BY order_id, customer_id, amount_minor
+            HAVING COUNT(*) > 1
+        ) g ON g.order_id = p.order_id AND g.customer_id = p.customer_id
+           AND g.amount_minor = p.amount_minor
+        WHERE p.merchant_id = :m AND p.status IN ('captured','refunded')
+        ORDER BY p.order_id, p.created_at, p.id
+    """), {"m": merchant_id}).mappings().all()
+
+    groups: dict[tuple, list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["order_id"], r["customer_id"], r["amount_minor"]), []).append(dict(r))
 
     out: list[Anomaly] = []
-    for r in rows:
-        # Already refunded in full: the money is back, there is nothing to
-        # recover, and raising an incident would be raising a resolved problem.
-        exposure = int(r["amount_minor"]) - int(r["b_refunded"])
-        if exposure <= 0:
+    for (order_id, customer_id, amount_minor), members in sorted(groups.items()):
+        first, *excess = members
+        # Only excess captures close behind the first one are duplicates; a
+        # legitimate second purchase of the same item days later is not.
+        excess = [e for e in excess
+                  if (e["created_at"] - first["created_at"]).total_seconds() <= window_seconds]
+        if not excess:
             continue
-        gap = int(r["gap_s"])
+        # In-window means the duplicate HAPPENED recently, judged on the latest
+        # excess capture. An old duplicate is history, not an open incident.
+        latest = max(e["created_at"] for e in excess)
+        if latest < cut:
+            continue
+
+        exposure = sum(int(e["amount_minor"]) - int(e["amount_refunded_minor"])
+                       for e in excess)
+        if exposure <= 0:
+            # Already refunded in full: the money is back, and raising an
+            # incident would be raising a resolved problem.
+            continue
+
+        gaps = [int((e["created_at"] - first["created_at"]).total_seconds()) for e in excess]
+        ids = [e["id"] for e in excess]
         out.append(Anomaly(
             incident_type=IncidentType.DUPLICATE_PAYMENT,
             severity=_severity_for(exposure, 0.0),
-            title=f"Duplicate payment on {r['order_id']}",
+            title=f"Duplicate payment on {order_id}",
             summary=(
-                f"Order {r['order_id']} carries two captured payments of "
-                f"{_fmt_inr(int(r['amount_minor']))} from customer {r['customer_id']}, "
-                f"{gap}s apart ({r['a_id']}, {r['b_id']}). Unrefunded exposure "
+                f"Order {order_id} carries {len(members)} captured payments of "
+                f"{_fmt_inr(int(amount_minor))} from customer {customer_id}. "
+                f"{first['id']} is the original; {', '.join(ids)} "
+                f"{'is' if len(ids) == 1 else 'are'} excess. Unrefunded exposure "
                 f"{_fmt_inr(exposure)}."
             ),
-            detection_key=f"{merchant_id}|DUPLICATE_PAYMENT|{r['a_id']}|{r['b_id']}",
+            detection_key=f"{merchant_id}|DUPLICATE_PAYMENT|{order_id}|{amount_minor}",
             detection_rule="duplicate_capture_on_order",
             revenue_at_risk_minor=exposure,
             signals={
-                "order_id": r["order_id"], "customer_id": r["customer_id"],
-                "first_payment_id": r["a_id"], "second_payment_id": r["b_id"],
-                "amount_minor": int(r["amount_minor"]),
-                "time_separation_seconds": gap,
-                "already_refunded_minor": int(r["b_refunded"]),
+                "order_id": order_id, "customer_id": customer_id,
+                "first_payment_id": first["id"],
+                "excess_payment_ids": ids,
+                "capture_count": len(members),
+                "amount_minor": int(amount_minor),
+                "time_separation_seconds": gaps,
+                "already_refunded_minor": sum(int(e["amount_refunded_minor"]) for e in excess),
                 "window_seconds": window_seconds,
             },
-            started_at=r["b_at"],
+            started_at=latest,
             evidence=[
-                {"key": "first_payment", "value": r["a_id"], "source": "payments"},
-                {"key": "second_payment", "value": r["b_id"], "source": "payments"},
-                {"key": "amount", "value": _fmt_inr(int(r["amount_minor"])), "source": "payments"},
-                {"key": "time_separation_seconds", "value": gap, "source": "payments"},
+                {"key": "original_payment", "value": first["id"], "source": "payments"},
+                {"key": "excess_payments", "value": ids, "source": "payments"},
+                {"key": "capture_count", "value": len(members), "source": "payments"},
+                {"key": "amount", "value": _fmt_inr(int(amount_minor)), "source": "payments"},
+                {"key": "time_separation_seconds", "value": gaps, "source": "payments"},
                 {"key": "unrefunded_exposure", "value": _fmt_inr(exposure),
                  "source": "calculation_engine"},
             ],

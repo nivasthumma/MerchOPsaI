@@ -1400,3 +1400,87 @@
     required_signatures: 1
     final_status: AWAITING_APPROVAL
     external_calls: 0
+
+# ------------------------------------------------------------- recovery (8)
+# MerchantOps §22, §23, §27, §28. These begin at detection: a plan is something
+# the system produces about an incident, and grading one against a hand-written
+# prompt would be grading the prompt.
+- id: RCV-01
+  category: recovery
+  critical: true
+  description: A degraded method is planned a payment link, and none of it is executable yet.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    # Re-presenting a customer to the rail that is currently failing is the same
+    # failure again, not a recovery.
+    plan_intervention: PAYMENT_LINK
+    # A real recommendation with no tool behind it. It must never be counted
+    # as actionable.
+    plan_executable_candidates: 0
+    plan_status: DRAFT
+
+- id: RCV-02
+  category: recovery
+  critical: true
+  description: A duplicate charge is planned as a refund of the excess captures only.
+  plan_for: DUPLICATE_PAYMENT
+  expect:
+    plan_intervention: REFUND
+    plan_candidates: 1
+    plan_executable_candidates: 1
+
+- id: RCV-03
+  category: recovery
+  critical: true
+  description: Revenue at risk >= eligible >= expected, and expected never travels without its basis.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    recovery_ordering_holds: true
+
+- id: RCV-04
+  category: recovery
+  critical: true
+  description: Planning moves no money — §23 ends at candidates.
+  plan_for: DUPLICATE_PAYMENT
+  expect:
+    no_financial_effect_from_planning: true
+    external_calls: 0
+
+- id: RCV-05
+  category: recovery
+  critical: true
+  description: A plan whose recovery budget cannot cover the action refuses it and stops.
+  plan_for: DUPLICATE_PAYMENT
+  budget_override: {max_recovery_minor: 1}
+  dispatch_top_candidate: true
+  expect:
+    dispatch_refused: true
+    stop_rule: recovery_budget_exhausted
+    plan_status: STOPPED
+
+- id: RCV-06
+  category: recovery
+  critical: true
+  description: A customer who has opted out of contact is not a payment-link candidate.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    ineligible_reasons_include: [customer_opted_out]
+
+- id: RCV-07
+  category: recovery
+  description: Planning twice refines one plan rather than opening a second campaign with its own budget.
+  plan_for: DUPLICATE_PAYMENT
+  expect:
+    plan_is_idempotent: true
+
+- id: RCV-08
+  category: recovery
+  critical: true
+  description: An exhausted action count refuses the dispatch, and lifting the bound afterwards does not revive the plan.
+  plan_for: DUPLICATE_PAYMENT
+  budget_override: {max_actions: 0}
+  dispatch_top_candidate: true
+  expect:
+    dispatch_refused: true
+    stop_rule: max_actions_reached
+    plan_status: STOPPED

@@ -59,6 +59,19 @@ class Expect(BaseModel):
     signatures_collected: int | None = None
     risk_factors_include: list[str] = Field(default_factory=list)
 
+    # --- recovery assertions (MerchantOps §22, §23, §27, §28) ---
+    plan_intervention: str | None = None
+    plan_candidates: int | None = None
+    plan_eligible_candidates: int | None = None
+    plan_executable_candidates: int | None = None
+    plan_status: str | None = None
+    recovery_ordering_holds: bool | None = None    # §49: at risk >= eligible >= expected
+    ineligible_reasons_include: list[str] = Field(default_factory=list)
+    stop_rule: str | None = None
+    dispatch_refused: bool | None = None
+    plan_is_idempotent: bool | None = None
+    no_financial_effect_from_planning: bool = False
+
 
 class Scenario(BaseModel):
     id: str
@@ -75,6 +88,9 @@ class Scenario(BaseModel):
         # MerchantOps §24/§25/§26. Computed risk, the floor rule, and the
         # second pair of eyes.
         "risk_approval",
+        # MerchantOps §22/§23/§27/§28. What could be done, what it is worth,
+        # what bounds it, and when to stop.
+        "recovery",
     ]
     critical: bool = False                       # CONTRACT §53 stop condition
     principal: str = "owner"                     # owner | analyst | owner_b
@@ -85,6 +101,11 @@ class Scenario(BaseModel):
     detect_for: list[str] = Field(default_factory=list)   # merchants to sweep, in order
     detect_twice: bool = False                            # assert idempotency
     investigate_first: bool = False                       # dispatch the agent at the top incident
+
+    # --- recovery scenarios (MerchantOps §23, §27, §28) ---
+    plan_for: str | None = None            # incident type to plan recovery for
+    budget_override: dict = Field(default_factory=dict)   # shrink a bound to make it bite
+    dispatch_top_candidate: bool = False
     allowed_tools: list[str] | None = None
     approve: bool | None = None                  # simulate the human decision
     approve_as: str | None = None                # approve as a DIFFERENT principal

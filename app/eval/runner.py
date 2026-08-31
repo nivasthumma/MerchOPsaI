@@ -328,7 +328,139 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
     return res
 
 
+def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
+    """Grade a recovery plan — MerchantOps §22, §23, §27, §28.
+
+    Recovery scenarios begin at detection, not at a request: a plan is something
+    the system produces about an incident, and grading one against a
+    hand-written prompt would be grading the prompt.
+    """
+    from app.detection import detect
+    from app.models import (
+        AgentAction, CandidateStatus, Incident, IncidentType, PlanStatus, Refund,
+    )
+    from app.recovery import plan_recovery
+    from app.recovery.dispatch import RecoveryStopped, dispatch_candidate, executable_candidates
+
+    checks: list[CheckResult] = []
+    principal = PRINCIPALS[sc.principal]
+    e = sc.expect
+
+    def check(name, cond, detail=""):
+        checks.append(CheckResult(name=name, passed=bool(cond), detail=detail))
+
+    detect(session, principal.merchant_id)
+    wanted = IncidentType(sc.plan_for) if sc.plan_for else None
+    incidents = session.query(Incident).filter(
+        Incident.merchant_id == principal.merchant_id).all()
+    if wanted:
+        incidents = [i for i in incidents if i.incident_type is wanted]
+    check("incident_available", bool(incidents),
+          f"no {sc.plan_for or 'any'} incident was detected")
+    if not incidents:
+        res = EvaluationResult(
+            id=f"EVR_{uuid.uuid4().hex[:10].upper()}", run_id=run_id, scenario_id=sc.id,
+            task_id=None, passed=False, checks=[c.model_dump() for c in checks],
+            metrics={"category": sc.category, "critical": sc.critical,
+                     "grounding_rate": None})
+        session.add(res)
+        session.flush()
+        return res
+
+    incident = incidents[0]
+    money_before = (session.query(Refund).count(), session.query(AgentAction).count())
+
+    result = plan_recovery(session, incident, principal=principal)
+    plan, candidates = result.plan, result.candidates
+
+    if e.no_financial_effect_from_planning:
+        check("planning_moved_no_money",
+              (session.query(Refund).count(), session.query(AgentAction).count()) == money_before,
+              "planning created a refund or an action")
+
+    if e.plan_is_idempotent:
+        again = plan_recovery(session, incident, principal=principal)
+        check("plan_is_idempotent", (not again.created) and again.plan.id == plan.id,
+              f"second call created={again.created}")
+
+    if e.plan_intervention is not None:
+        check("plan_intervention", plan.intervention.value == e.plan_intervention,
+              f"planned {plan.intervention.value}")
+    if e.plan_candidates is not None:
+        check("plan_candidates", len(candidates) == e.plan_candidates,
+              f"got {len(candidates)}")
+    if e.plan_eligible_candidates is not None:
+        n = sum(1 for c in candidates if c.status is CandidateStatus.ELIGIBLE)
+        check("plan_eligible_candidates", n == e.plan_eligible_candidates, f"got {n}")
+    if e.plan_executable_candidates is not None:
+        n = sum(1 for c in candidates if c.executable)
+        check("plan_executable_candidates", n == e.plan_executable_candidates, f"got {n}")
+    for reason in e.ineligible_reasons_include:
+        got = {c.ineligible_reason for c in candidates if c.ineligible_reason}
+        check(f"ineligible_reason:{reason}", reason in got, f"reasons={sorted(got)}")
+
+    if e.recovery_ordering_holds:
+        # MerchantOps §49. An eligible figure above the at-risk figure claims a
+        # merchant can recover more than the incident cost them.
+        ok = (plan.revenue_at_risk_minor >= plan.eligible_recovery_minor
+              >= plan.expected_recovery_minor)
+        check("recovery_ordering", ok,
+              f"at_risk={plan.revenue_at_risk_minor} eligible={plan.eligible_recovery_minor} "
+              f"expected={plan.expected_recovery_minor}")
+        check("expected_carries_basis", bool(plan.expected_recovery_basis),
+              "expected recovery was published without its basis")
+
+    if sc.budget_override:
+        for k, v in sc.budget_override.items():
+            setattr(plan, k, v)
+        session.flush()
+
+    refused = None
+    if sc.dispatch_top_candidate:
+        target = (executable_candidates(session, plan) or candidates)[0]
+        try:
+            dispatch_candidate(session, plan, target, principal)
+            refused = False
+        except RecoveryStopped as exc:
+            refused = True
+            if e.stop_rule is not None:
+                check("stop_rule", exc.decision.rule == e.stop_rule,
+                      f"fired {exc.decision.rule}: {exc.decision.reason}")
+        if e.dispatch_refused is not None:
+            check("dispatch_refused", refused == e.dispatch_refused,
+                  f"refused={refused}")
+        # A refused dispatch must not have moved money either.
+        check("refusal_moved_no_money",
+              (not refused) or (session.query(Refund).count() == money_before[0]),
+              "a refused dispatch still created a refund")
+
+    session.refresh(plan)
+    if e.plan_status is not None:
+        check("plan_status", plan.status.value == e.plan_status, f"got {plan.status.value}")
+
+    passed = all(c.passed for c in checks) and bool(checks)
+    res = EvaluationResult(
+        id=f"EVR_{uuid.uuid4().hex[:10].upper()}", run_id=run_id, scenario_id=sc.id,
+        task_id=None, passed=passed, checks=[c.model_dump() for c in checks],
+        metrics={
+            "category": sc.category, "critical": sc.critical,
+            "plan_id": plan.id, "intervention": plan.intervention.value,
+            "candidates": len(candidates),
+            "revenue_at_risk_minor": plan.revenue_at_risk_minor,
+            "eligible_recovery_minor": plan.eligible_recovery_minor,
+            "expected_recovery_minor": plan.expected_recovery_minor,
+            "plan_status": plan.status.value, "stop_rule": plan.stop_rule,
+            "grounding_rate": None,
+        },
+    )
+    session.add(res)
+    session.flush()
+    return res
+
+
 def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
+    if sc.category == "recovery":
+        return _run_recovery_scenario(session, sc, run_id)
     if sc.category == "detection":
         return _run_detection_scenario(session, sc, run_id)
 

@@ -102,6 +102,37 @@ class IncidentType(str, enum.Enum):
     RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
 
 
+class Intervention(str, enum.Enum):
+    """MerchantOps §23 — what may be done about an affected transaction."""
+    RETRY = "RETRY"
+    PAYMENT_LINK = "PAYMENT_LINK"
+    CUSTOMER_NOTIFICATION = "CUSTOMER_NOTIFICATION"
+    SUBSCRIPTION_RETRY = "SUBSCRIPTION_RETRY"
+    REFUND = "REFUND"
+    HUMAN_ESCALATION = "HUMAN_ESCALATION"
+    NO_ACTION = "NO_ACTION"
+
+
+class PlanStatus(str, enum.Enum):
+    """MerchantOps §28 — stopping is a first-class state, not an absence of work."""
+    DRAFT = "DRAFT"            # candidates computed, nothing executed
+    ACTIVE = "ACTIVE"          # at least one candidate has been acted on
+    STOPPED = "STOPPED"        # a stopping rule fired; no further action
+    ESCALATED = "ESCALATED"    # a stopping rule fired that needs a human
+    COMPLETED = "COMPLETED"    # every eligible candidate resolved
+    EXPIRED = "EXPIRED"        # §27 maximum duration elapsed
+
+
+class CandidateStatus(str, enum.Enum):
+    ELIGIBLE = "ELIGIBLE"
+    INELIGIBLE = "INELIGIBLE"
+    ATTEMPTED = "ATTEMPTED"
+    RECOVERED = "RECOVERED"
+    FAILED = "FAILED"
+    UNKNOWN = "UNKNOWN"
+    SKIPPED = "SKIPPED"        # dropped by budget or a stopping rule
+
+
 class WebhookStatus(str, enum.Enum):
     """MerchantOps §34. Every delivery lands in exactly one of these, including
     the ones we refuse — a rejected webhook that leaves no row is a delivery
@@ -173,6 +204,9 @@ class Customer(Base):
     name: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(200))
     segment: Mapped[str] = mapped_column(String(64), default="standard")
+    # MerchantOps §28 makes "customer has opted out" a stopping condition. It has
+    # to be a fact the planner can read, not a policy someone remembers.
+    contact_opted_out: Mapped[bool] = mapped_column(Boolean, default=False)
     # CONTRACT §36: free-text merchant data is an injection surface.
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -358,6 +392,107 @@ class IncidentEvidence(Base):
 
 
 # --------------------------------------------------------------------------
+# Recovery planning (MerchantOps §23, §27, §28)
+# --------------------------------------------------------------------------
+class RecoveryPlan(Base):
+    """What could be done about an incident, and the bounds on doing it.
+
+    MerchantOps §23 ends at *intervention candidates* -- planning does not
+    execute. Execution remains §29's existing path, one action at a time,
+    through the same policy, approval, idempotency and verification gates every
+    other financial action goes through. There is deliberately no second way to
+    move money.
+
+    The budget (§27) is copied onto the plan at creation rather than read live.
+    A campaign's bounds are part of the decision that authorised it; a merchant
+    raising their limit mid-campaign must not silently widen a plan already in
+    flight.
+    """
+    __tablename__ = "recovery_plans"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+
+    status: Mapped[PlanStatus] = mapped_column(
+        Enum(PlanStatus, native_enum=False), default=PlanStatus.DRAFT, index=True)
+    intervention: Mapped[Intervention] = mapped_column(Enum(Intervention, native_enum=False))
+
+    # One plan per incident. A second planning pass must refine the existing
+    # plan, not open a parallel campaign against the same incident with its own
+    # separate budget -- which is how a bounded campaign becomes unbounded.
+    plan_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+
+    # --- §22: computed, never model output ---
+    revenue_at_risk_minor: Mapped[int] = mapped_column(Integer, default=0)
+    eligible_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+    expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+    expected_recovery_basis: Mapped[str] = mapped_column(Text, default="")
+
+    # --- §27: the bounds ---
+    max_recovery_minor: Mapped[int] = mapped_column(Integer)
+    max_actions: Mapped[int] = mapped_column(Integer)
+    max_attempts_per_customer: Mapped[int] = mapped_column(Integer)
+    max_duration_seconds: Mapped[int] = mapped_column(Integer)
+
+    # --- §28: why it stopped, if it did ---
+    stop_rule: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    planner_version: Mapped[str] = mapped_column(String(32))
+    correlation_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    candidates: Mapped[list["RecoveryCandidate"]] = relationship(
+        back_populates="plan", order_by="RecoveryCandidate.rank")
+
+
+class RecoveryCandidate(Base):
+    """One transaction the plan could act on, and what acting would be worth.
+
+    `expected_recovery_minor` is an ESTIMATE with a stated basis, never a
+    promise. §49 keeps expected and actual recovery in separate columns for
+    exactly this reason, and nothing in this system may report the two as one
+    number.
+    """
+    __tablename__ = "recovery_candidates"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("recovery_plans.id"), index=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+
+    payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
+    amount_minor: Mapped[int] = mapped_column(Integer)
+
+    intervention: Mapped[Intervention] = mapped_column(Enum(Intervention, native_enum=False))
+    status: Mapped[CandidateStatus] = mapped_column(
+        Enum(CandidateStatus, native_enum=False), default=CandidateStatus.ELIGIBLE, index=True)
+    ineligible_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+    actual_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Whether an executable tool exists for this intervention today. A candidate
+    # for an intervention with no tool is a real recommendation, not a bug --
+    # but it must never be counted as actionable.
+    executable: Mapped[bool] = mapped_column(Boolean, default=False)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # The task this candidate was dispatched as, if it has been. Dispatch goes
+    # through the ordinary agent path, so the candidate's outcome is read back
+    # from that task's action rather than tracked separately.
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    plan: Mapped[RecoveryPlan] = relationship(back_populates="candidates")
+    __table_args__ = (
+        UniqueConstraint("plan_id", "payment_id", name="uq_candidate_plan_payment"),
+        Index("ix_candidate_plan_status", "plan_id", "status"),
+    )
+
+
+# --------------------------------------------------------------------------
 # Agent execution
 # --------------------------------------------------------------------------
 class AgentTask(Base):
@@ -435,6 +570,12 @@ class AgentAction(Base):
     verification_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verify_attempts: Mapped[int] = mapped_column(Integer, default=0)
     approval_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The candidate this execution came from, when it came from a plan. There is
+    # no separate recovery_actions table on purpose: agent_actions is where
+    # idempotency and verification live, and a second execution record would be
+    # a second authority on whether money moved (MerchantOps §67).
+    recovery_candidate_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

@@ -6,6 +6,7 @@ frontend is never the authority (CONTRACT §20, §41).
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from types import SimpleNamespace
 
@@ -24,11 +25,16 @@ from app.detection import detect
 from app.detection.engine import open_incidents
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
+from app.recovery import plan_recovery
+from app.recovery.dispatch import (
+    RecoveryStopped, dispatch_candidate, executable_candidates, settle_plan,
+)
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
 from app.models import (
-    AgentAction, AgentTask, Approval, Incident, IncidentEvidence, ToolCall,
-    VerificationState, WebhookEvent, WebhookStatus, utcnow,
+    AgentAction, AgentTask, Approval, Incident, IncidentEvidence,
+    RecoveryCandidate, RecoveryPlan, ToolCall, VerificationState, WebhookEvent,
+    WebhookStatus, utcnow,
 )
 from app.webhooks import ingest
 
@@ -304,6 +310,117 @@ def list_escalated(max_attempts: int = 5,
         rows = escalated_actions(s, max_attempts=max_attempts)
     # Merchant isolation applies here too.
     return [r for r in rows if r["merchant_id"] == principal.merchant_id]
+
+
+# --------------------------------------------------------------------------
+# Recovery — MerchantOps §23, §27, §28, §65
+# --------------------------------------------------------------------------
+def _plan_view(s, plan: RecoveryPlan, *, detail: bool = False) -> dict:
+    view = {
+        "id": plan.id, "incident_id": plan.incident_id,
+        "merchant_id": plan.merchant_id, "status": plan.status.value,
+        "intervention": plan.intervention.value,
+        "revenue_at_risk_minor": plan.revenue_at_risk_minor,
+        "eligible_recovery_minor": plan.eligible_recovery_minor,
+        # Expected is an ESTIMATE. It is returned next to its basis so a client
+        # cannot render the figure without the reasoning, and §49 keeps it in a
+        # different field from anything actually recovered.
+        "expected_recovery_minor": plan.expected_recovery_minor,
+        "expected_recovery_basis": plan.expected_recovery_basis,
+        "budget": {
+            "max_recovery_minor": plan.max_recovery_minor,
+            "max_actions": plan.max_actions,
+            "max_attempts_per_customer": plan.max_attempts_per_customer,
+            "max_duration_seconds": plan.max_duration_seconds,
+        },
+        "stop_rule": plan.stop_rule, "stop_reason": plan.stop_reason,
+        "planner_version": plan.planner_version,
+        "expires_at": plan.expires_at.isoformat(),
+    }
+    if not detail:
+        return view
+    view["candidates"] = [{
+        "id": c.id, "rank": c.rank, "payment_id": c.payment_id,
+        "customer_id": c.customer_id, "amount_minor": c.amount_minor,
+        "intervention": c.intervention.value, "status": c.status.value,
+        "ineligible_reason": c.ineligible_reason,
+        "expected_recovery_minor": c.expected_recovery_minor,
+        "actual_recovery_minor": c.actual_recovery_minor,
+        "executable": c.executable, "attempts": c.attempts, "task_id": c.task_id,
+    } for c in s.query(RecoveryCandidate)
+        .filter(RecoveryCandidate.plan_id == plan.id)
+        .order_by(RecoveryCandidate.rank).all()]
+    return view
+
+
+def _owned_plan(s, plan_id: str, principal: Principal) -> RecoveryPlan:
+    plan = s.get(RecoveryPlan, plan_id)
+    if plan is None or plan.merchant_id != principal.merchant_id:
+        raise HTTPException(404, "Unknown recovery plan.")
+    return plan
+
+
+@app.post("/incidents/{incident_id}/recovery")
+def create_recovery_plan(incident_id: str,
+                         principal: Principal = Depends(current_principal)):
+    """Plan recovery for an incident — MerchantOps §23.
+
+    Planning does not execute. It computes affected transactions, eligibility
+    and expected recovery, and bounds the campaign; acting on a candidate is a
+    separate, individually gated call.
+    """
+    with session_scope() as s:
+        inc = _owned_incident(s, incident_id, principal)
+        r = plan_recovery(s, inc, principal=principal)
+        view = _plan_view(s, r.plan, detail=True)
+        view["created"] = r.created
+        return view
+
+
+@app.get("/recovery/plans/{plan_id}")
+def get_recovery_plan(plan_id: str, principal: Principal = Depends(current_principal)):
+    with session_scope() as s:
+        return _plan_view(s, _owned_plan(s, plan_id, principal), detail=True)
+
+
+@app.post("/recovery/plans/{plan_id}/settle")
+def settle_recovery_plan(plan_id: str,
+                         principal: Principal = Depends(current_principal)):
+    """Read each dispatched candidate's outcome back from its verified action."""
+    with session_scope() as s:
+        return settle_plan(s, _owned_plan(s, plan_id, principal))
+
+
+@app.post("/recovery/candidates/{candidate_id}/dispatch")
+def dispatch_recovery_candidate(candidate_id: str,
+                                principal: Principal = Depends(current_principal)):
+    """Hand one candidate to the ordinary agent path, bounds permitting.
+
+    Returns 409 with the stopping rule that fired when §27's budget or §28's
+    rules refuse. That is a normal outcome for a bounded campaign, not an error
+    condition — the rule name is the answer.
+    """
+    with session_scope() as s:
+        cand = s.get(RecoveryCandidate, candidate_id)
+        if cand is None or cand.merchant_id != principal.merchant_id:
+            raise HTTPException(404, "Unknown recovery candidate.")
+        plan = _owned_plan(s, cand.plan_id, principal)
+        try:
+            r = dispatch_candidate(s, plan, cand, principal)
+        except RecoveryStopped as e:
+            # RETURNED, not raised. `session_scope` rolls back on an exception,
+            # and the stop it would roll back is the record that this campaign
+            # halted -- leaving the plan DRAFT and the bound free to be tried
+            # again. A stop that does not survive the response is exactly the
+            # "recorded but not applied" failure MerchantOps §28 forbids.
+            return JSONResponse(status_code=409, content={
+                "detail": {"error": e.decision.reason,
+                           "code": "RECOVERY_STOPPED",
+                           "stop": e.decision.as_dict(),
+                           "plan": _plan_view(s, plan)}})
+        return {"candidate_id": cand.id, "task": _task_view(s, r["task"]),
+                "risk": r["risk"].as_dict(),
+                "plan": _plan_view(s, plan)}
 
 
 # --------------------------------------------------------------------------

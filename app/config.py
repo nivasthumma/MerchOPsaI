@@ -108,6 +108,19 @@ class Settings(BaseSettings):
     refund_amount_limit_minor: int = 5_000_00   # paise
     approval_ttl_seconds: int = 900             # CONTRACT §21 expiration
 
+    # --- Recovery budget (MerchantOps §27) -----------------------------
+    # The spec's worked example, verbatim: INR 50,000, 500 actions, 2 attempts
+    # per customer, 24 hours. These bound a CAMPAIGN and are a different axis
+    # from the agent execution budget above, which bounds one task's compute.
+    # Conflating them would let a cheap agent run spend an unbounded amount.
+    recovery_max_amount_minor: int = 50_000_00
+    recovery_max_actions: int = 500
+    recovery_max_attempts_per_customer: int = 2
+    recovery_max_duration_seconds: int = 86_400
+    # MerchantOps §28: stop when expected recovery falls below a threshold.
+    # Chasing INR 20 costs more in support load than it returns.
+    recovery_min_expected_minor: int = 100_00
+
     agent_version: str = "merchantops-agent/0.1.0"
     prompt_version: str = "investigator-v1"
 

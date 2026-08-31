@@ -55,6 +55,42 @@ An incident supplies **context**, never authority. Both entry points run the sam
 the same policy engine and the same audit trail; nothing reachable from an incident is
 reachable only from an incident.
 
+## Recovery planning
+
+Added in ADR-0020. §23's flow, and it ends where §23 ends:
+
+```
+incident -> affected transactions -> eligibility -> expected recovery -> risk -> candidates
+```
+
+Planning does not execute. A candidate is acted on through the ordinary
+single-action path, so there is no second way to move money — `dispatch_candidate`
+adds only what an ordinary task lacks: §27's bounds and §28's rules, checked
+immediately before dispatch and acted on rather than logged.
+
+**The numbers obey §49's ordering**, and that ordering is a claim about the world:
+
+```
+revenue at risk  >=  eligible recovery  >=  expected recovery  >=  actual recovery
+```
+
+Volume is attributed before it is counted. Detection measures at-risk as the value of the
+*excess* failures; some payments fail on the best of days and were never at risk from this
+incident. So `eligible = eligible_volume x (revenue_at_risk / total_failed_volume)`, and
+`expected = eligible x baseline_success_rate`. `actual` is populated only from a verified
+SUCCESS — an UNKNOWN action has not been shown to have moved anything.
+
+**Stopping distinguishes two outcomes**, because collapsing them loses the one that matters:
+
+| | means | examples |
+|---|---|---|
+| `STOP` | finished, or not worth continuing | budget exhausted, action count reached, expected recovery below threshold |
+| `ESCALATE` | the campaign cannot safely decide alone | provider unavailable, risk above the ceiling, evidence insufficient |
+
+Bulk campaigns escalate rather than run: more than one financial action in one campaign is
+CRITICAL (§24), which is above the automation ceiling. Automated recovery does not perform
+bulk refunds; a human does.
+
 ## Risk and approval
 
 Added in ADR-0019. MerchantOps §24 makes risk a function of the call, not a constant per
@@ -75,11 +111,12 @@ action merely *look* small would buy a softer gate.
 | irreversibility | MEDIUM | declared on the tool; a refund cannot be undone |
 | financial value | HIGH | fraction of the merchant's own limit; §24 grades ₹5,000 as HIGH |
 | uncertainty | CRITICAL | a further action on a payment whose last action never settled |
-| bulk size | — | not computed: no tool takes more than one target yet (§23) |
+| bulk size | CRITICAL | more than one action in one campaign; supplied by the recovery planner |
 
 Value alone never reaches CRITICAL. §24's own example reserves CRITICAL for *bulk* — it is
 about breadth, not the size of one transaction — and a single refund at the top of its
-permitted range is the most serious ordinary action, not an extraordinary one.
+permitted range is the most serious ordinary action, not an extraordinary one. Breadth is
+its own dimension because a single mistake in a campaign repeats itself.
 
 `CRITICAL` maps to `REQUIRE_DUAL_APPROVAL`, and dual approval is a **UNIQUE constraint**:
 
@@ -600,10 +637,9 @@ EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 
 ## Future state (not built)
 
-Ordered in `docs/gap-closure-plan.md`. Nearest first: the recovery planner, its budgets and
-stopping rules (§23, §27, §28) — which is also what makes bulk size a real risk input; the
-remaining nine tools of §18; model-emitted structured output (§37); the revenue-recovery
-ledger and dashboard (§49, §50).
+Ordered in `docs/gap-closure-plan.md`. Nearest first: the remaining nine tools of §18 —
+which is what makes five of the seven recovery interventions actionable; model-emitted
+structured output (§37); the revenue-recovery ledger and dashboard (§49, §50).
 
 Beyond that: specialised agents; Next.js frontend; Redis/Celery for durable retries;
 per-merchant policy configuration; distributed tracing; containerised deployment.

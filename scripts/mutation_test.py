@@ -129,6 +129,36 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "reconcile: verify every action type with the refund verifier",
+        "app/tools/actions.py",
+        "    reverifier = REVERIFIERS.get(action.action_type)",
+        '    reverifier = REVERIFIERS["refund"]  # MUTANT',
+    ),
+    (
+        "reconcile: sweep states that are already determinations",
+        "app/failures.py",
+        "    return code is not None and classify(code).retryability is Retryability.RECONCILE",
+        "    return code is not None  # MUTANT",
+    ),
+    (
+        "tools: retry a failure the taxonomy says never to retry",
+        "app/tools/registry.py",
+        "        if result.success or not may_retry(result.error_code):",
+        "        if result.success:  # MUTANT",
+    ),
+    (
+        "webhooks: stop listening for a paid payment link",
+        "app/webhooks/razorpay.py",
+        '    "payment_link.paid", "payment_link.expired", "payment_link.cancelled",',
+        "    # MUTANT",
+    ),
+    (
+        "detection: treat unverified provider events as evidence",
+        "app/detection/rules.py",
+        "          AND signature_valid = true",
+        "          AND true  -- MUTANT",
+    ),
+    (
         "metrics: report an unmeasurable metric as a number anyway",
         "app/metrics.py",
         '        "root_cause_accuracy", None, "ratio", False,',

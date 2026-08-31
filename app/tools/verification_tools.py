@@ -34,6 +34,11 @@ SPEC_PAYMENT_STATUS = ToolSpec(
     },
     required_permissions=["read:orders"],
     risk_class=RiskClass.LOW,
+    # A read of provider state is safe to repeat, and EXTERNAL_API_ERROR is
+    # exactly the transient class §57 says to retry with backoff. The other
+    # read tools stay at zero: they read our own database, which does not have
+    # transient failures worth a second attempt.
+    max_retries=2,
 )
 
 

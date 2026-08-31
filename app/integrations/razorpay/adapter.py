@@ -102,6 +102,16 @@ class RazorpayAdapter(ABC):
     @abstractmethod
     def get_notification(self, notification_id: str) -> ExternalNotification | None: ...
 
+    # The reconciliation lookups for the non-refund actions. Without these, an
+    # action whose response was lost has no way back: the refund path has had
+    # `find_refund_by_idempotency_key` since the beginning and the other two
+    # had nothing, which meant the UNKNOWN exit path only worked for refunds.
+    @abstractmethod
+    def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None: ...
+
+    @abstractmethod
+    def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None: ...
+
 
 class MockAdapter(RazorpayAdapter):
     """Deterministic double. State lives in the local DB so that verification
@@ -255,6 +265,12 @@ class MockAdapter(RazorpayAdapter):
         return ExternalPaymentLink(id=lid, amount_minor=amount_minor,
                                    status="created", short_url=url)
 
+    def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None:
+        return self.get_payment_link(self._link_id(key))
+
+    def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None:
+        return self.get_notification(self._notification_id(key))
+
     def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None:
         self.injector.apply("get_payment_link")
         r = self.session.execute(text(
@@ -397,6 +413,12 @@ class LiveTestModeAdapter(RazorpayAdapter):
                                    status=b.get("status", "created"),
                                    short_url=b.get("short_url", ""))
 
+    def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None:
+        return self.get_payment_link(self._link_id(key))
+
+    def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None:
+        return self.get_notification(self._notification_id(key))
+
     def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None:
         self.injector.apply("get_payment_link")
         resp = self._client.get(f"/payment_links/{link_id}")
@@ -424,6 +446,15 @@ class LiveTestModeAdapter(RazorpayAdapter):
             code="INTEGRATION_UNAVAILABLE")
 
     def get_notification(self, notification_id: str) -> ExternalNotification | None:
+        return None
+
+    def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None:
+        """Razorpay has no key-lookup endpoint. The reference_id we set at
+        creation is searchable, but listing is not implemented here — the same
+        honest gap `find_refund_by_idempotency_key` has."""
+        return None
+
+    def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None:
         return None
 
 

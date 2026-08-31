@@ -328,4 +328,86 @@ def detect_duplicate_payments(session, merchant_id: str, *,
     return out
 
 
-RULES = (detect_payment_degradation, detect_duplicate_payments)
+# How many failure events from the provider, inside the window, count as a
+# burst. Low enough to be reachable and high enough that a single provider
+# hiccup is not an incident.
+BURST_THRESHOLD = 5
+BURST_WINDOW_MINUTES = 30
+
+
+def detect_provider_failure_burst(session, merchant_id: str, *,
+                                  as_of: datetime | None = None) -> list[Anomaly]:
+    """Failures the PROVIDER reported, from the event store — MerchantOps §11.
+
+    The other two rules read `payments`, which is this system's own record of
+    what happened. This one reads `webhook_events`, which is what the provider
+    said — and the two are not the same thing or the same speed. A provider
+    reporting a run of failures is a signal before any of them has necessarily
+    become a row we own, which is the whole reason §11 puts a durable event
+    store in front of detection.
+
+    Only verified events count. An unsigned delivery is stored for
+    investigation and is not evidence of anything (§34).
+    """
+    as_of = as_of or ANCHOR
+    rows = session.execute(text("""
+        SELECT event_type,
+               COUNT(*) AS n,
+               MIN(COALESCE(occurred_at, received_at)) AS first_at,
+               MAX(COALESCE(occurred_at, received_at)) AS last_at
+        FROM webhook_events
+        WHERE merchant_id = :m
+          AND signature_valid = true
+          AND event_type IN ('payment.failed', 'refund.failed')
+        GROUP BY event_type
+        HAVING COUNT(*) >= :threshold
+    """), {"m": merchant_id, "threshold": BURST_THRESHOLD}).mappings().all()
+
+    out: list[Anomaly] = []
+    for r in rows:
+        first, last = r["first_at"], r["last_at"]
+        span_minutes = max((last - first).total_seconds() / 60.0, 0.0) if first and last else 0.0
+        if span_minutes > BURST_WINDOW_MINUTES:
+            # Spread thin enough to be ordinary background failure rather than
+            # an episode. Counting it would make the rule fire on volume.
+            continue
+        n = int(r["n"])
+        out.append(Anomaly(
+            incident_type=IncidentType.PROVIDER_FAILURE_BURST,
+            severity=_severity_for(0, 0.0) if n < 20 else IncidentSeverity.HIGH,
+            title=f"Provider reported {n} {r['event_type']} events",
+            summary=(
+                f"The provider sent {n} {r['event_type']} events within "
+                f"{span_minutes:.0f} minutes. This is what the PROVIDER reported, "
+                f"not what our own records show — the two can diverge, and this "
+                f"rule reads the event store so a burst is visible before it "
+                f"lands on rows we own."
+            ),
+            detection_key=(f"{merchant_id}|PROVIDER_FAILURE_BURST|{r['event_type']}"
+                           f"|{first.isoformat() if first else 'na'}"),
+            detection_rule="provider_failure_burst",
+            # No revenue figure. The events name entities, not amounts, and
+            # inventing an exposure from a count is exactly what §22 forbids.
+            revenue_at_risk_minor=0,
+            signals={
+                "event_type": r["event_type"], "event_count": n,
+                "window_minutes": round(span_minutes, 1),
+                "threshold": BURST_THRESHOLD,
+                "source": "webhook_events",
+                "first_at": first.isoformat() if first else None,
+                "last_at": last.isoformat() if last else None,
+            },
+            started_at=first or as_of,
+            evidence=[
+                {"key": "provider_event_type", "value": r["event_type"],
+                 "source": "webhook_events"},
+                {"key": "event_count", "value": n, "source": "webhook_events"},
+                {"key": "window_minutes", "value": round(span_minutes, 1),
+                 "source": "webhook_events"},
+            ],
+        ))
+    return out
+
+
+RULES = (detect_payment_degradation, detect_duplicate_payments,
+         detect_provider_failure_burst)

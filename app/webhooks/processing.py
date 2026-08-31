@@ -85,6 +85,21 @@ def _raise_mismatch(session, action: AgentAction, before: VerificationState,
     )
 
 
+def _settle_candidates_plan(session, action, adapter) -> str | None:
+    """Settle the plan the action's candidate belongs to."""
+    from app.models import RecoveryCandidate, RecoveryPlan
+    from app.recovery.dispatch import settle_plan
+
+    cand = session.get(RecoveryCandidate, action.recovery_candidate_id)
+    if cand is None:
+        return None
+    plan = session.get(RecoveryPlan, cand.plan_id)
+    if plan is None:
+        return None
+    settle_plan(session, plan, adapter)
+    return plan.id
+
+
 def process_event(session, event: WebhookEvent, adapter=None):
     """Re-verify whatever this event touches. Returns an IngestResult."""
     from app.tools.actions import reverify_action
@@ -94,6 +109,7 @@ def process_event(session, event: WebhookEvent, adapter=None):
     reverified: list[str] = []
     incident_id: str | None = None
     notes: list[str] = []
+    settled_plans: set[str | None] = set()
 
     actions = _actions_for_entity(session, event.entity_id) if event.entity_id else []
     if not actions:
@@ -119,6 +135,12 @@ def process_event(session, event: WebhookEvent, adapter=None):
 
         reverified.append(action.id)
 
+        # §49. An action that came from a recovery candidate settles its plan
+        # here, so a paid link is recorded as recovered when the provider says
+        # so rather than when someone next asks.
+        if action.recovery_candidate_id:
+            settled_plans.add(_settle_candidates_plan(session, action, adapter))
+
         if before is VerificationState.SUCCESS and vr.state in CONTRADICTS_SUCCESS:
             inc = _raise_mismatch(session, action, before, vr.state, event)
             if inc is not None:
@@ -134,6 +156,9 @@ def process_event(session, event: WebhookEvent, adapter=None):
 
     event.status = WebhookStatus.PROCESSED
     event.processed_at = datetime.now(timezone.utc)
+    plans = sorted(p for p in settled_plans if p)
+    if plans:
+        notes.append(f"settled plan(s): {', '.join(plans)}")
     event.processing_note = "; ".join(notes) or "No action taken."
     session.flush()
 

@@ -101,23 +101,32 @@ temperature 0, which is why replay records divergence rather than asserting its 
 The deviation is now stated in the provider itself and asserted by a test, so it cannot be
 mistaken for an omission and cannot be quietly undone.
 
-### 7. Carried forward from earlier phases
+### 7. ~~Carried forward from earlier phases~~ — CLOSED (ADR-0027)
 
-- Detection reads `payments`, not the event store (§11). ADR-0017 §1.
-- Nothing in the runtime branches on `app/failures.py` (§57). ADR-0024.
-- No `payment_link.paid` subscription, so a paid link is found only at settle time (§49).
-  ADR-0023.
+All three, and they turned out to be one shape: a rule that existed in one place and was
+restated, or not consulted, in another.
+
+- Detection now has a rule that reads the event store (§11) — signature-verified events only,
+  no invented revenue figure, escalated rather than acted on.
+- The reconciliation sweep derives its unsettled states from `app/failures.py` (§57), and
+  `ToolSpec.max_retries` is honoured for transient failures only.
+- `payment_link.paid` is subscribed, and an action from a recovery candidate settles its plan
+  on the webhook (§49).
+
+**One real defect fell out of it.** `reverify_action` was refund-shaped and stayed that way
+after payment links and notifications joined, so reconciling a link asked the provider about a
+payment with an empty id and left the action UNKNOWN permanently. The UNKNOWN exit path worked
+for one of three action types, and had since the moment there was more than one.
 
 ## What is still open
 
-Only the three carried-forward items in §7 above, all of them documented in their own ADRs
-and none of them load-bearing for the safety argument:
-
-- detection reads `payments`, not the event store (§11)
-- nothing in the runtime branches on `app/failures.py` (§57)
-- no `payment_link.paid` subscription (§49)
-
-Plus the two credential-blocked sections, which cannot be closed in this environment.
+**Only the credential-blocked sections.** §14 (the agent genuinely using an LLM) and §30 (real
+Razorpay Test Mode execution) cannot be closed in this environment, and §42's model governance
+mechanism exists but has never had two models to compare.
 
 Everything else in `MerchantOps.md` is built, tested, and covered by graded scenarios and
 mutants.
+
+The standing limitations in the README are a different list: those are honest properties of
+what was built (a sweep rather than a daemon, confidence as a display value, 21 of 589 payments
+externally mapped), not gaps against the specification.

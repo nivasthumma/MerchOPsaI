@@ -39,12 +39,16 @@ from sqlalchemy import text
 from app.audit.trace import record
 from app.integrations.razorpay.adapter import get_adapter
 from app.models import ActionStatus, AgentAction, AgentTask, TaskStatus, VerificationState
+from app.failures import unsettled_states
 from app.tools.actions import reverify_action
 
-# States that are not yet settled. PARTIAL is included: the provider accepted
-# the action but the business state does not fully reflect it, which is a
-# transient condition worth re-reading.
-UNSETTLED = (VerificationState.UNKNOWN, VerificationState.PARTIAL)
+# States that are not yet settled — derived from the failure taxonomy rather
+# than listed here (MerchantOps §57). This used to be a literal tuple, and
+# app/failures.py separately held an opinion about the same question; they
+# disagreed about VERIFICATION_FAILED and neither was in a position to notice.
+# One rule, one place, and a mutant that makes an unknown financial state
+# retryable now changes what the sweep picks up as well as what the table says.
+UNSETTLED = tuple(VerificationState(s) for s in unsettled_states())
 
 
 @dataclass

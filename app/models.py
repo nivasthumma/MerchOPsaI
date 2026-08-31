@@ -105,6 +105,10 @@ class IncidentType(str, enum.Enum):
     # anomaly in the merchant's business — an anomaly in our own record of it,
     # which is why it is raised rather than silently corrected.
     RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
+    # MerchantOps §11/§12. Found in the EVENT STORE rather than in payment
+    # history: the provider is telling us about failures faster than they land
+    # on rows we own, and a burst of them is a signal in its own right.
+    PROVIDER_FAILURE_BURST = "PROVIDER_FAILURE_BURST"
 
 
 class Intervention(str, enum.Enum):

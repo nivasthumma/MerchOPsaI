@@ -88,6 +88,9 @@ _INTERVENTION = {
     IncidentType.PAYMENT_DEGRADATION: Intervention.PAYMENT_LINK,
     IncidentType.DUPLICATE_PAYMENT: Intervention.REFUND,
     IncidentType.RECONCILIATION_MISMATCH: Intervention.HUMAN_ESCALATION,
+    # A provider reporting a run of failures is not something this system can
+    # remedy by acting on transactions. It is a provider conversation.
+    IncidentType.PROVIDER_FAILURE_BURST: Intervention.HUMAN_ESCALATION,
 }
 
 

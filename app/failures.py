@@ -133,9 +133,15 @@ TAXONOMY: dict[str, FailureClass] = {
         "The provider accepted the action but the resulting state is incomplete. "
         "Read it back rather than repeating it."),
     "VERIFICATION_FAILED": FailureClass(
-        "VERIFICATION_FAILED", Retryability.RECONCILE, Subsystem.VERIFICATION,
-        "Independent read-back says the action did not take effect. Reconcile "
-        "before concluding anything."),
+        # ESCALATE, not RECONCILE — corrected when the reconciler was wired to
+        # this table and the two disagreed. Reconciling means "go and read
+        # provider state", and by the time this code is raised that read has
+        # already happened and returned a determination. Another read changes
+        # nothing; re-issuing the action is forbidden. What is left is a person.
+        "VERIFICATION_FAILED", Retryability.ESCALATE, Subsystem.VERIFICATION,
+        "Independent read-back says the action did not take effect. No further "
+        "read will change that, and the action must not be re-issued. A human "
+        "decides what happens next."),
 
     # --- agent (§56's AGENT_* family) ---
     "BUDGET_EXCEEDED": FailureClass(
@@ -202,3 +208,35 @@ def may_retry(error_code: str | None) -> bool:
     """The single question §57 exists to answer. `RECONCILE` is deliberately
     NOT a retry: it is a read."""
     return classify(error_code).retryability is Retryability.BOUNDED_BACKOFF
+
+
+# --------------------------------------------------------------------------
+# Consumption: the places that decide, deciding from this table
+# --------------------------------------------------------------------------
+# MerchantOps §32's verification states, mapped to the failure each represents.
+# This is what lets the reconciliation sweep ask the taxonomy which states are
+# unsettled instead of carrying its own copy of the answer.
+VERIFICATION_STATE_CODE: dict[str, str] = {
+    "UNKNOWN": "EXTERNAL_STATE_UNKNOWN",
+    "PARTIAL": "PARTIAL_EXECUTION",
+    "FAILED": "VERIFICATION_FAILED",
+}
+
+
+def should_reconcile(verification_state) -> bool:
+    """Whether an action in this state warrants re-reading provider state.
+
+    The reconciliation sweep used to carry its own tuple of unsettled states,
+    and this module its own opinion about the same thing. Two copies of one rule
+    is one copy too many: they disagreed about VERIFICATION_FAILED and neither
+    knew. SUCCESS has no failure code and is therefore not reconcilable, which
+    falls out of the mapping rather than needing to be said.
+    """
+    value = getattr(verification_state, "value", verification_state)
+    code = VERIFICATION_STATE_CODE.get(value)
+    return code is not None and classify(code).retryability is Retryability.RECONCILE
+
+
+def unsettled_states() -> tuple[str, ...]:
+    """The verification states the sweep should pick up, from the table."""
+    return tuple(sorted(s for s in VERIFICATION_STATE_CODE if should_reconcile(s)))

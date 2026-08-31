@@ -251,6 +251,8 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
     def check(name, cond, detail=""):
         checks.append(CheckResult(name=name, passed=bool(cond), detail=detail))
 
+    _plant_provider_events(session, sc, principal)
+
     merchants = sc.detect_for or [principal.merchant_id]
     first = None
     for m in merchants:
@@ -359,6 +361,30 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
     return res
 
 
+def _plant_provider_events(session, sc: Scenario, principal) -> None:
+    """§11: the event store as a detection SOURCE.
+
+    The seeded dataset carries no provider events — it is payment history — so
+    a rule that reads `webhook_events` has to be given something to read. Same
+    honesty as the bulk-risk path: the rule is real, the seed cannot reach it,
+    and the scenario says so by constructing the state explicitly.
+    """
+    n = int(sc.initial_state.get("plant_provider_events") or 0)
+    for i in range(n):
+        session.execute(text("""
+            INSERT INTO webhook_events (id, event_id, provider, event_type,
+                schema_version, tenant_id, merchant_id, entity_id, status,
+                signature_valid, payload, payload_hash, correlation_id,
+                occurred_at, received_at)
+            VALUES (:id, :eid, 'razorpay', 'payment.failed', 'v1', 'TEN_KETTLE',
+                    :m, :ent, 'PROCESSED', true, '{}', 'h', 'COR_EVAL',
+                    now() - (:off || ' minutes')::interval, now())
+        """), {"id": f"WHE_EVAL{i:03d}", "eid": f"evt_eval_burst_{i}",
+               "m": principal.merchant_id, "ent": f"pay_eval_{i}", "off": i % 10})
+    if n:
+        session.flush()
+
+
 def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     """Grade a recovery plan — MerchantOps §22, §23, §27, §28.
 
@@ -380,6 +406,7 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
     def check(name, cond, detail=""):
         checks.append(CheckResult(name=name, passed=bool(cond), detail=detail))
 
+    _plant_provider_events(session, sc, principal)
     detect(session, principal.merchant_id)
     wanted = IncidentType(sc.plan_for) if sc.plan_for else None
     incidents = session.query(Incident).filter(

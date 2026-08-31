@@ -53,6 +53,11 @@ SCHEMA_VERSION = "v1"
 ACTIONABLE = frozenset({
     "refund.processed", "refund.failed", "refund.created",
     "payment.captured", "payment.failed",
+    # MerchantOps §49. A payment link becomes recovery when somebody PAYS it,
+    # and nothing was listening for that — a paid link was discovered only when
+    # a plan happened to be settled, so recovered revenue lagged reality by
+    # however long it took someone to ask.
+    "payment_link.paid", "payment_link.expired", "payment_link.cancelled",
 })
 
 
@@ -97,7 +102,9 @@ def _extract(payload: dict) -> tuple[str, str | None, datetime | None]:
     body = payload.get("payload") or {}
     # `contains` names which entities the event carries; prefer the refund when
     # both are present, because a refund event's payment entity is context.
-    for key in ("refund", "payment", "order"):
+    # payment_link first: a link event's `payment` entity is the payment that
+    # settled it, and matching on that would reconcile the wrong action.
+    for key in ("payment_link", "refund", "payment", "order"):
         ent = (body.get(key) or {}).get("entity") or {}
         if ent.get("id"):
             entity_id = ent["id"]

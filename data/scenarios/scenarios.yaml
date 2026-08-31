@@ -1878,3 +1878,26 @@
     transcript_excludes: ["rzp_test_LEAKED99"]
     final_status: AWAITING_APPROVAL
     external_calls: 0
+
+# ------------------------------------------------------------ closing (2)
+# MerchantOps §11, §49. The two carried-forward items a scenario can drive.
+- id: CLS-01
+  category: detection
+  critical: true
+  description: Detection reads the provider event store, not only payment history.
+  initial_state: {plant_provider_events: 6}
+  expect:
+    # The other rules read our own records. This one reads what the PROVIDER
+    # said — which is the reason §11 puts a durable event store in front of
+    # detection at all.
+    incident_types: [PROVIDER_FAILURE_BURST, PAYMENT_DEGRADATION]
+
+- id: CLS-02
+  category: recovery
+  critical: true
+  description: A burst the provider reported is escalated, not acted on by trading transactions.
+  plan_for: PROVIDER_FAILURE_BURST
+  initial_state: {plant_provider_events: 6}
+  expect:
+    plan_intervention: HUMAN_ESCALATION
+    plan_executable_candidates: 0

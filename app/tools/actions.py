@@ -274,8 +274,7 @@ def execute_refund(
         external_reference=external_ref, risk_level="HIGH", approval_id=approval_id))
 
 
-def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> VerificationResult:
-    """CONTRACT §26 (amended) — the UNKNOWN exit path."""
+def _reverify_refund(session, adapter, action) -> VerificationResult:
     before = action.verification_detail or {}
     refunded_before = int(before.get("expected", {}).get("amount_refunded_before_minor", 0))
 
@@ -286,16 +285,88 @@ def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> V
     if reference is None:
         try:
             found = adapter.find_refund_by_idempotency_key(action.idempotency_key)
-        except Exception:
+        except Exception:                                           # noqa: BLE001
             found = None
         if found is not None:
             reference = found.id
             action.external_reference = reference
 
-    vr = verify_refund(adapter, external_payment_id=action.external_payment_id or "",
-                       expected_refund_minor=action.amount_minor,
-                       refunded_before_minor=refunded_before,
-                       external_reference=reference)
+    return verify_refund(adapter, external_payment_id=action.external_payment_id or "",
+                         expected_refund_minor=action.amount_minor,
+                         refunded_before_minor=refunded_before,
+                         external_reference=reference)
+
+
+def _reverify_payment_link(session, adapter, action) -> VerificationResult:
+    from app.tools.recovery_actions import verify_payment_link
+
+    reference = action.external_reference
+    if reference is None:
+        try:
+            found = adapter.find_payment_link_by_idempotency_key(action.idempotency_key)
+        except Exception:                                           # noqa: BLE001
+            found = None
+        if found is not None:
+            reference = found.id
+            action.external_reference = reference
+    if reference is None:
+        return VerificationResult(
+            VerificationState.UNKNOWN,
+            "No payment link reference, and the provider could not be asked about "
+            "our key. Whether a link reached the customer cannot be established.",
+            {"idempotency_key": action.idempotency_key[:16] + "..."}, {}, None)
+    return verify_payment_link(adapter, link_id=reference,
+                               expected_amount_minor=action.amount_minor)
+
+
+def _reverify_notification(session, adapter, action) -> VerificationResult:
+    from app.tools.recovery_actions import verify_notification
+
+    reference = action.external_reference
+    if reference is None:
+        try:
+            found = adapter.find_notification_by_idempotency_key(action.idempotency_key)
+        except Exception:                                           # noqa: BLE001
+            found = None
+        if found is not None:
+            reference = found.id
+            action.external_reference = reference
+    if reference is None:
+        return VerificationResult(
+            VerificationState.UNKNOWN,
+            "No notification reference, and the provider could not be asked about "
+            "our key. Whether the customer was contacted cannot be established.",
+            {"idempotency_key": action.idempotency_key[:16] + "..."}, {}, None)
+    return verify_notification(adapter, notification_id=reference)
+
+
+# One re-verifier per action type. There used to be one, and it was the refund
+# one: reconciling a payment link asked the provider about a PAYMENT with an
+# empty id, got "Payment  could not be retrieved", and left the action UNKNOWN
+# forever. The UNKNOWN exit path is this system's signature property and it
+# worked for exactly one of its three action types.
+#
+# Absent from this map means unreconcilable, which is reported rather than
+# silently mis-verified against whatever verifier happens to be first.
+REVERIFIERS = {
+    "refund": _reverify_refund,
+    "payment_link": _reverify_payment_link,
+    "notification": _reverify_notification,
+}
+
+
+def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> VerificationResult:
+    """CONTRACT §26 (amended) — the UNKNOWN exit path, per action type."""
+    reverifier = REVERIFIERS.get(action.action_type)
+    if reverifier is None:
+        vr = VerificationResult(
+            VerificationState.UNKNOWN,
+            f"No re-verifier is registered for a '{action.action_type}' action, so "
+            f"its external state cannot be established.",
+            {"action_type": action.action_type}, {}, action.external_reference)
+    else:
+        vr = reverifier(session, adapter, action)
+
     action.verification_state = vr.state
     action.verification_detail = vr.as_dict()
     action.verify_attempts += 1
@@ -307,7 +378,6 @@ def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> V
     }[vr.state]
     session.flush()
     return vr
-
 
 def get_refund_status(session, merchant_id: str, action_id: str) -> ToolResult:
     """Read the recorded state of a refund action — MerchantOps §18.

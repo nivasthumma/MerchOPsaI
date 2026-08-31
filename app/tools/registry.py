@@ -5,6 +5,7 @@ no dynamic dispatch, no eval, no URL construction, no SQL from model text.
 """
 from __future__ import annotations
 
+from app.failures import may_retry
 from app.tools.actions import (
     SPEC_REFUND_STATUS, SPEC_REQUEST_REFUND, get_refund_status,
 )
@@ -130,9 +131,27 @@ def execute_read_tool(session, name: str, merchant_id: str, args: dict,
                           data={"error": f"{name} is not a read tool."},
                           risk_level=spec.risk_class.value)
     clean = {k: v for k, v in args.items() if v is not None}
-    if name in _NEEDS_ADAPTER:
-        return impl(session, merchant_id, adapter=adapter, **clean)
-    return impl(session, merchant_id, **clean)
+
+    def call() -> ToolResult:
+        if name in _NEEDS_ADAPTER:
+            return impl(session, merchant_id, adapter=adapter, **clean)
+        return impl(session, merchant_id, **clean)
+
+    # MerchantOps §57, consumed rather than restated. `max_retries` has been on
+    # ToolSpec since the first version and nothing ever read it, so a tool could
+    # declare a retry budget and never get one.
+    #
+    # The decision is the taxonomy's: only BOUNDED_BACKOFF failures are retried.
+    # A policy denial, an authorization failure or an unknown financial state
+    # get zero attempts here no matter what a spec declares, because the answer
+    # will be identical and — for the last of those — repeating is the dangerous
+    # move. Reads only: this path never reaches an action tool.
+    result = call()
+    for _ in range(spec.max_retries):
+        if result.success or not may_retry(result.error_code):
+            break
+        result = call()
+    return result
 
 
 def registry_version() -> str:

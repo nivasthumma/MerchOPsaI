@@ -9,6 +9,7 @@ test:       ; PYTHONPATH=. $(PY) -m pytest tests -q
 eval:       ; $(PY) scripts/run_scenarios.py
 reconcile:  ; $(PY) scripts/reconcile.py
 mutants:    ; $(PY) scripts/mutation_test.py
+compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
 ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
@@ -20,5 +21,5 @@ web:        ; cd web && npm run dev
 web-build:  ; cd web && npm run build
 web-test:   ; cd web && npm test
 
-.PHONY: setup seed spike api ui test eval reconcile mutants harden token ci demo \
+.PHONY: setup seed spike api ui test eval reconcile mutants compare harden token ci demo \
         web-setup web web-build web-test

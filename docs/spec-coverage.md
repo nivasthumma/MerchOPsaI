@@ -22,7 +22,7 @@ covered by graded scenarios and mutants.
 |---|---|---|
 | §14 | "The agent genuinely uses an LLM" | No Anthropic credential in any form the SDK accepts. Runs on `DeterministicProvider`. |
 | §30 | Real Razorpay Test Mode execution | No Razorpay credential. `MockAdapter` is a deterministic local double; policy, approval, idempotency, verification and audit are identical on both paths. |
-| §42 | Model governance as a *comparison* | The mechanism exists — CI gates on critical scenarios and a merge is blocked if any fails. What has never happened is running two models and comparing, because there is only one path available. |
+| §42 | The model-vs-model *measurement* — the RULE is closed | ADR-0028. The promotion rule is implemented and tested against §42's worked example: a candidate scoring 24/25 against a baseline's 23/25 is refused for one critical regression. `make compare` is a gate that exits non-zero. What has never happened is running two models, because there is only one path available. |
 
 ## Closed since the audit
 

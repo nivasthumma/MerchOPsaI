@@ -129,6 +129,18 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "governance: let a higher score buy a critical regression",
+        "app/eval/governance.py",
+        "        if self.critical_regressions:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "governance: treat no scenario as critical",
+        "app/eval/governance.py",
+        '                          or c[sid]["metrics"].get("critical")),',
+        "                          and False),  # MUTANT",
+    ),
+    (
         "reconcile: verify every action type with the refund verifier",
         "app/tools/actions.py",
         "    reverifier = REVERIFIERS.get(action.action_type)",

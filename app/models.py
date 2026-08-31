@@ -689,6 +689,10 @@ class AgentAction(Base):
     )
     verification_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verify_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    # MerchantOps §59 names both. Both were already being spent and neither was
+    # being recorded, which is the cheapest kind of missing metric.
+    provider_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    verification_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     approval_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # The candidate this execution came from, when it came from a plan. There is
     # no separate recovery_actions table on purpose: agent_actions is where

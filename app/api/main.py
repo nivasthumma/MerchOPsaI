@@ -24,6 +24,7 @@ from app.audit.trace import (
 from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
 from app.failures import TAXONOMY, describe
+from app.metrics import objectives, operational_metrics
 from app.detection import detect
 from app.detection.engine import open_incidents
 from app.incidents.lifecycle import legal_from
@@ -268,6 +269,71 @@ def get_evidence(task_id: str, principal: Principal = Depends(current_principal)
                 "evidence": (c.output or {}).get("evidence", []),
                 "data": (c.output or {}).get("data", {}),
             } for c in rows],
+        }
+
+
+@app.get("/approvals")
+def list_approvals(pending_only: bool = True,
+                   principal: Principal = Depends(current_principal)):
+    """The approval queue — MerchantOps §65.
+
+    Reachable before only through the task that owned it, which meant an
+    operator wanting "what is waiting on me" had to assemble one client-side.
+    An approval is a thing a person acts on, so it is a resource.
+    """
+    with session_scope() as s:
+        q = s.query(Approval).filter(Approval.merchant_id == principal.merchant_id)
+        if pending_only:
+            q = q.filter(Approval.decision == "PENDING")
+        rows = q.order_by(Approval.created_at).all()
+        now = utcnow()
+        return {"approvals": [{
+            "id": a.id, "task_id": a.task_id, "action_type": a.action_type,
+            "action_payload": a.action_payload, "risk_level": a.risk_level,
+            "decision": a.decision, "decided_by": a.decided_by,
+            "required_signatures": a.required_signatures,
+            "signed_by": [x.user_id for x in a.signatures if x.decision == "APPROVED"],
+            "created_at": a.created_at.isoformat(),
+            "expires_at": a.expires_at.isoformat(),
+            # An expired approval is still PENDING in the database until someone
+            # tries to use it. The queue says so rather than showing it as work
+            # an operator can still do.
+            "expired": a.expires_at.replace(tzinfo=now.tzinfo) < now
+                       if a.expires_at.tzinfo is None else a.expires_at < now,
+        } for a in rows]}
+
+
+@app.get("/actions/{action_id}")
+def get_action(action_id: str, principal: Principal = Depends(current_principal)):
+    """One external action — MerchantOps §65.
+
+    Everything a person needs to judge whether money moved: the verification
+    state and its detail, the idempotency key it was claimed under, the
+    provider reference, and how long each half took.
+    """
+    with session_scope() as s:
+        a = s.get(AgentAction, action_id)
+        if a is None or a.merchant_id != principal.merchant_id:
+            raise HTTPException(404, "Unknown action.")
+        return {
+            "id": a.id, "task_id": a.task_id, "action_type": a.action_type,
+            "target_payment_id": a.target_payment_id,
+            "external_payment_id": a.external_payment_id,
+            "amount_minor": a.amount_minor, "status": a.status.value,
+            "verification_state": a.verification_state.value if a.verification_state else None,
+            "verification_detail": a.verification_detail,
+            "verify_attempts": a.verify_attempts,
+            "external_reference": a.external_reference,
+            "approval_id": a.approval_id,
+            "recovery_candidate_id": a.recovery_candidate_id,
+            # Truncated: the key is derived from server-held facts and proves
+            # nothing useful in full, while printing it in full puts a
+            # deduplication token into logs and screenshots.
+            "idempotency_key_prefix": a.idempotency_key[:16] + "...",
+            "provider_latency_ms": a.provider_latency_ms,
+            "verification_latency_ms": a.verification_latency_ms,
+            "created_at": a.created_at.isoformat(),
+            "updated_at": a.updated_at.isoformat(),
         }
 
 
@@ -723,6 +789,25 @@ def failure_taxonomy(principal: Principal = Depends(current_principal)):
     retrying — the single most important entry in the table.
     """
     return {"failures": [cls.as_dict(code) for code, cls in sorted(TAXONOMY.items())]}
+
+
+@app.get("/metrics/operational")
+def operational(principal: Principal = Depends(current_principal)):
+    """MerchantOps §59. Measured metrics, and the ones that are not.
+
+    The split is the point: a figure computed from nothing is worse than a
+    blank, because the blank prompts a question and the number closes it.
+    """
+    with session_scope() as s:
+        return operational_metrics(s, principal.merchant_id)
+
+
+@app.get("/metrics/objectives")
+def slos(principal: Principal = Depends(current_principal)):
+    """MerchantOps §60. Each objective with what was measured against it —
+    an SLO nobody is timing is a wish."""
+    with session_scope() as s:
+        return {"objectives": objectives(s, principal.merchant_id)}
 
 
 @app.get("/metrics")

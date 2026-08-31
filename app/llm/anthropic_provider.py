@@ -71,6 +71,21 @@ class AnthropicProvider(LLMProvider):
             messages=wire_messages(messages),
             tools=tools,
             thinking={"type": "adaptive"},
+            # MerchantOps §16 asks for "temperature: 0 / lowest supported", and
+            # this request deliberately does not set it.
+            #
+            # Not an omission and not a preference: sampling parameters
+            # (temperature, top_p, top_k) were REMOVED on this model family.
+            # Sending temperature to claude-opus-5 returns a 400, so the spec's
+            # instruction is not implementable as written.
+            #
+            # `effort` is the control that replaced it. §16's intent — make the
+            # reasoning as reproducible as the API allows — is served by pinning
+            # effort and the model id, both of which are recorded on every task
+            # (§41). Determinism was never fully available anyway: §28 of the
+            # contract already says a model is non-deterministic at temperature
+            # 0, which is why replay records divergence rather than asserting
+            # its absence.
             output_config={"effort": self._s.llm_effort},
         )
 

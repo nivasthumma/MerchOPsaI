@@ -53,6 +53,12 @@ class DetectionReport:
         }
 
 
+# Set for the duration of a sweep so each incident it raises records how long
+# the sweep that found it took. Module-local for the same reason the correlation
+# id is: this application is single-threaded per request.
+_sweep_ms: float = 0.0
+
+
 def _persist(session, merchant_id: str, a: Anomaly) -> Incident | None:
     """Insert the incident, or return None if this anomaly is already known."""
     correlation_id = f"COR_{uuid.uuid4().hex[:12].upper()}"
@@ -93,6 +99,9 @@ def _persist(session, merchant_id: str, a: Anomaly) -> Incident | None:
     session.flush()
 
     record_incident(session, inc, "incident_detected", {
+        # §59/§60 measure detection latency, and it was being computed for the
+        # report and then dropped on the floor.
+        "duration_ms": _sweep_ms,
         "incident_type": inc.incident_type.value,
         "severity": inc.severity.value,
         "rule": inc.detection_rule,
@@ -112,6 +121,7 @@ def detect(session, merchant_id: str, *, as_of: datetime | None = None) -> Detec
     cross-merchant read anywhere else (MerchantOps §54).
     """
     import time
+    global _sweep_ms
     t0 = time.monotonic()
     report = DetectionReport(merchant_id=merchant_id)
 
@@ -119,6 +129,9 @@ def detect(session, merchant_id: str, *, as_of: datetime | None = None) -> Detec
         report.scanned_rules += 1
         for anomaly in rule(session, merchant_id, as_of=as_of):
             report.anomalies_found += 1
+            # The time to FIND it, which is what §60's objective is about — not
+            # the time to write every incident the sweep goes on to raise.
+            _sweep_ms = (time.monotonic() - t0) * 1000.0
             inc = _persist(session, merchant_id, anomaly)
             if inc is None:
                 report.already_known += 1

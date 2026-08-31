@@ -129,6 +129,28 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "metrics: report an unmeasurable metric as a number anyway",
+        "app/metrics.py",
+        '        "root_cause_accuracy", None, "ratio", False,',
+        '        "root_cause_accuracy", 0.94, "ratio", True,  # MUTANT',
+    ),
+    (
+        "metrics: let an untimed objective read as satisfied",
+        "app/metrics.py",
+        "                         None if v is None else v < SLO_POLICY_DECISION_MS,",
+        "                         True,  # MUTANT",
+    ),
+    (
+        "metrics: stop counting actions with no approval behind them",
+        "app/metrics.py",
+        "        WHERE a.merchant_id = :m AND (ap.id IS NULL OR ap.decision <> 'APPROVED')\n"
+        '    """), {"m": merchant_id}).scalar() or 0)\n'
+        '    out.append(Objective("unauthorized_executions"',
+        "        WHERE a.merchant_id = :m AND false  -- MUTANT\n"
+        '    """), {"m": merchant_id}).scalar() or 0)\n'
+        '    out.append(Objective("unauthorized_executions"',
+    ),
+    (
         "messages: leave the final answer out of the transcript",
         "app/agent/runtime.py",
         '                self._say(task, messages, turn_no + 1, "assistant", turn.text)\n'

@@ -248,3 +248,73 @@ def test_the_tenant_on_the_principal_is_the_users_own(client):
     assert a["tenant_id"] == "TEN_KETTLE"
     assert b["tenant_id"] == "TEN_NORTHWIND"
     assert a["tenant_id"] != b["tenant_id"]
+
+
+# ------------------------------------------------------ §65 resource routes
+def test_the_approval_queue_is_a_resource_and_is_merchant_scoped(client, db, owner):
+    """Reachable before only through the task that owned it, so "what is
+    waiting on me" had to be assembled client-side."""
+    from app.agent.runtime import AgentRuntime
+
+    out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
+    assert out.approval is not None
+    db.commit()
+
+    a = client.get("/approvals", headers=token("USR_A_OWNER")).json()["approvals"]
+    assert [x["id"] for x in a] == [out.approval.id]
+    assert a[0]["required_signatures"] >= 1
+    assert a[0]["expired"] is False
+
+    b = client.get("/approvals", headers=token("USR_B_OWNER")).json()["approvals"]
+    assert b == []
+
+
+def test_an_expired_approval_is_not_shown_as_actionable(client, db, owner):
+    """It stays PENDING in the database until someone tries to use it. The
+    queue must not present it as work an operator can still do."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.agent.runtime import AgentRuntime
+
+    out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
+    out.approval.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.commit()
+
+    a = client.get("/approvals", headers=token("USR_A_OWNER")).json()["approvals"]
+    assert a[0]["expired"] is True
+
+
+def test_an_action_is_addressable_and_merchant_scoped(client, db, owner):
+    from app.agent.approval import approve_and_execute
+    from app.agent.runtime import AgentRuntime
+
+    out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
+    r = approve_and_execute(db, out.task.id, owner)
+    action_id = r["action"].id
+    db.commit()
+
+    body = client.get(f"/actions/{action_id}", headers=token("USR_A_OWNER")).json()
+    assert body["verification_state"] == "SUCCESS"
+    assert body["approval_id"]
+    assert body["provider_latency_ms"] is not None
+    # The key proves nothing useful in full and should not land in a screenshot.
+    assert body["idempotency_key_prefix"].endswith("...")
+    assert len(body["idempotency_key_prefix"]) < 25
+
+    assert client.get(f"/actions/{action_id}",
+                      headers=token("USR_B_OWNER")).status_code == 404
+
+
+def test_temperature_is_never_sent_to_the_model():
+    """MerchantOps §16 asks for temperature 0. Sampling parameters were removed
+    on this model family — sending temperature to claude-opus-5 returns a 400 —
+    so the instruction is not implementable and `effort` is what replaced it.
+    Asserted rather than left as a comment somebody might undo."""
+    import inspect
+
+    from app.llm import anthropic_provider
+
+    src = inspect.getsource(anthropic_provider.AnthropicProvider.turn)
+    assert "temperature" not in src.split('"""')[0] or "temperature=" not in src
+    assert "temperature=" not in src
+    assert '"effort"' in src

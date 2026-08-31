@@ -398,7 +398,8 @@ class AgentRuntime:
         tc.policy_decision = pol.decision.value
         record(self.session, task, "policy_decision",
                {"tool": req.name, "decision": pol.decision.value, "rule": pol.rule,
-                "reason": pol.reason, "arguments": req.arguments})
+                "reason": pol.reason, "arguments": req.arguments,
+                "duration_ms": pol.duration_ms})
 
         if pol.decision is Decision.DENY:
             tc.success = False

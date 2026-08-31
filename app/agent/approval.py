@@ -194,7 +194,8 @@ def approve_and_execute(session, task_id: str, principal,
     )
     pol = evaluate(session, ctx)
     record(session, task, "policy_recheck",
-           {"approval_id": ap.id, "decision": pol.decision.value, "rule": pol.rule})
+           {"approval_id": ap.id, "decision": pol.decision.value, "rule": pol.rule,
+            "duration_ms": pol.duration_ms})
     if pol.decision is Decision.DENY:
         task.status = TaskStatus.DENIED
         task.failure_code = "POLICY_DENIED"

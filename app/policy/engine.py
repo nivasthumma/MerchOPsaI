@@ -8,6 +8,7 @@ fact.
 from __future__ import annotations
 
 import enum
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -58,6 +59,9 @@ class PolicyResult:
     approval_required: bool = False
     details: dict = field(default_factory=dict)
     risk: RiskAssessment | None = None
+    # MerchantOps §60 sets an SLO of < 200ms on a policy decision, and nothing
+    # measured it. A target nobody is timing is a wish.
+    duration_ms: float | None = None
 
     @property
     def required_signatures(self) -> int:
@@ -69,6 +73,7 @@ class PolicyResult:
             "decision": self.decision.value, "reason": self.reason, "rule": self.rule,
             "risk_level": self.risk_level, "approval_required": self.approval_required,
             "required_signatures": self.required_signatures,
+            "duration_ms": self.duration_ms,
             "risk": self.risk.as_dict() if self.risk else None,
             "details": self.details,
         }
@@ -98,7 +103,19 @@ def required_permissions(tool_name: str) -> list[str]:
 
 
 def evaluate(session, ctx: PolicyContext) -> PolicyResult:
-    """CONTRACT §20 decision flow, in order. First failing gate wins."""
+    """CONTRACT §20 decision flow, in order. First failing gate wins.
+
+    Timed at this boundary rather than inside, so the number covers every gate
+    including the database reads — an SLO on the arithmetic alone would be an
+    SLO on the part that was never going to be slow.
+    """
+    started = time.perf_counter()
+    result = _evaluate(session, ctx)
+    result.duration_ms = (time.perf_counter() - started) * 1000.0
+    return result
+
+
+def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
     s = get_settings()
 
     # ---- 1. Tool must be registered -------------------------------------

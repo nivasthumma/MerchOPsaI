@@ -13,6 +13,7 @@ The refund path in full:
 from __future__ import annotations
 
 import hashlib
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -179,8 +180,10 @@ def execute_refund(
 
     # --- external call ----------------------------------------------------
     external_ref: str | None = None
+    _t0 = time.perf_counter()
     try:
         ext = adapter.create_refund(external_id, amount_minor, key)
+        action.provider_latency_ms = (time.perf_counter() - _t0) * 1000.0
         external_ref = ext.id
         action.status = ActionStatus.SUBMITTED
         action.external_reference = external_ref
@@ -241,10 +244,12 @@ def execute_refund(
             risk_level="HIGH", approval_id=approval_id))
 
     # --- CONTRACT §25: independent verification ---------------------------
+    _v0 = time.perf_counter()
     vr = verify_refund(adapter, external_payment_id=external_id,
                        expected_refund_minor=amount_minor,
                        refunded_before_minor=refunded_before,
                        external_reference=external_ref)
+    action.verification_latency_ms = (time.perf_counter() - _v0) * 1000.0
     action.verification_state = vr.state
     action.verification_detail = vr.as_dict()
     action.verify_attempts += 1

@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-291%20passed-brightgreen.svg)](#-measured-results)
-[![Scenarios](https://img.shields.io/badge/scenarios-159%2F159-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-55%2F55-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-324%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-165%2F165-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-64%2F64-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 291 tests · 159/159 scenarios · 55/55 mutations |
+| [📊 Measured results](#-measured-results) | 324 tests · 165/165 scenarios · 64/64 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -81,7 +81,7 @@ and what is architecture.
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted, correlation-id traces (§58) | Distributed tracing |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 159 scenarios + 55-mutation validation, gated in CI | Larger benchmark |
+| Evaluation | 165 scenarios + 64-mutation validation, gated in CI | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -122,7 +122,7 @@ ambiguous between "chosen" and "nothing was detected".
 From `make eval` — actual execution, not targets:
 
 ```
-159/159 scenarios passed      (critical: 102/102)
+165/165 scenarios passed      (critical: 108/108)
 
   adversarial_security  30/30    recovery              13/13
   detection              9/9     refund_policy         27/27
@@ -137,12 +137,12 @@ median task latency 39 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-55/55 mutations caught
+64/64 mutations caught
 ```
 
 *Measured in one full run — 55 mutants, each re-running the whole scenario and test suite.*
 
-That run is what makes the 159/159 meaningful — and it is how three real gaps
+That run is what makes the 165/165 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
 onset had no volume floor, so ordinary variance was being reported as the moment a
 degradation began.
@@ -171,7 +171,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **291 passed** (`make test`) across unit, security and integration, in
+Test suite: **324 passed** (`make test`) across unit, security and integration, in
 under 5 seconds — the suite seeds once and rolls each test back, rather than rebuilding the
 schema 200 times.
 
@@ -380,6 +380,9 @@ make spike    # writes docs/assessment/razorpay-spike.md
 
 | Endpoint | Purpose |
 |---|---|
+| `GET /metrics/operational` · `GET /metrics/objectives` | §59 metrics and §60 SLOs |
+| `GET /approvals` · `GET /actions/{id}` | The approval queue, and one action |
+| `GET /tasks/{id}/messages` | The conversation the model actually saw |
 | `GET /trace/{correlation_id}` | §58 — everything one operation touched, in one ordering |
 | `GET /failures/taxonomy` | §56/§57 — what each failure means and whether to retry it |
 | `GET /dashboard` | §50 — revenue at risk, recovery, incidents, agent activity |
@@ -505,27 +508,35 @@ are different claims.
 9. **`CUSTOMER_NOTIFICATION` is not planned as a standalone intervention.** No incident
    type maps to it — it is something reached for alongside a recovery, not a recovery in
    itself. The tool exists; the planner never proposes it.
-10. **Nothing in the runtime branches on the failure taxonomy yet.** `app/failures.py`
+10. **§16's temperature is not set, and cannot be.** Sampling parameters were removed on
+    the Claude Opus 5 family — sending `temperature` returns a 400 — so the spec's
+    "temperature: 0" is not implementable. `output_config.effort` is the control that
+    replaced it; the deviation is stated in the provider and asserted by a test.
+11. **Three §59 metrics are reported as unavailable, not estimated.** Root-cause accuracy
+    and revenue-at-risk accuracy need labelled ground truth a production incident does not
+    carry; agent cost needs token accounting this build has no path to. A figure computed
+    from nothing is worse than a blank.
+12. **Nothing in the runtime branches on the failure taxonomy yet.** `app/failures.py`
     encodes §57's retry rules and is published at `/failures/taxonomy`, but the
     reconciliation sweep and the webhook path each still implement the same rule
     independently. The table is correct, tested and unconsumed.
-11. **A paid payment link is discovered only when a plan is settled.** Nothing subscribes
+13. **A paid payment link is discovered only when a plan is settled.** Nothing subscribes
     to a `payment_link.paid` webhook, so conversion is observed on demand rather than as it
     happens. Until then a sent link sits in `attempted`, which is the honest place for it.
-12. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
+14. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
     Against the deterministic planner it is computed from evidence count, which measures
     the planner rather than any judgement; against a real model it would mean something
     different and should be reported separately.
-13. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
+15. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
    unforgeable and permissions are read from the database on every request, but
    there is no expiry, rotation, revocation list, or audience binding.
-14. **Detection observes state, not a stream.** `webhook_events` stores what the provider
+16. **Detection observes state, not a stream.** `webhook_events` stores what the provider
    *tells* us, but the detection rules still read `payments`. A business change that
    never lands on a payment row is invisible to them. Wiring detection onto the event
    store is real work, not a rename.
-15. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
+17. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
     Incidents appear at sweep cadence.
-16. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
+18. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
    not a defect.
 
@@ -542,8 +553,9 @@ are different claims.
     transition a scenario can drive is already a legal one. Two more (registry lookup,
     argument validation) are detected as a *crash* rather than a graded failure — the
     suite dies on `spec is None` instead of reporting SEC-24 red.
-    Counted honestly: **35 of 55 produce a graded scenario failure**, 4 are detected as a
-    crash rather than a graded result, and 18 by unit tests alone. See
+    Counted honestly: **38 of 64 produce a graded scenario failure**, 4 are detected as a
+    crash rather than a graded result, and the rest by unit tests alone — the metrics and
+    taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
 16. **The 45-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
     The test half is now fast (one seed, per-test rollback); the scenario half still
@@ -595,6 +607,7 @@ app/
   tools/        typed registry, contracts, investigation + action tools
   policy/       deterministic policy engine + the computed risk engine
   failures.py   §56 taxonomy and §57 retry rules, as data
+  metrics.py    §59 operational metrics and §60 objectives
   verification/ read-back verification and state classification
   integrations/ razorpay adapter + fault-injection seam
   llm/          provider abstraction (anthropic | deterministic)
@@ -602,12 +615,12 @@ app/
   api/          FastAPI surface
 ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 168 tests
-data/           159 scenarios + the last evaluation report
+data/           165 scenarios + the last evaluation report
 scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (291 tests)
+tests/          unit · security · integration  (324 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 24 ADRs
+                gap-closure plan, 26 ADRs
 ```
 
 ## 📄 License / disclaimer

@@ -875,6 +875,29 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
             names = {ev["canonical_event"] for ev in events}
             check(f"canonical_event:{want}", want in names, f"events={sorted(names)}")
 
+    if (e.transcript_recorded is not None or e.transcript_has_final_answer is not None
+            or e.transcript_flags_untrusted is not None or e.transcript_excludes):
+        import json as _json
+
+        from app.models import AgentMessage as _Msg
+        msgs = (session.query(_Msg).filter(_Msg.task_id == task.id)
+                .order_by(_Msg.seq).all())
+        blob = _json.dumps([m.content for m in msgs])
+        if e.transcript_recorded is not None:
+            check("transcript_recorded", bool(msgs) == e.transcript_recorded,
+                  f"{len(msgs)} message(s) stored")
+        if e.transcript_has_final_answer is not None:
+            has = bool(msgs) and msgs[-1].role == "assistant"
+            check("transcript_has_final_answer", has == e.transcript_has_final_answer,
+                  f"last message role={msgs[-1].role if msgs else None}")
+        if e.transcript_flags_untrusted is not None:
+            flagged = any(m.contains_untrusted for m in msgs)
+            check("transcript_flags_untrusted", flagged == e.transcript_flags_untrusted,
+                  f"flagged={flagged}")
+        for frag in e.transcript_excludes:
+            check(f"transcript_excludes:{frag}", frag not in blob,
+                  f"transcript still contains {frag!r}")
+
     gr = _grounding_rate(session, task)
     if e.min_grounding_rate is not None:
         check("grounding_rate", gr is not None and gr >= e.min_grounding_rate,

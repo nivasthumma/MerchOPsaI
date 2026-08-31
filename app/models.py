@@ -607,6 +607,45 @@ class AgentTask(Base):
     tool_calls: Mapped[list["ToolCall"]] = relationship(back_populates="task", order_by="ToolCall.seq")
 
 
+class AgentMessage(Base):
+    """The conversation the model actually saw — MerchantOps §66, §38.
+
+    Tool calls and audit events recorded what the application DID. Nothing
+    recorded what the model was looking at when it decided to do it, so
+    "why did it call that tool" could only ever be reconstructed from the
+    outside. A trace of effects is not a trace of reasoning.
+
+    Stored per message as it is appended, not as a snapshot of the whole list
+    each turn: the list accumulates, so snapshotting it would store the first
+    message once per turn and the transcript would grow with the square of the
+    conversation.
+
+    This is agent state (§38). It sits beside the financial record and is never
+    mixed into it: nothing here is evidence of anything having happened, only of
+    something having been said.
+    """
+    __tablename__ = "agent_messages"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("agent_tasks.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    turn: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(16))          # user | assistant
+    content: Mapped[list] = mapped_column(JSON, default=list)
+
+    # Whether this message carries merchant or customer free text. A viewer that
+    # renders a stored transcript needs to know which parts were quarantined
+    # when the model saw them (§39) — stripping that distinction on the way into
+    # storage would push the judgement onto every later reader.
+    contains_untrusted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # A cheap proxy for how much context this message occupied. Not tokens: this
+    # build has no tokeniser on the deterministic path, and a fabricated token
+    # count is worse than an honest character count.
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("task_id", "seq", name="uq_message_task_seq"),)
+
+
 class ToolCall(Base):
     __tablename__ = "tool_calls"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

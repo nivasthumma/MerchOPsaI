@@ -24,14 +24,14 @@ from sqlalchemy import text
 
 from app.agent.output import check_grounding, parse as parse_output, to_findings
 from app.agent.prompts.investigator_v1 import PROMPT_VERSION, SYSTEM_PROMPT
-from app.audit.trace import record, set_correlation_id
+from app.audit.trace import record, redact, set_correlation_id
 from app.config import get_settings
 from app.failures import describe
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
 from app.llm import LLMProvider, get_provider
 from app.models import (
-    AgentTask, Approval, TaskStatus, ToolCall, VerificationState,
+    AgentMessage, AgentTask, Approval, TaskStatus, ToolCall, VerificationState,
 )
 from app.policy.engine import POLICY_VERSION, Decision, PolicyContext, evaluate
 from app.tools.registry import (
@@ -133,6 +133,7 @@ class AgentRuntime:
         self.frozen_tools = frozen_tools
         # Evidence labels run across the whole task, not per tool call.
         self._evidence_seq = 0
+        self._message_seq = 0
 
     # ------------------------------------------------------------------
     def run(self, request: str, *, scenario_id: str | None = None,
@@ -173,7 +174,8 @@ class AgentRuntime:
                 "model": self.provider.model, "replay": is_replay})
 
         tools = [spec.to_anthropic_tool() for spec in REGISTRY.values()]
-        messages: list[dict] = [{"role": "user", "content": request}]
+        messages: list[dict] = []
+        self._say(task, messages, 0, "user", request)
         seq = 0
         answer = ""
         approval: Approval | None = None
@@ -194,13 +196,18 @@ class AgentRuntime:
 
             if not turn.wants_tools:
                 answer = turn.text
+                # Recorded even though the loop ends here. It was never appended
+                # to `messages` because nothing reads it afterwards — which is
+                # exactly why the one message a person most wants to see was
+                # the one the transcript would have been missing.
+                self._say(task, messages, turn_no + 1, "assistant", turn.text)
                 break
 
             assistant_blocks = [{"type": "tool_use", "id": t.id, "name": t.name,
                                  "input": t.arguments} for t in turn.tool_requests]
             if turn.text:
                 assistant_blocks.insert(0, {"type": "text", "text": turn.text})
-            messages.append({"role": "assistant", "content": assistant_blocks})
+            self._say(task, messages, turn_no + 1, "assistant", assistant_blocks)
 
             result_blocks = []
             for req in turn.tool_requests:
@@ -215,7 +222,7 @@ class AgentRuntime:
                 result_blocks.append(block)
                 if halted:
                     # HIGH-risk action requires approval: stop the loop here.
-                    messages.append({"role": "user", "content": result_blocks})
+                    self._say(task, messages, turn_no + 1, "user", result_blocks)
                     task.status = TaskStatus.AWAITING_APPROVAL
                     task.tool_call_count = seq
                     task.duration_ms = int((time.monotonic() - started) * 1000)
@@ -226,7 +233,7 @@ class AgentRuntime:
                            {"approval_id": approval.id if approval else None})
                     return RunOutcome(task, task.status, answer, approval)
 
-            messages.append({"role": "user", "content": result_blocks})
+            self._say(task, messages, turn_no + 1, "user", result_blocks)
 
         task.tool_call_count = seq
         task.duration_ms = int((time.monotonic() - started) * 1000)
@@ -254,6 +261,39 @@ class AgentRuntime:
                                     correlation_id=self._correlation_id)})
         set_correlation_id(None)
         return RunOutcome(task, task.status, answer, approval, task.findings)
+
+    # ------------------------------------------------------------------
+    def _say(self, task: AgentTask, messages: list[dict], turn_no: int,
+             role: str, content) -> None:
+        """Append to the conversation and record it in one step.
+
+        One call site for both, deliberately. Appending in one place and
+        persisting in another is how a transcript comes to be missing the
+        message that mattered — and the whole value of this table is that it is
+        what the model actually saw, not an approximation assembled later.
+        """
+        messages.append({"role": role, "content": content})
+
+        # `_structured` is our own parsed copy of a tool result, attached for
+        # the planner's benefit and never sent to a model. It is already stored
+        # on tool_calls.output; keeping a second copy here would double the
+        # transcript's size to record nothing the model saw.
+        if isinstance(content, list):
+            stored = [{k: v for k, v in b.items() if k != "_structured"}
+                      if isinstance(b, dict) else b for b in content]
+        else:
+            stored = [{"type": "text", "text": str(content)}]
+
+        blob = json.dumps(stored, default=str)
+        self._message_seq += 1
+        self.session.add(AgentMessage(
+            id=f"MSG_{uuid.uuid4().hex[:10].upper()}", task_id=task.id,
+            seq=self._message_seq, turn=turn_no, role=role,
+            content=redact(stored),
+            contains_untrusted="<untrusted_merchant_data" in blob,
+            char_count=len(blob),
+        ))
+        self.session.flush()
 
     # ------------------------------------------------------------------
     def _structured_output(self, task: AgentTask, answer: str):

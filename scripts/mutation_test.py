@@ -129,6 +129,25 @@ MUTATIONS = [
         "        session.rollback()  # MUTANT",
     ),
     (
+        "messages: leave the final answer out of the transcript",
+        "app/agent/runtime.py",
+        '                self._say(task, messages, turn_no + 1, "assistant", turn.text)\n'
+        "                break",
+        "                break  # MUTANT",
+    ),
+    (
+        "messages: drop the untrusted marker from the transcript",
+        "app/agent/runtime.py",
+        '            contains_untrusted="<untrusted_merchant_data" in blob,',
+        "            contains_untrusted=False,  # MUTANT",
+    ),
+    (
+        "messages: skip redaction on the stored conversation",
+        "app/agent/runtime.py",
+        "            content=redact(stored),",
+        "            content=stored,  # MUTANT",
+    ),
+    (
         "tenancy: stop enforcing the tenant boundary",
         "app/policy/engine.py",
         '        if owner["tenant_id"] != ctx.tenant_id:\n'

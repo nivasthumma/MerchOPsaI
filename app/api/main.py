@@ -36,7 +36,7 @@ from app.recovery.dispatch import (
 from app.eval.runner import load_scenarios, run_scenario
 from app.verification.reconciler import escalated_actions, reconcile
 from app.models import (
-    AgentAction, AgentTask, Approval, Incident, IncidentEvidence,
+    AgentAction, AgentMessage, AgentTask, Approval, Incident, IncidentEvidence,
     RecoveryCandidate, RecoveryPlan, ToolCall, VerificationState, WebhookEvent,
     WebhookStatus, utcnow,
 )
@@ -268,6 +268,35 @@ def get_evidence(task_id: str, principal: Principal = Depends(current_principal)
                 "evidence": (c.output or {}).get("evidence", []),
                 "data": (c.output or {}).get("data", {}),
             } for c in rows],
+        }
+
+
+@app.get("/tasks/{task_id}/messages")
+def get_messages(task_id: str, principal: Principal = Depends(current_principal)):
+    """The conversation the model actually saw — MerchantOps §66, §38.
+
+    Distinct from the trace, which records what the application DID. This is
+    what the model was looking at when it decided to do it, and it is the only
+    way to answer "why did it call that tool" without reconstructing an answer
+    from the outside.
+
+    `contains_untrusted` is carried through deliberately (§39). Merchant free
+    text was quarantined when the model saw it, and a client rendering a stored
+    transcript needs to know which messages to render as data rather than as
+    system text.
+    """
+    with session_scope() as s:
+        _owned(s, task_id, principal)
+        rows = (s.query(AgentMessage).filter(AgentMessage.task_id == task_id)
+                .order_by(AgentMessage.seq).all())
+        return {
+            "task_id": task_id,
+            "messages": [{
+                "seq": m.seq, "turn": m.turn, "role": m.role,
+                "content": m.content, "contains_untrusted": m.contains_untrusted,
+                "char_count": m.char_count, "at": m.created_at.isoformat(),
+            } for m in rows],
+            "total_chars": sum(m.char_count for m in rows),
         }
 
 

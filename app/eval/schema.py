@@ -95,6 +95,12 @@ class Expect(BaseModel):
     one_correlation_id: bool | None = None
     canonical_events_include: list[str] = Field(default_factory=list)
 
+    # --- transcript assertions (MerchantOps §38, §66) ---
+    transcript_recorded: bool | None = None
+    transcript_has_final_answer: bool | None = None
+    transcript_flags_untrusted: bool | None = None
+    transcript_excludes: list[str] = Field(default_factory=list)
+
 
 class Scenario(BaseModel):
     id: str

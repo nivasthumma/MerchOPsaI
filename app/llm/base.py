@@ -38,4 +38,13 @@ class LLMProvider(ABC):
     model: str = "abstract"
 
     @abstractmethod
-    def turn(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn: ...
+    def turn(self, *, system: str, messages: list[dict], tools: list[dict],
+             timeout: float | None = None) -> LLMTurn:
+        """One assistant turn, bounded by `timeout` seconds.
+
+        The budget belongs to the loop, but only the provider can enforce it
+        inside a call. Without this the wall-clock check between turns is the
+        only limit there is, and a single request that hangs runs for as long as
+        the transport allows — holding a database transaction open the whole
+        time. A provider that does no I/O may ignore it.
+        """

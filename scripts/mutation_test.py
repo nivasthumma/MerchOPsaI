@@ -254,9 +254,53 @@ MUTATIONS = [
     (
         "observability: give every audit event its own correlation id",
         "app/audit/trace.py",
-        "        correlation_id=_CURRENT_CORRELATION,\n        payload=redact(payload or {}),",
+        "        correlation_id=_CURRENT_CORRELATION.get(),\n        payload=redact(payload or {}),",
         '        correlation_id=__import__("uuid").uuid4().hex,  # MUTANT\n'
         "        payload=redact(payload or {}),",
+    ),
+    # ---------------------------------------------------------- ADR-0029
+    (
+        "durability: flush the action claim instead of committing it",
+        "app/tools/actions.py",
+        "    checkpoint(session)\n\n    refunded_before",
+        "    session.flush()  # MUTANT\n\n    refunded_before",
+    ),
+    (
+        "durability: let an unhandled error take the trace down with it",
+        "app/agent/runtime.py",
+        "                raise self._crash(exc) from exc",
+        "                raise  # MUTANT",
+    ),
+    (
+        "budget: let the configured budget outrun the host's own timeout",
+        "app/config.py",
+        "        return max(5, min(self.max_wall_clock_seconds, limit - PLATFORM_MARGIN_SECONDS))",
+        "        return self.max_wall_clock_seconds  # MUTANT",
+    ),
+    (
+        "reconciliation: stop looking at claims nobody finished",
+        "app/verification/reconciler.py",
+        "                        and_(AgentAction.verification_state.is_(None),",
+        "                        and_(False, AgentAction.verification_state.is_(None),  # MUTANT",
+    ),
+    # ---------------------------------------------------------- ADR-0031
+    (
+        "observability: label metrics with the raw path instead of the route",
+        "app/observability/middleware.py",
+        '    return path or "<unmatched>"',
+        '    return request.url.path  # MUTANT',
+    ),
+    (
+        "observability: stop redacting secrets on their way to stdout",
+        "app/observability/logs.py",
+        "            entry.update(redact(extras))",
+        "            entry.update(extras)  # MUTANT",
+    ),
+    (
+        "migrations: let the baseline downgrade drop every table",
+        "alembic/versions/20260901_dfdcbe8c6ce5_baseline_schema.py",
+        '    raise NotImplementedError(\n        "Refusing to drop every table',
+        '    return  # MUTANT\n    raise NotImplementedError(\n        "Refusing to drop every table',
     ),
     (
         "versioning: hardcode the tool registry version",
@@ -643,7 +687,10 @@ def _verify_tree_restored() -> None:
     """Every mutation is reverted in a finally block, but if the process is
     killed between write and revert a mutant is left on disk. Say so loudly
     rather than leaving a broken working tree looking clean."""
-    r = subprocess.run(["git", "diff", "--name-only", "--", "app", "scripts"],
+    # `alembic` included since ADR-0030 put a mutant target there. A directory
+    # that is mutated but not checked is a directory where a killed run leaves a
+    # broken file behind looking clean, which is the whole point of this check.
+    r = subprocess.run(["git", "diff", "--name-only", "--", "app", "scripts", "alembic"],
                        cwd=ROOT, capture_output=True, text=True)
     dirty = [f for f in r.stdout.split() if f]
     if dirty:

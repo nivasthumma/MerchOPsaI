@@ -301,8 +301,8 @@ model prose  ->  incident status      never
 ```
 
 An agent that concludes "this is resolved" resolves nothing. Investigation stops at
-`ROOT_CAUSE_IDENTIFIED`; everything past it belongs to the recovery planner (§23), which
-is not built.
+`ROOT_CAUSE_IDENTIFIED`; everything past it belongs to the recovery planner (§23) —
+see *Recovery planning* above, added in ADR-0020.
 
 ## Request path in detail
 
@@ -514,15 +514,15 @@ synthetic id to a provider id, and it enforces merchant ownership. Drawing the a
 straight through to the adapter would imply the agent can name provider ids — which
 the design forbids.
 
-**4. There are no webhooks, deliberately.** A webhook is *something you are told*.
-The verification thesis is *read the state back yourself* — which is why
-`verify_refund` reads `payment.amount_refunded` rather than trusting the refund-create
-response. A webhook belongs to the same class as that response: spoofable, replayable,
-reorderable, droppable. It would buy **latency, not truth**, and you would still have
-to verify.
+**4. Webhooks are a trigger on this diagram, never a source.** A webhook is
+*something you are told*. The verification thesis is *read the state back yourself* —
+which is why `verify_refund` reads `payment.amount_refunded` rather than trusting the
+refund-create response. A webhook belongs to the same class as that response:
+spoofable, replayable, reorderable, droppable. On its own it buys **latency, not
+truth**, and you would still have to verify.
 
-If webhooks are added later, the correct shape is a *trigger* sitting beside the cron
-trigger on reconciliation — never a source feeding verification:
+So it is wired as a trigger beside the cron trigger on reconciliation, and nowhere
+else:
 
 ```
    cron ────────┐
@@ -530,9 +530,134 @@ trigger on reconciliation — never a source feeding verification:
    webhook ─────┘        (trigger only; never trusted as evidence)
 ```
 
-The cost of that path is a publicly reachable endpoint, signature verification, replay
-protection, out-of-order handling and idempotent processing — real work for a latency
-win, in a system whose stated limitation is already "settles at sweep cadence".
+That path was built in ADR-0018 and is described under *Webhooks — evidence, not
+authority* above; this section previously said it did not exist, which stopped being
+true and was left standing. Its cost is what it always was: a publicly reachable
+endpoint, signature verification, replay protection, out-of-order handling and
+idempotent processing.
+
+## The API contract
+
+Added in ADR-0032. Every endpoint returned a bare `dict`, so the OpenAPI document had
+paths and no shapes, and `web/src/api/types.ts` was 411 hand-written lines mirroring
+dictionary literals with nothing comparing the two.
+
+```
+app/api/schemas.py   ->  docs/openapi.json  ->  web/src/api/schema.d.ts
+   response_model          make openapi           npm run gen:api
+                                │                        │
+                        a Python test           a TypeScript assertion
+                        keeps it current        keeps the app in step
+```
+
+**`extra="forbid"` is the load-bearing setting, and it is counter-intuitive.** A
+`response_model` *filters*: a key the model does not declare is dropped silently.
+Adopting response models naively is therefore a way to **cause** the bug they prevent.
+Forbidding extras turns a forgotten field into a `ResponseValidationError`, which makes
+the existing test suite the verifier rather than requiring a new one.
+
+**`response_model_exclude_unset=True`** keeps conditional fields absent instead of
+`null`, so no response changed shape. That was verified rather than assumed: the shape
+of all 36 JSON endpoints was captured before and after, and the diff was empty.
+
+**A field the server always sends says so.** Giving every nullable field a default made
+the schema weaker than reality — the generated TypeScript gained an `undefined` on
+fields that are never absent. Only genuinely conditional fields carry defaults now.
+
+**What the round trip found.** Comparing the hand-written mirror against the generated
+schema surfaced three real defects in the frontend, all of the same kind — the mirror
+asserting more than the server promises:
+
+| | |
+|---|---|
+| `TaskStatus` | missing `PENDING` and `DENIED`, both reachable (`DENIED` is set when policy refuses at approval time), so a task in either state fell through every narrowing on that union |
+| `model_version`, `prompt_version` | declared non-null against nullable columns |
+| `VerificationDetail.expected/actual` | declared "absent or object" where the server also sends `null` |
+
+None of those were detectable before, which is the argument for the whole arrangement.
+
+## Two channels of evidence
+
+Added in ADR-0031. The audit trail answers one question well and another not at all:
+
+```
+audit_logs  ->  what the system DECIDED     durable, immutable, per tenant
+stdout      ->  what the process is DOING   ephemeral, operational, ordered
+```
+
+There was no logging in this application at all — the audit trail carried everything,
+and it cannot say that a request returned 500, which query took four seconds, or what
+the p99 is. The failures it is worst at are the ones that matter: a request that fails
+before reaching the runtime was never a task and left no row, and a `task_crashed` row
+sits behind authentication in one tenant's data, which is not where the person fixing
+it is looking.
+
+`correlation_id` is on both, and is how you get from one to the other. It is set at the
+HTTP boundary and **inherited** by a run started inside it, so the log line for the
+response carries the same id as the audit rows that run wrote. The scopes nest and
+restore rather than clear: a run that cleared the value would leave the rest of the
+request logged as belonging to no trace.
+
+**Cardinality is a correctness property, not tidiness.** `/tasks/TASK_9F2A31C0`
+recorded as a metric label is one time series per task, forever — a monitoring system
+that runs the process out of memory. The middleware records the route template, an
+unrouted path becomes `<unmatched>` rather than whatever the caller typed, and the
+registry caps distinct label sets.
+
+**Two metrics endpoints, and they answer different questions.**
+
+| | |
+|---|---|
+| `/metrics` | this merchant's business counts, per tenant, authenticated as a user |
+| `/metrics/prometheus` | this process's health, no tenant, a scrape secret, 404 when unset |
+
+A scraper has no merchant and is not given one. Serving both from one place would mean
+either scoping infrastructure health to a merchant, which is meaningless, or exposing
+one merchant's counts to a scraper, which is a leak.
+
+No client library and no OpenTelemetry: the exposition format is a line protocol, and
+the function bundle has a cold-start budget that `api/requirements.txt` already spends
+carefully. Distributed tracing is the right answer eventually, and `correlation_id` is
+deliberately the shape that makes adding it mechanical. It is not claimed as done.
+
+## Schema and the rules that protect it
+
+Added in ADR-0030. Alembic, with the URL taken from `app.config` so a migration cannot
+reach a database the application does not talk to, and with one departure from the
+usual setup:
+
+```
+audit_logs immutability triggers  ->  migration a1c47f9b2e08, not a script
+```
+
+Schema and the controls over it are the same kind of thing. The triggers used to live
+in `scripts/harden_db.py`, applied by whoever remembered `make harden` — an accurate
+description of a control enforced by a person. `harden_db.py` remains as the way to
+*verify* the control, which is a different act: `verify()` proves the trigger fires
+rather than assuming the DDL took.
+
+**Two paths to a schema, proven identical.** `create_all` still builds disposable
+databases for the test suite and the evaluation runner, where a known-empty database is
+wanted thousands of times over. `tests/integration/test_migrations.py` upgrades a real
+database to head and asserts it has no differences from `Base.metadata`, so a model
+changed without its migration fails the build. Autogenerate is usually a scaffold; here
+it is the assertion.
+
+**Three states, and only one is `alembic upgrade`.**
+
+```
+empty                 -> upgrade from scratch
+exists, not stamped   -> stamp the baseline, then upgrade past it     <- every existing database
+exists, stamped       -> upgrade
+```
+
+`scripts/migrate.py` detects which by evidence — `audit_logs` present with no version
+row means the database predates migrations — because a bare upgrade reads that state as
+empty and fails creating tables that are already there.
+
+**Two downgrades refuse rather than run.** The generated baseline downgrade drops all
+23 tables including the audit log, and reversing the immutability migration makes that
+log editable. Neither belongs one keystroke behind `alembic downgrade`.
 
 ## Agent runtime
 
@@ -615,6 +740,18 @@ approved action collapses onto one key.
 
 If the INSERT conflicts, the action was already attempted — the provider is not
 called; the existing row is read and re-verified instead.
+
+**The claim is committed, not merely flushed** (ADR-0029). A request runs in one
+transaction, so for a long time the reservation was undone by any later failure — the
+provider had accepted a refund and the rollback erased the only row that said who
+caused it. `db.checkpoint()` commits at that line, and everything committed with it is
+history that already happened: the task, its tool calls, the approval decision, the
+audit events.
+
+What that leaves behind on a dying request is a claim with an idempotency key and no
+outcome, still `PENDING`. That is `UNKNOWN` in everything but the column, and the
+reconciliation sweep picks it up on its own clock — wide enough to outlast any request,
+because the thing it is waiting out is not the provider but us.
 
 ## Verification
 
@@ -781,9 +918,20 @@ EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 
 ## Future state (not built)
 
-Ordered in `docs/gap-closure-plan.md`. Nearest first: the remaining nine tools of §18 —
-which is what makes five of the seven recovery interventions actionable; model-emitted
-structured output (§37); the revenue-recovery ledger and dashboard (§49, §50).
+Ordered in `docs/gap-closure-plan.md`.
+
+This section used to list the remaining nine tools of §18, model-emitted structured
+output (§37) and the revenue-recovery ledger (§49, §50). All three shipped — in
+ADR-0021, ADR-0022 and ADR-0023 — and the list was not updated, so a reader could
+finish this document believing less was built than the sections above describe. A
+roadmap that outlives its items is worse than no roadmap: it makes the whole document
+less trustworthy, not just this heading.
+
+What is genuinely not built, nearest first:
+
+- **A durable job boundary for `POST /tasks`.** A run happens inside the request that
+  asked for it. ADR-0029 made the record survive a failure; it did not make the *work*
+  resumable, and a client retry after a timeout still starts a second run.
 
 Beyond that: specialised agents; Next.js frontend; Redis/Celery for durable retries;
 per-merchant policy configuration; distributed tracing; containerised deployment.

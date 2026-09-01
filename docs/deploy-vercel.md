@@ -12,7 +12,7 @@ gives you a pooled connection string does. Two requirements that are easy to
 miss:
 
 - **It must be a real Postgres.** The audit log's immutability is enforced by
-  triggers (`scripts/harden_db.py`), not by application code. A store that
+  triggers (migration `a1c47f9b2e08`), not by application code. A store that
   cannot run them cannot make the guarantee this project claims.
 - **Use the pooled connection string**, not the direct one. Every serverless
   instance is a separate process; see "Connection pooling" below.
@@ -27,6 +27,8 @@ Set these in **Project → Settings → Environment Variables**.
 | `API_TOKEN_SECRET` | a long random string | **Required.** Without it the app falls back to a development default, and tokens minted with that default are forgeable by anyone who can read this repository. `/health` reports the fallback and the UI says so in words. |
 | `LLM_PROVIDER` | `deterministic` | Explicit, so the deployment cannot silently become a model deployment if a credential ever appears in the environment. |
 | `RAZORPAY_MODE` | `mock` | No outbound financial call. Set to `live_test_mode` with keys only if you mean it. |
+| `LOG_FORMAT` | `json` | Default. Vercel ingests stdout, so structured logs are searchable with no further setup. |
+| `METRICS_SCRAPE_TOKEN` | *(leave unset)* | `/metrics/prometheus` returns 404 without it. Counters reset on every cold start here, so they measure little; the logs are the operational channel on serverless. |
 
 > **Do not set `ANTHROPIC_API_KEY` on this deployment unless you also add
 > `anthropic` to `api/requirements.txt`.** Provider selection is `auto` by
@@ -42,16 +44,47 @@ Generate a secret with:
 
 ## Prepare the database
 
-Run once, locally, against the hosted database — the function does not
-bootstrap its own schema:
+Run locally against the hosted database — the function does not bootstrap its
+own schema. Use the **direct** URL here, not the pooled one; migrations take
+locks and a pooler can hand them to different backends.
+
+### First time
 
     export DATABASE_URL='postgresql+psycopg2://…'   # the DIRECT url, not pooled
-    make seed          # creates the schema and the synthetic dataset
-    make harden        # applies the audit-log immutability triggers
+    make migrate       # creates the schema and applies every control
+    make seed          # loads the synthetic dataset
 
-`make harden` is not optional. `seed` drops the schema, and the triggers go
-with it, so a reseed without a re-harden leaves the audit trail quietly
-mutable — which is exactly when nobody would notice.
+`make migrate` reports which state it found the database in and, at the end,
+proves the audit-log triggers actually reject an UPDATE and a DELETE. Do not
+take a clean exit for granted — read those three lines.
+
+### Every deploy after that
+
+    export DATABASE_URL='postgresql+psycopg2://…'
+    make migrate-status    # where is it, and what is pending
+    make migrate-sql       # the exact SQL, for review
+    make migrate           # apply it
+
+Run migrations **before** promoting the new function, and write them so the old
+code still works against the new schema — expand first, contract in a later
+release. `audit_logs` is append-only by trigger, so no migration may ever
+rewrite it; adding a nullable column is fine, changing the meaning of an
+existing one is not.
+
+### On a database that predates migrations
+
+It has every table and no `alembic_version` row, so a bare `alembic upgrade
+head` reads it as empty and fails trying to create tables that are already
+there. `make migrate` detects this and stamps the baseline instead of
+re-creating anything. Nothing to do differently — this is noted so the
+"stamping" line in its output is not alarming.
+
+### Reseeding
+
+`make seed` drops the schema and rebuilds it from the models, taking the
+triggers with it and putting them straight back (`reset_schema` re-applies
+them). It is for disposable databases. On anything whose contents matter, use
+`make migrate`.
 
 ## Deploy
 

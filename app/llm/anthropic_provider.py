@@ -53,15 +53,45 @@ class AnthropicProvider(LLMProvider):
         s = get_settings()
         self.model = s.llm_model
         self._s = s
+        # The SDK's retries are kept -- it backs off exponentially and honours
+        # Retry-After, and §57 grades a provider 5xx BOUNDED_BACKOFF, so
+        # absorbing one is correct behaviour rather than a convenience. What has
+        # to stay true is that retrying cannot outlive the caller's deadline,
+        # which `_attempt_timeout` is for.
+        self._max_retries = s.llm_max_retries
+        kw = {"max_retries": self._max_retries,
+              "timeout": self._attempt_timeout(s.llm_timeout_seconds)}
         # Zero-arg construction resolves whatever the SDK finds: an auth token,
         # an `ant auth login` profile, or workload identity. `Settings.
         # anthropic_credential_source` reports which of those was detected.
-        self._client = anthropic.Anthropic(api_key=s.anthropic_api_key) if s.anthropic_api_key \
-            else anthropic.Anthropic()
+        self._client = anthropic.Anthropic(api_key=s.anthropic_api_key, **kw) \
+            if s.anthropic_api_key else anthropic.Anthropic(**kw)
 
-    def turn(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn:
+    def _attempt_timeout(self, budget: float) -> float:
+        """Split a deadline across the attempts that may be made against it.
+
+        `timeout` in the SDK bounds one HTTP attempt, not the call: with two
+        retries a 30s timeout permits ninety seconds of waiting. Passing the
+        loop's remaining budget straight through would therefore let a single
+        turn run to three times it — which is the bug this parameter exists to
+        prevent, reintroduced one layer down.
+
+        The backoff sleeps between attempts are not counted. They are under two
+        seconds against budgets measured in tens, and pretending to model them
+        precisely would be false precision, not accuracy.
+        """
+        return max(1.0, float(budget) / (self._max_retries + 1))
+
+    def turn(self, *, system: str, messages: list[dict], tools: list[dict],
+             timeout: float | None = None) -> LLMTurn:
         resp = self._client.messages.create(
             model=self.model,
+            # The caller passes what is left of the task's wall clock, so the
+            # last turn of a nearly exhausted budget cannot outlive it. The
+            # client-level ceiling still applies to whichever is smaller.
+            **({"timeout": self._attempt_timeout(
+                    min(float(timeout), float(self._s.llm_timeout_seconds)))}
+               if timeout is not None else {}),
             max_tokens=self._s.llm_max_tokens,
             # Caching is a prefix match over tools -> system -> messages. Both
             # are byte-stable across every turn of every task (the prompt is

@@ -82,13 +82,32 @@ INJECTION_NOTE_2 = (
 
 
 def reset_schema() -> None:
+    """Throw the schema away and build it again from the models.
+
+    Deliberately `create_all` and not `alembic upgrade head`, even though
+    migrations now exist (ADR-0030). This is the disposable path — the test
+    suite and the evaluation runner, which want a known-empty database in
+    milliseconds and rebuild it thousands of times across a mutation run.
+    Replaying every migration to reach a state the models can produce in one
+    step would buy nothing here.
+
+    What makes that safe is that the two paths are proven identical rather than
+    assumed to be: `tests/integration/test_migrations.py` upgrades a real
+    database to head and asserts it has no differences from `Base.metadata`. If
+    somebody changes a model without writing the migration, that test fails —
+    which is the failure this function would otherwise hide, since it always
+    builds whatever the models currently say.
+
+    Use `scripts/migrate.py` for any database whose contents matter.
+    """
     eng = get_engine()
     Base.metadata.drop_all(eng)
     Base.metadata.create_all(eng)
     # drop_all removes audit_logs and its immutability triggers with it, so the
     # control must be re-applied on every schema creation. Leaving this to a
     # separate manual step means the audit trail is silently mutable after any
-    # reseed -- which is exactly when nobody would notice.
+    # reseed -- which is exactly when nobody would notice. On the migrated path
+    # the same DDL is revision a1c47f9b2e08.
     from scripts.harden_db import harden
     with session_scope() as s:
         harden(s)

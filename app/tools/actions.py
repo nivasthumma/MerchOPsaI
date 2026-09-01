@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.db import checkpoint
 from app.integrations.razorpay.adapter import RazorpayAdapter
 from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
@@ -175,6 +176,12 @@ def execute_refund(
                   "detail": "This exact action was already attempted; not calling the provider again.",
                   "existing_action": dict(prior) if prior else None},
             risk_level="HIGH"))
+
+    # The reservation is worth nothing until it is durable. A flushed row is
+    # still inside the request's transaction and dies with it, so a crash after
+    # the call below would leave a real refund with no record of who caused it.
+    # Commit here and the claim outlives whatever happens next.
+    checkpoint(session)
 
     refunded_before = meta["amount_refunded_minor"]
 

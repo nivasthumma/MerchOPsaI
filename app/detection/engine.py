@@ -27,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record_incident
+from app.detection.correlation import annotate
 from app.detection.rules import RULES, DETECTION_VERSION, Anomaly
 from app.models import Incident, IncidentEvidence, IncidentStatus
 
@@ -59,9 +60,19 @@ class DetectionReport:
 _sweep_ms: float = 0.0
 
 
-def _persist(session, merchant_id: str, a: Anomaly) -> Incident | None:
-    """Insert the incident, or return None if this anomaly is already known."""
+def _persist(session, merchant_id: str, a: Anomaly,
+             correlation: dict | None = None) -> Incident | None:
+    """Insert the incident, or return None if this anomaly is already known.
+
+    `correlation` is v2 §18's multivariate facts for this anomaly: how many
+    other independent rules saw the same episode. Folded into `signals` rather
+    than given a column, because it is a property of the observation — the same
+    place the baseline, the threshold and the window already live.
+    """
     correlation_id = f"COR_{uuid.uuid4().hex[:12].upper()}"
+    signals = dict(a.signals)
+    if correlation:
+        signals["correlation"] = correlation
     inc = Incident(
         id=f"INC_{uuid.uuid4().hex[:10].upper()}",
         merchant_id=merchant_id,
@@ -72,7 +83,7 @@ def _persist(session, merchant_id: str, a: Anomaly) -> Incident | None:
         summary=a.summary,
         detection_key=a.detection_key,
         revenue_at_risk_minor=a.revenue_at_risk_minor,
-        signals=a.signals,
+        signals=signals,
         detection_rule=a.detection_rule,
         detection_version=DETECTION_VERSION,
         correlation_id=correlation_id,
@@ -125,24 +136,41 @@ def detect(session, merchant_id: str, *, as_of: datetime | None = None) -> Detec
     t0 = time.monotonic()
     report = DetectionReport(merchant_id=merchant_id)
 
+    # Every rule runs before anything is written. MerchantOps v2 §18 needs the
+    # whole set to correlate over -- a signal cannot be told it is corroborated
+    # by one that has not been looked for yet -- and this is the seam the
+    # `Anomaly` docstring always described: rules observe, the engine decides.
+    found: list[tuple[Anomaly, float]] = []
     for rule in RULES:
         report.scanned_rules += 1
         for anomaly in rule(session, merchant_id, as_of=as_of):
             report.anomalies_found += 1
             # The time to FIND it, which is what §60's objective is about — not
-            # the time to write every incident the sweep goes on to raise.
-            _sweep_ms = (time.monotonic() - t0) * 1000.0
-            inc = _persist(session, merchant_id, anomaly)
-            if inc is None:
-                report.already_known += 1
-                continue
-            report.incidents_created += 1
-            report.incidents.append({
-                "id": inc.id, "type": inc.incident_type.value,
-                "severity": inc.severity.value, "title": inc.title,
-                "revenue_at_risk_minor": inc.revenue_at_risk_minor,
-                "started_at": inc.started_at.isoformat(),
-            })
+            # the time to write every incident the sweep goes on to raise. Held
+            # per anomaly now that persistence happens in a second pass.
+            found.append((anomaly, (time.monotonic() - t0) * 1000.0))
+
+    correlation = annotate([a for a, _ in found])
+
+    for anomaly, found_ms in found:
+        _sweep_ms = found_ms
+        inc = _persist(session, merchant_id, anomaly,
+                       correlation.get(anomaly.detection_key))
+        if inc is None:
+            report.already_known += 1
+            continue
+        report.incidents_created += 1
+        report.incidents.append({
+            "id": inc.id, "type": inc.incident_type.value,
+            "severity": inc.severity.value, "title": inc.title,
+            "revenue_at_risk_minor": inc.revenue_at_risk_minor,
+            "started_at": inc.started_at.isoformat(),
+            # v2 §18: how many independent rules saw this episode. 1 means the
+            # signal stands alone, which is a thing an operator should be able
+            # to see from the list rather than only from the detail.
+            "corroboration": (correlation.get(anomaly.detection_key) or {})
+                             .get("corroboration", 1),
+        })
 
     report.duration_ms = int((time.monotonic() - t0) * 1000)
     return report

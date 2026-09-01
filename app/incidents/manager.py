@@ -116,6 +116,11 @@ def investigate(session, incident: Incident, principal: Principal,
         evidence=list(incident.evidence),
         tool_calls=list(out.task.tool_calls),
         model_confidence=out.task.agent_confidence,
+        # v2 §18: how many OTHER detection rules independently saw this
+        # episode. Recorded by the sweep that raised the incident.
+        corroborating_rules=len(
+            (incident.signals or {}).get("correlation", {})
+            .get("corroborating_rules", [])),
     )
     incident.confidence_band = assessment.band.value
     incident.confidence_inputs = assessment.as_dict()

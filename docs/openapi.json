@@ -1171,6 +1171,11 @@
         "additionalProperties": false,
         "description": "What a detection sweep reports about what it raised.",
         "properties": {
+          "corroboration": {
+            "default": 1,
+            "title": "Corroboration",
+            "type": "integer"
+          },
           "id": {
             "title": "Id",
             "type": "string"

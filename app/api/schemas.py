@@ -515,6 +515,9 @@ class IncidentBrief(Contract):
     title: str
     revenue_at_risk_minor: int
     started_at: str
+    # MerchantOps v2 §18: how many independent detection rules saw this
+    # episode, this one included. 1 means the signal stands alone.
+    corroboration: int = 1
 
 
 class DetectResult(Contract):

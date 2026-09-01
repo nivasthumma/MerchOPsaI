@@ -103,6 +103,8 @@ class ConfidenceAssessment:
     agreeing_signals: int = 0
     stale_evidence: int = 0
     provider_confirmed: bool = False
+    # v2 §18: other detection rules that saw the same episode.
+    corroborating_rules: int = 0
     failed_tool_calls: int = 0
     model_confidence: float | None = None
     reasons: list[str] = field(default_factory=list)
@@ -116,6 +118,7 @@ class ConfidenceAssessment:
             "agreeing_signals": self.agreeing_signals,
             "stale_evidence": self.stale_evidence,
             "provider_confirmed": self.provider_confirmed,
+            "corroborating_rules": self.corroborating_rules,
             "failed_tool_calls": self.failed_tool_calls,
             "model_confidence": self.model_confidence,
             "reasons": self.reasons,
@@ -148,6 +151,7 @@ EXTERNAL_SOURCES = frozenset({"razorpay", "webhook_events"})
 def assess(*, evidence: list, tool_calls: list | None = None,
            model_confidence: float | None = None,
            provider_confirmed: bool | None = None,
+           corroborating_rules: int = 0,
            now: datetime | None = None) -> ConfidenceAssessment:
     """Compute the band from evidence. MerchantOps v2 §33.
 
@@ -179,6 +183,14 @@ def assess(*, evidence: list, tool_calls: list | None = None,
         provider_confirmed = any(getattr(e, "source", None) in EXTERNAL_SOURCES
                                  for e in trusted)
     a.provider_confirmed = provider_confirmed
+
+    # v2 §18's multivariate signal, arriving from `app.detection.correlation`:
+    # other detection rules that independently saw the same episode. Counted
+    # alongside evidence sources because that is what it is — an observation
+    # this incident's own evidence does not contain. `corroborating_rules` is
+    # the count of OTHER rules, so it adds directly.
+    a.corroborating_rules = corroborating_rules
+    a.independent_sources += corroborating_rules
 
     for e in trusted:
         created = getattr(e, "created_at", None)

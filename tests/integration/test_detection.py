@@ -180,3 +180,31 @@ def test_one_incident_per_order_not_per_pair(db):
     assert len(a.signals["excess_payment_ids"]) == 2
     # Two excess captures, not three overlapping claims of one.
     assert a.revenue_at_risk_minor == 2 * int(row["amount_minor"])
+
+
+# --------------------------------------------- multivariate detection (v2 §18)
+def test_the_sweep_records_what_else_saw_the_same_episode(db):
+    """v2 §18. Correlation happens over the whole sweep, not per rule."""
+    report = detect(db, "MERCH_A")
+    assert report.incidents_created > 0
+
+    incidents = db.query(Incident).filter(Incident.merchant_id == "MERCH_A").all()
+    for inc in incidents:
+        correlation = (inc.signals or {}).get("correlation")
+        assert correlation is not None, f"{inc.id} has no correlation facts"
+        assert correlation["corroboration"] >= 1
+        # A rule never corroborates itself.
+        assert inc.detection_rule not in correlation["corroborating_rules"]
+        assert correlation["multivariate"] == (correlation["corroboration"] > 1)
+
+
+def test_corroboration_reaches_the_confidence_band(db, owner):
+    """The two v2 corrections meet here: §18's signal feeds §33's band."""
+    from app.incidents.manager import investigate
+
+    detect(db, "MERCH_A")
+    inc = db.query(Incident).filter(Incident.merchant_id == "MERCH_A").first()
+    corroborating = len((inc.signals or {})["correlation"]["corroborating_rules"])
+
+    investigate(db, inc, owner)
+    assert inc.confidence_inputs["corroborating_rules"] == corroborating

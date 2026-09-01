@@ -1,3 +1,9 @@
+> **SUPERSEDED by `docs/MerchantOps-v2.md` — see ADR-0033.**
+>
+> This document remains the recorded justification for ADRs 0016–0032 and for every
+> bare `§N` citation in the source. v2 renumbers most sections; the crosswalk is in
+> ADR-0033. Where the two disagree, v2 governs.
+
 # MerchantOps
 ## Enterprise Real-Time AI Revenue Recovery & Merchant Operations Platform
 

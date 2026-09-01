@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from app.agent.confidence import assess
 from app.agent.runtime import AgentRuntime, Principal
 from app.audit.trace import record_incident
 from app.incidents.lifecycle import transition
@@ -106,10 +107,26 @@ def investigate(session, incident: Incident, principal: Principal,
     out = runtime.run(request, incident_id=incident.id,
                       correlation_id=incident.correlation_id)
 
+    # MerchantOps v2 §33: the platform assesses its own confidence from the
+    # evidence, before the incident moves anywhere. Computed here rather than
+    # inside the runtime because the subject is the *incident's* case, which
+    # includes evidence detection gathered before any agent ran -- the agent's
+    # own view of itself is one input among several, and the narrowest one.
+    assessment = assess(
+        evidence=list(incident.evidence),
+        tool_calls=list(out.task.tool_calls),
+        model_confidence=out.task.agent_confidence,
+    )
+    incident.confidence_band = assessment.band.value
+    incident.confidence_inputs = assessment.as_dict()
+    session.flush()
+
     record_incident(session, incident, "incident_investigated", {
         "task_id": out.task.id, "task_status": out.status.value,
         "tool_calls": out.task.tool_call_count,
         "duration_ms": out.task.duration_ms,
+        "confidence": assessment.band.value,
+        "model_confidence": out.task.agent_confidence,
     })
 
     target = _OUTCOME.get(out.status, S.ESCALATED)

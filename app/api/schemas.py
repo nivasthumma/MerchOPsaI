@@ -440,10 +440,14 @@ class IncidentSummary(Contract):
     detection_rule: str | None = None
     detection_version: str | None = None
     correlation_id: str | None = None
+    # MerchantOps v2 §33: HIGH | MEDIUM | LOW | INSUFFICIENT, computed by the
+    # platform from the evidence. Null before investigation.
+    confidence: str | None = None
     started_at: str
     detected_at: str
     resolved_at: str | None = None
     # Detail only.
+    confidence_inputs: dict | None = None
     signals: dict | None = None
     evidence: list[dict] | None = None
     recovery: PlanView | None = None

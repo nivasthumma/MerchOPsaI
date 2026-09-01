@@ -187,3 +187,46 @@ def test_every_lifecycle_move_is_audited(db, owner):
     for (_, to), (frm, _) in zip(chain, chain[1:]):
         assert to == frm, f"audit trail has a gap: {chain}"
     assert chain[0][0] == "DETECTED"
+
+
+# ------------------------------------------------- computed confidence (v2 §33)
+def test_investigation_records_the_platforms_band_and_its_derivation(db, owner):
+    from app.incidents.manager import investigate
+
+    detect(db, "MERCH_A")
+    inc = db.query(Incident).filter(
+        Incident.merchant_id == "MERCH_A").order_by(
+        Incident.revenue_at_risk_minor.desc()).first()
+    assert inc.confidence_band is None          # not assessed until investigated
+
+    investigate(db, inc, owner)
+
+    assert inc.confidence_band in ("HIGH", "MEDIUM", "LOW", "INSUFFICIENT")
+    inputs = inc.confidence_inputs
+    # The derivation, not just the verdict.
+    assert inputs["total_evidence"] > 0
+    assert inputs["independent_sources"] >= 1
+    assert inputs["reasons"]
+    assert inputs["band"] == inc.confidence_band
+
+
+def test_the_band_the_api_shows_is_not_the_number_the_model_chose(db, owner):
+    """MerchantOps v2 §33. The screen in §64 is a claim by the platform."""
+    from app.agent.confidence import Confidence
+    from app.incidents.manager import investigate
+
+    detect(db, "MERCH_A")
+    inc = db.query(Incident).filter(Incident.merchant_id == "MERCH_A").first()
+    out = investigate(db, inc, owner)
+
+    model_said = out["task"].agent_confidence
+    if model_said is not None:
+        # Whatever the model reported, the band never exceeds what the evidence
+        # supports. This is the asymmetry, asserted against a real run.
+        from app.agent.confidence import assess
+        without_model = assess(evidence=list(inc.evidence),
+                               tool_calls=list(out["task"].tool_calls))
+        order = ["INSUFFICIENT", "LOW", "MEDIUM", "HIGH"]
+        assert order.index(inc.confidence_band) <= order.index(
+            without_model.band.value), (
+            "the model's own confidence raised the band, which it must never do")

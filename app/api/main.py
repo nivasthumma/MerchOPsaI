@@ -817,6 +817,11 @@ def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
         "detection_rule": inc.detection_rule,
         "detection_version": inc.detection_version,
         "correlation_id": inc.correlation_id,
+        # MerchantOps v2 §33, §64. The band the platform computed, not the
+        # number the model chose for itself. Null until the incident has been
+        # investigated: an unassessed incident has no confidence, and showing
+        # one would be asserting a view nobody formed.
+        "confidence": inc.confidence_band,
         "started_at": inc.started_at.isoformat(),
         "detected_at": inc.detected_at.isoformat(),
         "resolved_at": inc.resolved_at.isoformat() if inc.resolved_at else None,
@@ -824,6 +829,9 @@ def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
     if not detail:
         return view
 
+    # The derivation, so "why HIGH?" has an answer that is not "the model said
+    # so". This is the difference between a computed band and an opaque one.
+    view["confidence_inputs"] = inc.confidence_inputs or {}
     view["signals"] = inc.signals
     view["evidence"] = [{
         "id": e.id, "key": e.key, "value": e.value.get("v"),

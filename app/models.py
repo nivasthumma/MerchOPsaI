@@ -432,6 +432,17 @@ class Incident(Base):
     detection_version: Mapped[str] = mapped_column(String(32))
     correlation_id: Mapped[str] = mapped_column(String(64), index=True)
 
+    # MerchantOps v2 §33. The band the PLATFORM computed from the evidence,
+    # and the inputs it computed it from. Distinct from
+    # `agent_tasks.agent_confidence`, which is the number the model chose for
+    # itself: that one is an input here, capable of lowering this band and
+    # never of raising it. See app/agent/confidence.py and ADR-0034.
+    #
+    # Nullable because an incident that has not been investigated has no
+    # assessed confidence, and defaulting it to a value would be asserting one.
+    confidence_band: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    confidence_inputs: Mapped[dict] = mapped_column(JSON, default=dict)
+
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

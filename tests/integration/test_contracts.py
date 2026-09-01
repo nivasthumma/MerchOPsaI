@@ -24,7 +24,14 @@ COMMITTED = ROOT / "docs" / "openapi.json"
 
 # Routes that legitimately do not return JSON. Listed rather than pattern
 # matched, so adding one is a decision somebody makes on purpose.
-NON_JSON_ROUTES = {"/metrics/prometheus"}
+NON_JSON_ROUTES = {
+    "/metrics/prometheus",
+    # `text/event-stream` — a sequence of frames, not one document. Its frames
+    # ARE modelled: each `data:` line is a `schemas.LiveEventView`, the same
+    # shape `/events` returns, and that route is checked normally. So the
+    # contract is covered; it is the envelope that has no JSON schema.
+    "/events/stream",
+}
 
 
 def api_routes() -> list[APIRoute]:

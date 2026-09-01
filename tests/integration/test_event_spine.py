@@ -204,3 +204,77 @@ def _any_incident(db) -> Incident:
     inc = db.query(Incident).first()
     assert inc is not None
     return inc
+
+
+# ------------------------------------------------------------------- endpoints
+@pytest.fixture
+def client(db):
+    from fastapi.testclient import TestClient
+
+    from app.api import security as sec
+    from app.api.main import app
+    sec.reset_rate_limits()
+    with TestClient(app) as c:
+        yield c
+    sec.reset_rate_limits()
+
+
+def _token(user_id: str) -> dict:
+    from app.api import security as sec
+    return {"Authorization": f"Bearer {sec.issue_token(user_id)}"}
+
+
+def test_events_endpoint_pages_and_reports_the_backlog(client, db):
+    detect(db, "MERCH_A")
+
+    r = client.get("/events?limit=2", headers=_token("USR_A_OWNER"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["events"]) <= 2
+    assert body["next_cursor"] == body["events"][-1]["id"]
+    # Nothing has drained yet, so everything raised is still pending.
+    assert body["pending"] >= len(body["events"])
+
+    nxt = client.get(f"/events?after={body['next_cursor']}",
+                     headers=_token("USR_A_OWNER")).json()
+    assert {e["id"] for e in nxt["events"]}.isdisjoint({e["id"] for e in body["events"]})
+
+
+def test_the_stream_is_scoped_by_the_token_not_by_a_parameter(client, db):
+    """A stream is still an authorised read — MerchantOps §54, §57."""
+    publish(db, "incident.created", merchant_id="MERCH_B", payload={"secret": "B"})
+    db.commit()
+
+    seen = client.get("/events", headers=_token("USR_A_OWNER")).json()
+    assert all(e["merchant_id"] == "MERCH_A" for e in seen["events"])
+    assert not any((e["payload"] or {}).get("secret") == "B" for e in seen["events"])
+
+
+def test_the_stream_emits_sse_frames_a_browser_can_resume_from(client, db):
+    detect(db, "MERCH_A")
+    db.commit()
+
+    r = client.get("/events/stream?seconds=1", headers=_token("USR_A_OWNER"))
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    body = r.text
+    # `id:` is what EventSource sends back as Last-Event-ID; without it a
+    # reconnect replays from the beginning or not at all.
+    assert "id: EVT_" in body
+    assert "event: incident.created" in body
+    assert "retry: " in body
+
+
+def test_drain_endpoint_moves_events_out_of_pending(client, db):
+    detect(db, "MERCH_A")
+    db.commit()
+
+    before = client.get("/events", headers=_token("USR_A_OWNER")).json()["pending"]
+    assert before > 0
+
+    r = client.post("/events/drain", headers=_token("USR_A_OWNER"))
+    assert r.status_code == 200, r.text
+    assert r.json()["published"] > 0
+
+    after = client.get("/events", headers=_token("USR_A_OWNER")).json()["pending"]
+    assert after < before

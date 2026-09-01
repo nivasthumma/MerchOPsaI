@@ -393,6 +393,40 @@ class WebhookEventList(Contract):
     unattributed_count: int
 
 
+# ------------------------------------------------------------- live events
+class LiveEventView(Contract):
+    """One frame of the live stream — MerchantOps v2 §11's field list, §62's names."""
+    id: str
+    event: str
+    schema_version: str
+    tenant_id: str | None = None
+    merchant_id: str | None = None
+    entity_id: str | None = None
+    provider: str | None = None
+    incident_id: str | None = None
+    task_id: str | None = None
+    correlation_id: str | None = None
+    occurred_at: str
+    payload_hash: str
+    payload: dict
+
+
+class LiveEventList(Contract):
+    events: list[LiveEventView]
+    # The id to pass back as `after` to continue. Null when nothing was
+    # returned, because a cursor of "nothing" is the cursor you already had.
+    next_cursor: str | None = None
+    # What the drain has not yet delivered. A number that only grows is the
+    # symptom of a stopped drain, and it is invisible from the frames alone.
+    pending: int
+
+
+class DrainReport(Contract):
+    claimed: int
+    published: int
+    failed: int
+
+
 # ----------------------------------------------------------------- incidents
 class IncidentSummary(Contract):
     id: str

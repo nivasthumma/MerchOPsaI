@@ -697,6 +697,115 @@ def list_webhook_events(limit: int = 50, status: str | None = None,
 
 
 # --------------------------------------------------------------------------
+# Live events — MerchantOps v2 §62, §65
+# --------------------------------------------------------------------------
+@app.get("/events", response_model=schemas.LiveEventList,
+         response_model_exclude_unset=True)
+def list_events(after: str | None = None, limit: int = 100,
+                principal: Principal = Depends(current_principal)):
+    """The event stream as a cursor-paged read — MerchantOps v2 §62.
+
+    This is the endpoint the UI timeline actually runs on, and `/events/stream`
+    is a convenience layered over it. Polling a cursor is unglamorous and it is
+    also the only thing that works on the deployment target: a Vercel function
+    has a wall-clock limit, so a held-open SSE connection is a connection that
+    drops on a timer and reconnects, which is a poll with extra steps and worse
+    failure modes.
+
+    Scoped to the caller's merchant. `pending` is reported alongside because a
+    drain that has stopped is invisible from the frames themselves — the
+    timeline simply stops moving, which looks like a quiet system.
+    """
+    from app.events.bus import PostgresEventStore
+    from app.models import EventOutbox, OutboxStatus
+
+    with session_scope() as s:
+        events = PostgresEventStore().since(
+            s, after=after, merchant_id=principal.merchant_id,
+            limit=min(limit, 500))
+        pending = s.query(EventOutbox).filter(
+            EventOutbox.merchant_id == principal.merchant_id,
+            EventOutbox.status == OutboxStatus.PENDING).count()
+        return {
+            "events": [e.as_dict() for e in events],
+            "next_cursor": events[-1].id if events else after,
+            "pending": pending,
+        }
+
+
+@app.get("/events/stream")
+def stream_events(after: str | None = None, seconds: int = 25,
+                  principal: Principal = Depends(current_principal)):
+    """The same events as `text/event-stream` — MerchantOps v2 §62, §65.
+
+    Bounded on purpose. The connection closes after `seconds` and the browser's
+    `EventSource` reconnects with `Last-Event-ID`, which is the cursor. An
+    unbounded stream would hold a database connection for as long as a tab is
+    open; on Vercel it would be killed anyway, and holding one per idle tab is
+    how a connection pool is exhausted by users who are reading rather than
+    doing anything.
+
+    The merchant scope is resolved once, here, from the bearer token — never
+    from a query parameter. A stream is still an authorised read.
+    """
+    import json as _json
+    import time as _time
+
+    from fastapi.responses import StreamingResponse
+
+    from app.events.bus import PostgresEventStore
+
+    merchant_id = principal.merchant_id
+    store = PostgresEventStore()
+    deadline = _time.monotonic() + max(1, min(seconds, 60))
+
+    def frames():
+        cursor = after
+        # Tell the client how long we intend to stay, so a reconnect storm is
+        # a deliberate cadence rather than a surprise.
+        yield f"retry: 2000\n: window {int(deadline - _time.monotonic())}s\n\n"
+        while _time.monotonic() < deadline:
+            with session_scope() as s:
+                batch = store.since(s, after=cursor, merchant_id=merchant_id,
+                                    limit=200)
+            for event in batch:
+                cursor = event.id
+                # `id:` is what the browser sends back as Last-Event-ID.
+                yield (f"id: {event.id}\n"
+                       f"event: {event.event_type}\n"
+                       f"data: {_json.dumps(event.as_dict(), default=str)}\n\n")
+            if not batch:
+                # A comment frame, not an event: keeps proxies from closing an
+                # idle connection without putting anything on the timeline.
+                yield ": keep-alive\n\n"
+                _time.sleep(1.0)
+
+    return StreamingResponse(frames(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform",
+        # Nginx and several CDN edges buffer a response body by default, which
+        # for an event stream means delivering it all at once at the end.
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    })
+
+
+@app.post("/events/drain", response_model=schemas.DrainReport)
+def drain_events(limit: int = 200, principal: Principal = Depends(current_principal)):
+    """Deliver pending events to their in-process consumers.
+
+    Exposed as a route because this deployment has no worker: v2 §13 permits a
+    "managed queue/event mechanism", and on Vercel the available one is a
+    scheduled invocation. Draining is idempotent and safe to call concurrently
+    — the claim is `FOR UPDATE SKIP LOCKED` — so a cron that overlaps itself
+    costs a wasted query rather than a double delivery.
+    """
+    from app.events.bus import drain
+
+    with session_scope() as s:
+        return drain(s, limit=min(limit, 1000))
+
+
+# --------------------------------------------------------------------------
 # Incidents — MerchantOps §13, §65
 # --------------------------------------------------------------------------
 def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:

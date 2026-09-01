@@ -752,6 +752,30 @@
         "title": "DispatchResult",
         "type": "object"
       },
+      "DrainReport": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed": {
+            "title": "Claimed",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "published": {
+            "title": "Published",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claimed",
+          "published",
+          "failed"
+        ],
+        "title": "DrainReport",
+        "type": "object"
+      },
       "EscalatedAction": {
         "additionalProperties": false,
         "properties": {
@@ -1538,6 +1562,157 @@
           "invariants_broken"
         ],
         "title": "LedgerView",
+        "type": "object"
+      },
+      "LiveEventList": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/LiveEventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "pending"
+        ],
+        "title": "LiveEventList",
+        "type": "object"
+      },
+      "LiveEventView": {
+        "additionalProperties": false,
+        "description": "One frame of the live stream \u2014 MerchantOps v2 \u00a711's field list, \u00a762's names.",
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "merchant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant Id"
+          },
+          "occurred_at": {
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "payload_hash": {
+            "title": "Payload Hash",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "id",
+          "event",
+          "schema_version",
+          "occurred_at",
+          "payload_hash",
+          "payload"
+        ],
+        "title": "LiveEventView",
         "type": "object"
       },
       "Me": {
@@ -3743,6 +3918,207 @@
           }
         },
         "summary": "Merchant Dashboard"
+      }
+    },
+    "/events": {
+      "get": {
+        "description": "The event stream as a cursor-paged read \u2014 MerchantOps v2 \u00a762.\n\nThis is the endpoint the UI timeline actually runs on, and `/events/stream`\nis a convenience layered over it. Polling a cursor is unglamorous and it is\nalso the only thing that works on the deployment target: a Vercel function\nhas a wall-clock limit, so a held-open SSE connection is a connection that\ndrops on a timer and reconnects, which is a poll with extra steps and worse\nfailure modes.\n\nScoped to the caller's merchant. `pending` is reported alongside because a\ndrain that has stopped is invisible from the frames themselves \u2014 the\ntimeline simply stops moving, which looks like a quiet system.",
+        "operationId": "list_events_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveEventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events"
+      }
+    },
+    "/events/drain": {
+      "post": {
+        "description": "Deliver pending events to their in-process consumers.\n\nExposed as a route because this deployment has no worker: v2 \u00a713 permits a\n\"managed queue/event mechanism\", and on Vercel the available one is a\nscheduled invocation. Draining is idempotent and safe to call concurrently\n\u2014 the claim is `FOR UPDATE SKIP LOCKED` \u2014 so a cron that overlaps itself\ncosts a wasted query rather than a double delivery.",
+        "operationId": "drain_events_events_drain_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrainReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drain Events"
+      }
+    },
+    "/events/stream": {
+      "get": {
+        "description": "The same events as `text/event-stream` \u2014 MerchantOps v2 \u00a762, \u00a765.\n\nBounded on purpose. The connection closes after `seconds` and the browser's\n`EventSource` reconnects with `Last-Event-ID`, which is the cursor. An\nunbounded stream would hold a database connection for as long as a tab is\nopen; on Vercel it would be killed anyway, and holding one per idle tab is\nhow a connection pool is exhausted by users who are reading rather than\ndoing anything.\n\nThe merchant scope is resolved once, here, from the bearer token \u2014 never\nfrom a query parameter. A stream is still an authorised read.",
+        "operationId": "stream_events_events_stream_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "seconds",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "title": "Seconds",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Events"
       }
     },
     "/failures/taxonomy": {

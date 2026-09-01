@@ -788,3 +788,72 @@ class EvaluationResult(Base):
     checks: Mapped[list] = mapped_column(JSON, default=list)
     metrics: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------------------------
+# Event spine (MerchantOps v2 §11, §12, §13)
+# --------------------------------------------------------------------------
+class OutboxStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    PUBLISHED = "PUBLISHED"
+    # A consumer refused the event and retrying will not help — an unknown
+    # event type, a payload that fails its own schema. Kept, not deleted:
+    # v2 §12 exists so that a failure to publish is visible rather than silent.
+    DEAD = "DEAD"
+
+
+class EventOutbox(Base):
+    """The transactional outbox — MerchantOps v2 §12.
+
+    The problem this solves is stated in v2 §12 as a two-line failure:
+    "Database update = success / Event publishing = failure". Anything that
+    emits an event by calling a bus after committing has that bug, because the
+    process can die in between. So the event is *written into the same
+    transaction as the business state it describes* and published afterwards by
+    a separate drain. Either both the incident and its `incident.created` row
+    exist, or neither does.
+
+    That inverts the failure mode rather than removing it: publishing can now
+    happen twice (drain, crash, drain again) but can never be lost. Consumers
+    must therefore be idempotent, which is why `id` is the event id a consumer
+    deduplicates on rather than a surrogate.
+
+    Field list is v2 §11's, verbatim. `entity_id` and `provider` are nullable
+    because an internally-generated event has no provider and may name no
+    single entity; forcing a value would mean inventing one.
+    """
+    __tablename__ = "event_outbox"
+
+    # The event id v2 §11 requires. Also the deduplication key for consumers.
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    schema_version: Mapped[str] = mapped_column(String(16), default="v1")
+
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    merchant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    incident_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+
+    status: Mapped[OutboxStatus] = mapped_column(
+        Enum(OutboxStatus, native_enum=False), default=OutboxStatus.PENDING, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # `occurred_at` is when the thing happened; `published_at` is when we told
+    # anyone. They differ by however long the drain took, which is the latency
+    # v2 §80 asks to be measured.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    # The drain reads PENDING in occurrence order; this is the index it uses.
+    __table_args__ = (Index("ix_outbox_drain", "status", "occurred_at"),)

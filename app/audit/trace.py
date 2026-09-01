@@ -1,12 +1,15 @@
 """Audit trail — CONTRACT §27, §39. Append-only from the application's view."""
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
 from app.models import AuditLog
+
+_log = logging.getLogger(__name__)
 
 # MerchantOps §47/§58. Set for the duration of a run so every event it writes
 # carries the same id without every call site having to pass one.
@@ -77,6 +80,9 @@ def record(session, task, event_type: str, payload: dict | None = None) -> Audit
     )
     session.add(entry)
     session.flush()
+    _mirror_to_stream(session, entry, task_id=entry.task_id,
+                      merchant_id=entry.merchant_id,
+                      incident_id=entry.incident_id)
     return entry
 
 
@@ -103,7 +109,59 @@ def record_incident(session, incident, event_type: str,
     )
     session.add(entry)
     session.flush()
+    _mirror_to_stream(session, entry, task_id=None,
+                      merchant_id=entry.merchant_id,
+                      incident_id=entry.incident_id,
+                      incident=incident)
     return entry
+
+
+def _mirror_to_stream(session, entry: AuditLog, *, task_id, merchant_id,
+                      incident_id, incident=None) -> None:
+    """Raise the v2 §62 stream frame this audit event corresponds to, if any.
+
+    Mirroring here rather than at each call site is deliberate. There are two
+    incident-creation paths and a dozen places that audit an action; asking each
+    to also remember a `publish` is asking for a timeline with holes in it, and
+    a hole in a live timeline looks exactly like nothing having happened.
+
+    Most audit events map to nothing and this returns immediately —
+    `FROM_AUDIT_EVENT` is partial on purpose (see `app.events.vocabulary`).
+
+    The publish shares this session, so the frame commits with the audit row and
+    the business state, which is the whole guarantee of v2 §12. It is also why
+    this must never raise: an event stream is a convenience, the audit row is
+    not, and a broken consumer registry must not be able to roll back the record
+    of what the system did.
+    """
+    from app.events.vocabulary import FROM_AUDIT_EVENT
+
+    event_type = FROM_AUDIT_EVENT.get(entry.event_type)
+
+    # `incident.resolved` has no audit event of its own -- it is one particular
+    # status change -- so it is derived rather than mapped.
+    if entry.event_type == "incident_status_changed":
+        if (entry.payload or {}).get("to") == "RESOLVED":
+            event_type = "incident.resolved"
+        else:
+            return
+    if event_type is None:
+        return
+
+    from app.events.bus import publish
+
+    try:
+        publish(
+            session, event_type,
+            payload=entry.payload or {},
+            merchant_id=merchant_id,
+            tenant_id=getattr(incident, "tenant_id", None),
+            incident_id=incident_id,
+            task_id=task_id,
+            correlation_id=entry.correlation_id,
+        )
+    except Exception:
+        _log.warning("stream frame not raised for %s", entry.event_type, exc_info=True)
 
 
 # MerchantOps §47 names its events in its own vocabulary. Ours are snake_case,

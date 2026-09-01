@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from app.agent.confidence import assess
 from app.agent.runtime import AgentRuntime, Principal
 from app.audit.trace import record_incident
+from app.evidence.graph import build as build_graph
 from app.incidents.lifecycle import transition
 from app.models import (
     Incident, IncidentEvidence, IncidentSeverity, IncidentStatus as S,
@@ -125,6 +126,12 @@ def investigate(session, incident: Incident, principal: Principal,
     incident.confidence_band = assessment.band.value
     incident.confidence_inputs = assessment.as_dict()
     session.flush()
+
+    # MerchantOps v2 §32: draw the evidence graph from what is now recorded, so
+    # "why do you believe this?" has an answer that is not the model's prose.
+    # After the assessment because a root-cause edge is only drawn from a
+    # grounded finding, and grounding is settled by the time the run returns.
+    build_graph(session, incident, findings=out.task.findings or [])
 
     record_incident(session, incident, "incident_investigated", {
         "task_id": out.task.id, "task_status": out.status.value,

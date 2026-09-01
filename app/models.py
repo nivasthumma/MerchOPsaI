@@ -868,3 +868,107 @@ class EventOutbox(Base):
 
     # The drain reads PENDING in occurrence order; this is the index it uses.
     __table_args__ = (Index("ix_outbox_drain", "status", "occurred_at"),)
+
+
+# --------------------------------------------------------------------------
+# Evidence graph (MerchantOps v2 §32)
+# --------------------------------------------------------------------------
+class Predicate(str, enum.Enum):
+    """The relationships v2 §32 draws, and one it needs but does not name.
+
+    §32's own figure uses four:
+
+        Incident ── caused_by ──────> a cause
+                 ── affects ────────> customers, payment attempts
+                 ── creates ────────> revenue risk
+                 └─ supported_by ───> E101 .. E104
+
+    CONTRADICTS is the fifth. §32 has no use for it on its own, but §30's
+    hypothesis engine rejects a hypothesis by weighing evidence against it, and
+    §33's "evidence agreement" is not a computable quantity if disagreement
+    cannot be expressed. A graph that can only record support can only ever
+    agree with itself.
+    """
+    CAUSED_BY = "CAUSED_BY"
+    AFFECTS = "AFFECTS"
+    CREATES = "CREATES"
+    SUPPORTED_BY = "SUPPORTED_BY"
+    CONTRADICTS = "CONTRADICTS"
+
+
+class EvidenceEdge(Base):
+    """One typed relationship in an incident's evidence graph — v2 §32.
+
+    §32's stated purpose is a question a merchant can ask:
+
+        "Why do you believe this?"
+
+    A flat list of evidence rows cannot answer it. It says what was looked at
+    and not what any of it was taken to mean, so the reasoning stays in prose
+    the platform did not write and cannot check.
+
+    ## The graph is the platform's, not the model's
+
+    Edges are written by deterministic code from state that already exists --
+    detection signals, evidence rows, recovery candidates, the calculation
+    engine's figures. The model may *cite* evidence, and `app/agent/output.py`
+    already refuses a claim citing evidence that does not exist. It may not
+    assert a relationship. An `AFFECTS` edge saying 1,842 customers were hit is
+    a number, and §22 and §34 own numbers.
+
+    ## It is a projection
+
+    Every edge is derivable from the rows it points at, so the graph can be
+    dropped and rebuilt. It is stored rather than computed on read because §32
+    wants it queryable and because an edge records *when* the system drew the
+    relationship, which a recomputation cannot recover.
+
+    `object_value` carries the objects that are not rows -- a revenue figure, a
+    count, a method name. Nullable `object_id` and nullable `object_value`
+    rather than one polymorphic column: an edge to a row and an edge to a
+    quantity are different things, and collapsing them would mean every reader
+    guessing which it has.
+    """
+    __tablename__ = "evidence_edges"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    # Tenancy is checked outermost-first everywhere else (ADR-0025) and the
+    # graph is no exception -- it is a read surface like any other.
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    merchant_id: Mapped[str] = mapped_column(String(64), index=True)
+
+    # Every edge belongs to one incident's case. The graph is per-incident
+    # because "why do you believe this?" is always asked about something.
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+
+    subject_type: Mapped[str] = mapped_column(String(32))
+    subject_id: Mapped[str] = mapped_column(String(64))
+    predicate: Mapped[Predicate] = mapped_column(
+        Enum(Predicate, native_enum=False), index=True)
+    object_type: Mapped[str] = mapped_column(String(32))
+    object_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    object_value: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Which deterministic producer drew it: a detection rule name, "recovery
+    # planner", "calculation engine". Never a model. An edge whose origin
+    # cannot be named is an assertion nobody owns.
+    drawn_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True)
+
+    # An incident asserting the same relationship twice is the same assertion,
+    # so the graph refuses it rather than accumulating duplicates on every
+    # re-run. This is the same reasoning as `incidents.detection_key`.
+    #
+    # NULLS NOT DISTINCT is load-bearing, not decoration. `object_id` is NULL
+    # for every edge whose object is a quantity rather than a row -- the
+    # revenue figure, the affected counts, the model's root cause -- and under
+    # the SQL default two NULLs are distinct, so precisely those edges would
+    # have escaped the constraint and duplicated on every re-investigation.
+    # The edges most likely to be redrawn are the ones it would have missed.
+    __table_args__ = (
+        UniqueConstraint("incident_id", "subject_type", "subject_id", "predicate",
+                         "object_type", "object_id", name="uq_edge_once",
+                         postgresql_nulls_not_distinct=True),
+        Index("ix_edge_subject", "incident_id", "subject_type", "subject_id"),
+    )

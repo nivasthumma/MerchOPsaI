@@ -906,6 +906,34 @@ def get_incident_trace(incident_id: str,
         return {"incident_id": incident_id, "trace": trace_for_incident(s, incident_id)}
 
 
+@app.get("/incidents/{incident_id}/evidence-graph",
+         response_model=schemas.EvidenceGraph,
+         response_model_exclude_unset=True)
+def get_evidence_graph(incident_id: str,
+                       principal: Principal = Depends(current_principal)):
+    """MerchantOps v2 §32 — "why do you believe this?", as structure.
+
+    The trace next door says what the system *did*. This says what it took any
+    of it to *mean*, which a flat evidence list cannot: that one shows what was
+    looked at, and leaves the reasoning in prose the platform did not write and
+    cannot check.
+
+    `lines` is the same graph, one line per edge, so a reader can confirm that
+    nothing was added between the edges and any sentence written from them.
+    """
+    from app.evidence.graph import explain, why
+
+    with session_scope() as s:
+        _owned_incident(s, incident_id, principal)
+        edges = explain(s, incident_id)
+        return {
+            "incident_id": incident_id,
+            "edges": edges,
+            "edge_count": sum(len(v) for v in edges.values()),
+            "lines": why(s, incident_id),
+        }
+
+
 @app.post("/incidents/detect", response_model=schemas.DetectResult,
           response_model_exclude_unset=True)
 def run_detection(principal: Principal = Depends(current_principal)):

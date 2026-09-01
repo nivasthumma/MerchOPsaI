@@ -393,6 +393,35 @@ class WebhookEventList(Contract):
     unattributed_count: int
 
 
+# ---------------------------------------------------------- evidence graph
+class EvidenceEdgeView(Contract):
+    """One typed relationship — MerchantOps v2 §32."""
+    id: str
+    subject: dict
+    object: dict
+    drawn_by: str
+    at: str
+
+
+class EvidenceGraph(Contract):
+    """§32's answer to "why do you believe this?", grouped by relationship.
+
+    Predicates are keys rather than a flat list because the question is asked
+    one relationship at a time: what caused it, what it affects, what it
+    creates, what supports it. A flat list would put the reader back where the
+    evidence table left them.
+    """
+    incident_id: str
+    # {CAUSED_BY: [...], SUPPORTED_BY: [...], ...}. Absent predicates are
+    # omitted rather than sent empty: an incident with nothing contradicting it
+    # should not render a "contradicted by" heading with nothing under it.
+    edges: dict[str, list[EvidenceEdgeView]]
+    edge_count: int
+    # The same graph as one line per edge, so a reader can see that nothing was
+    # added between the graph and any sentence written from it.
+    lines: list[str]
+
+
 # ------------------------------------------------------------- live events
 class LiveEventView(Contract):
     """One frame of the live stream — MerchantOps v2 §11's field list, §62's names."""

@@ -881,6 +881,82 @@
         "title": "EscalatedAction",
         "type": "object"
       },
+      "EvidenceEdgeView": {
+        "additionalProperties": false,
+        "description": "One typed relationship \u2014 MerchantOps v2 \u00a732.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "drawn_by": {
+            "title": "Drawn By",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "object": {
+            "additionalProperties": true,
+            "title": "Object",
+            "type": "object"
+          },
+          "subject": {
+            "additionalProperties": true,
+            "title": "Subject",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "object",
+          "drawn_by",
+          "at"
+        ],
+        "title": "EvidenceEdgeView",
+        "type": "object"
+      },
+      "EvidenceGraph": {
+        "additionalProperties": false,
+        "description": "\u00a732's answer to \"why do you believe this?\", grouped by relationship.\n\nPredicates are keys rather than a flat list because the question is asked\none relationship at a time: what caused it, what it affects, what it\ncreates, what supports it. A flat list would put the reader back where the\nevidence table left them.",
+        "properties": {
+          "edge_count": {
+            "title": "Edge Count",
+            "type": "integer"
+          },
+          "edges": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/EvidenceEdgeView"
+              },
+              "type": "array"
+            },
+            "title": "Edges",
+            "type": "object"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_id",
+          "edges",
+          "edge_count",
+          "lines"
+        ],
+        "title": "EvidenceGraph",
+        "type": "object"
+      },
       "FailureClassView": {
         "additionalProperties": false,
         "description": "MerchantOps \u00a756. A code says what broke; this says whether trying again\nis even the question.",
@@ -4371,6 +4447,62 @@
           }
         },
         "summary": "Get Incident"
+      }
+    },
+    "/incidents/{incident_id}/evidence-graph": {
+      "get": {
+        "description": "MerchantOps v2 \u00a732 \u2014 \"why do you believe this?\", as structure.\n\nThe trace next door says what the system *did*. This says what it took any\nof it to *mean*, which a flat evidence list cannot: that one shows what was\nlooked at, and leaves the reasoning in prose the platform did not write and\ncannot check.\n\n`lines` is the same graph, one line per edge, so a reader can confirm that\nnothing was added between the edges and any sentence written from them.",
+        "operationId": "get_evidence_graph_incidents__incident_id__evidence_graph_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Evidence Graph"
       }
     },
     "/incidents/{incident_id}/investigate": {

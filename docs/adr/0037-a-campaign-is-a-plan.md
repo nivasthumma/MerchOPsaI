@@ -67,6 +67,15 @@ still spent an action and still reached a customer; a budget that counted only
 successes would let a campaign retry indefinitely at no recorded cost, which is
 the opposite of a bound.
 
+That rule initially held in unit tests and in no scenario — the mutation run
+reported `campaign: count only successful attempts against the budget` as caught
+by tests alone. The state it needs was unreachable from a scenario: settling a
+candidate requires executing one, and the seeded path executes only what
+succeeds. `settle_failed_candidates` constructs it, the same way
+`plant_provider_events` and `plant_untrusted_evidence` construct states the seed
+cannot reach, and CMP-05 asserts the pair a budget counting only successes
+cannot produce: spend recorded while nothing was recovered.
+
 ## `exhausted` reports and does not decide
 
 The card names bounds already used up. It does not act on them.

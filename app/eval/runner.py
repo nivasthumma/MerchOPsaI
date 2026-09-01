@@ -695,6 +695,26 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
             setattr(plan, k, v)
         session.flush()
 
+    # MerchantOps v2 §38. A campaign that has spent budget on attempts that did
+    # NOT recover is the state the budget rule is actually about, and no
+    # scenario could reach it: settling a candidate requires executing one, and
+    # the seeded path executes only the ones that succeed. So the state is
+    # constructed, as `plant_provider_events` and `plant_untrusted_evidence`
+    # are, and the scenario says so.
+    n_failed = int(sc.initial_state.get("settle_failed_candidates") or 0)
+    if n_failed:
+        from app.models import CandidateStatus as _CS
+        from app.models import RecoveryCandidate
+
+        rows = (session.query(RecoveryCandidate)
+                .filter(RecoveryCandidate.plan_id == plan.id,
+                        RecoveryCandidate.status == _CS.ELIGIBLE)
+                .order_by(RecoveryCandidate.rank).limit(n_failed).all())
+        for c in rows:
+            c.status = _CS.FAILED
+            c.actual_recovery_minor = 0      # spent, and nothing came back
+        session.flush()
+
     if sc.single_candidate:
         for c in executable_candidates(session, plan)[1:]:
             c.executable = False
@@ -761,6 +781,17 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
                   sorted(card["exhausted"]) == sorted(e.campaign_exhausted),
                   f"expected {sorted(e.campaign_exhausted)}, "
                   f"got {sorted(card['exhausted'])}")
+
+        if e.campaign_counts_failed_attempts is not None:
+            # Spend recorded while nothing was recovered. The two together are
+            # what a budget counting only successes cannot produce.
+            b = card["budget"]
+            ok = (card["failed"] > 0 and card["recovered"] == 0
+                  and b["spent_minor"] > 0 and b["actions_taken"] > 0)
+            check("campaign_counts_failed_attempts",
+                  ok == e.campaign_counts_failed_attempts,
+                  f"failed={card['failed']} recovered={card['recovered']} "
+                  f"spent={b['spent_minor']} actions={b['actions_taken']}")
         # A refused dispatch must not have moved money either.
         check("refusal_moved_no_money",
               (not refused) or (session.query(Refund).count() == money_before[0]),

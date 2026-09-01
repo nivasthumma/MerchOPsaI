@@ -2168,3 +2168,19 @@
     campaign_exhausted: [max_actions]
     plan_status: DRAFT
     campaign_counts_are_coherent: true
+
+- id: CMP-05
+  category: recovery
+  critical: true
+  description: An attempt that recovered nothing still consumed budget.
+  plan_for: PAYMENT_DEGRADATION
+  # Three attempts that settled without recovering. Reachable only by
+  # construction: settling a candidate requires executing one, and the seeded
+  # path executes only what succeeds.
+  initial_state: {settle_failed_candidates: 3}
+  expect:
+    # Spend recorded while nothing was recovered — the pair a budget counting
+    # only successes cannot produce. Without this the rule held in unit tests
+    # and no scenario could watch it break (ADR-0037).
+    campaign_counts_failed_attempts: true
+    campaign_counts_are_coherent: true

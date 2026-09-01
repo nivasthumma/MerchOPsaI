@@ -126,6 +126,10 @@ class Expect(BaseModel):
     campaign_reports_consumption: bool | None = None
     # Bounds already used up, exactly.
     campaign_exhausted: list[str] | None = None
+    # An attempt that recovered nothing still consumed budget. A campaign whose
+    # spend counted only successes could retry indefinitely at no recorded
+    # cost, which is the opposite of a bound.
+    campaign_counts_failed_attempts: bool | None = None
     plan_is_idempotent: bool | None = None
     no_financial_effect_from_planning: bool = False
 

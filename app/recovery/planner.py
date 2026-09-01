@@ -60,6 +60,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record_incident
 from app.config import get_settings
+from app.recovery.history import MIN_SAMPLE, outcome_for
+from app.recovery.stopping import MAX_UNATTENDED_RISK
 from app.models import (
     CandidateStatus, Incident, IncidentType, Intervention, PlanStatus,
     RecoveryCandidate, RecoveryPlan,
@@ -235,9 +237,35 @@ def compute_plan(session, incident: Incident) -> PlanDraft:
         rate, basis = 1.0, ("A refund returns a known amount; expected recovery is "
                             "the unrefunded balance.")
     else:
-        basis = (f"Failed volume attributed to this incident, times the method's "
-                 f"own prior-period success rate ({rate:.1%}). An estimate of "
-                 f"conversion on re-presentation, not a commitment.")
+        # MerchantOps v2 §40. The method's prior-period success rate is a
+        # PROXY: it assumes re-presentation converts as well as the rail did
+        # before it broke. Once this intervention has a settled record for this
+        # merchant, that record is a measurement of the same question and a
+        # strictly better answer, so it replaces the proxy.
+        #
+        # By VALUE rather than by count, because this multiplies money. Nine
+        # small recoveries and one large loss is a good count rate and a poor
+        # value rate, and the count rate would overstate what the campaign is
+        # worth (see app/recovery/history.py).
+        measured = outcome_for(session, incident.merchant_id, intervention)
+        if measured.value_rate is not None:
+            rate = measured.value_rate
+            basis = (f"Failed volume attributed to this incident, times this "
+                     f"merchant's MEASURED recovery rate for "
+                     f"{intervention.value} ({rate:.1%} by value, over "
+                     f"{measured.attempts} settled attempts). An estimate from "
+                     f"outcomes, not a commitment.")
+        else:
+            # Said out loud rather than left implicit. A reader comparing two
+            # plans needs to know which figure came from evidence and which
+            # from a proxy, and `measured.attempts` says how far off having one
+            # this merchant is.
+            basis = (f"Failed volume attributed to this incident, times the method's "
+                     f"own prior-period success rate ({rate:.1%}). An estimate of "
+                     f"conversion on re-presentation, not a commitment. "
+                     f"No measured recovery rate yet for {intervention.value}: "
+                     f"{measured.attempts} settled attempts, "
+                     f"{MIN_SAMPLE} needed.")
 
     # Attribute the volume to the incident before counting any of it. See the
     # module docstring: total failed volume includes failures that would have
@@ -318,6 +346,11 @@ def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
         max_actions=s.recovery_max_actions,
         max_attempts_per_customer=s.recovery_max_attempts_per_customer,
         max_duration_seconds=s.recovery_max_duration_seconds,
+        # v2 §38's fifth bound, copied at creation like the other four. It was
+        # enforced before this from a module constant, which is a real control
+        # and not an explicit campaign limit: an approver reading a plan could
+        # not tell what risk it was authorised to take.
+        max_risk_level=MAX_UNATTENDED_RISK,
         planner_version=PLANNER_VERSION,
         correlation_id=incident.correlation_id,
         expires_at=now + timedelta(seconds=s.recovery_max_duration_seconds),

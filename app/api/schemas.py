@@ -327,10 +327,12 @@ class ReconcileReport(Contract):
 
 # ------------------------------------------------------------------ recovery
 class PlanBudget(Contract):
+    """MerchantOps v2 §38's five bounds. All five belong to the plan."""
     max_recovery_minor: int
     max_actions: int
     max_attempts_per_customer: int
     max_duration_seconds: int
+    max_risk_level: str
 
 
 class CandidateView(Contract):
@@ -391,6 +393,96 @@ class WebhookEventList(Contract):
     # aggregate only; showing their bodies would make an unauthenticated
     # endpoint into a cross-tenant read.
     unattributed_count: int
+
+
+# --------------------------------------------------------- campaigns (§37)
+class CampaignBudget(Contract):
+    """§38's five bounds, each beside what has been used against it.
+
+    A limit with no consumption reading is a limit nobody can see approaching,
+    which for a merchant watching an ACTIVE campaign is the only thing they
+    actually want to know.
+    """
+    max_recovery_minor: int
+    spent_minor: int
+    max_actions: int
+    actions_taken: int
+    max_attempts_per_customer: int
+    max_duration_seconds: int
+    elapsed_seconds: int
+    # §38's fifth bound. It was enforced as a module constant before this;
+    # a limit nobody can see on the campaign is not an explicit limit.
+    max_risk_level: str
+
+
+class CampaignView(Contract):
+    """MerchantOps v2 §37's card. A projection of a plan, not a second entity."""
+    id: str
+    incident_id: str
+    objective: str
+    intervention: str
+    status: str
+
+    affected: int
+    eligible: int
+    ineligible: int
+    attempted: int
+    recovered: int
+    failed: int
+    unknown: int
+    skipped: int
+
+    revenue_at_risk_minor: int
+    eligible_recovery_minor: int
+    # An ESTIMATE, returned with its basis so a client cannot render the figure
+    # without the reasoning (§49).
+    expected_recovery_minor: int
+    expected_recovery_basis: str
+    # What was actually recovered. A different field from expected, always.
+    recovered_minor: int
+
+    budget: CampaignBudget
+    # Bounds already used up. Reported, never acted on — the stopping rules are
+    # the authority on whether a campaign may continue.
+    exhausted: list[str] = []
+
+    stop_rule: str | None = None
+    stop_reason: str | None = None
+    expires_at: str
+
+
+class CampaignList(Contract):
+    campaigns: list[CampaignView]
+    total_expected_recovery_minor: int
+
+
+# ------------------------------------------------------------- hypotheses
+class HypothesisView(Contract):
+    """One candidate explanation and how it fared — MerchantOps v2 §30."""
+    id: str
+    label: str
+    key: str
+    statement: str
+    status: str
+    proposed_by: str
+    support_count: int
+    contradiction_count: int
+    # The platform's words for why it landed where it did. A rejected
+    # hypothesis with no stated reason is an assertion.
+    verdict_reason: str | None = None
+    adjudicated_at: str | None = None
+
+
+class HypothesisSet(Contract):
+    incident_id: str
+    hypotheses: list[HypothesisView]
+    # The sole surviving explanation, or null. Null both when nothing survived
+    # and when several did — neither of which is "the first one".
+    leading: str | None = None
+    # Named rather than left to be counted off the list: a hypothesis nobody
+    # could test is a gap in instrumentation, and it should be as visible as
+    # the verdicts around it.
+    untested: list[str] = []
 
 
 # ---------------------------------------------------------- evidence graph

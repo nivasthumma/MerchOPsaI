@@ -515,6 +515,19 @@ class RecoveryPlan(Base):
     max_attempts_per_customer: Mapped[int] = mapped_column(Integer)
     max_duration_seconds: Mapped[int] = mapped_column(Integer)
 
+    # v2 §38 lists five bounds and this was the fifth: "Maximum risk". It was
+    # enforced, but as a module constant shared by every campaign, which is a
+    # different thing from a bound the campaign carries. §38's sentence is
+    # "Every campaign must have explicit limits", and a limit nobody can see on
+    # the campaign is not explicit -- an approver reading a plan could not tell
+    # what risk it was authorised to take without reading the source.
+    #
+    # Copied at creation for the same reason the other four are: the bounds are
+    # part of the decision that authorised the campaign, and lowering the global
+    # ceiling must not silently retighten a campaign already in flight, nor
+    # raising it silently widen one.
+    max_risk_level: Mapped[str] = mapped_column(String(16), default="HIGH")
+
     # --- §28: why it stopped, if it did ---
     stop_rule: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stop_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

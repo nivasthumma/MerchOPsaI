@@ -524,6 +524,217 @@
         "title": "ApprovalView",
         "type": "object"
       },
+      "CampaignBudget": {
+        "additionalProperties": false,
+        "description": "\u00a738's five bounds, each beside what has been used against it.\n\nA limit with no consumption reading is a limit nobody can see approaching,\nwhich for a merchant watching an ACTIVE campaign is the only thing they\nactually want to know.",
+        "properties": {
+          "actions_taken": {
+            "title": "Actions Taken",
+            "type": "integer"
+          },
+          "elapsed_seconds": {
+            "title": "Elapsed Seconds",
+            "type": "integer"
+          },
+          "max_actions": {
+            "title": "Max Actions",
+            "type": "integer"
+          },
+          "max_attempts_per_customer": {
+            "title": "Max Attempts Per Customer",
+            "type": "integer"
+          },
+          "max_duration_seconds": {
+            "title": "Max Duration Seconds",
+            "type": "integer"
+          },
+          "max_recovery_minor": {
+            "title": "Max Recovery Minor",
+            "type": "integer"
+          },
+          "max_risk_level": {
+            "title": "Max Risk Level",
+            "type": "string"
+          },
+          "spent_minor": {
+            "title": "Spent Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_recovery_minor",
+          "spent_minor",
+          "max_actions",
+          "actions_taken",
+          "max_attempts_per_customer",
+          "max_duration_seconds",
+          "elapsed_seconds",
+          "max_risk_level"
+        ],
+        "title": "CampaignBudget",
+        "type": "object"
+      },
+      "CampaignList": {
+        "additionalProperties": false,
+        "properties": {
+          "campaigns": {
+            "items": {
+              "$ref": "#/components/schemas/CampaignView"
+            },
+            "title": "Campaigns",
+            "type": "array"
+          },
+          "total_expected_recovery_minor": {
+            "title": "Total Expected Recovery Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "campaigns",
+          "total_expected_recovery_minor"
+        ],
+        "title": "CampaignList",
+        "type": "object"
+      },
+      "CampaignView": {
+        "additionalProperties": false,
+        "description": "MerchantOps v2 \u00a737's card. A projection of a plan, not a second entity.",
+        "properties": {
+          "affected": {
+            "title": "Affected",
+            "type": "integer"
+          },
+          "attempted": {
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/CampaignBudget"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "eligible_recovery_minor": {
+            "title": "Eligible Recovery Minor",
+            "type": "integer"
+          },
+          "exhausted": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Exhausted",
+            "type": "array"
+          },
+          "expected_recovery_basis": {
+            "title": "Expected Recovery Basis",
+            "type": "string"
+          },
+          "expected_recovery_minor": {
+            "title": "Expected Recovery Minor",
+            "type": "integer"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "ineligible": {
+            "title": "Ineligible",
+            "type": "integer"
+          },
+          "intervention": {
+            "title": "Intervention",
+            "type": "string"
+          },
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "recovered": {
+            "title": "Recovered",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stop_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Rule"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "objective",
+          "intervention",
+          "status",
+          "affected",
+          "eligible",
+          "ineligible",
+          "attempted",
+          "recovered",
+          "failed",
+          "unknown",
+          "skipped",
+          "revenue_at_risk_minor",
+          "eligible_recovery_minor",
+          "expected_recovery_minor",
+          "expected_recovery_basis",
+          "recovered_minor",
+          "budget",
+          "expires_at"
+        ],
+        "title": "CampaignView",
+        "type": "object"
+      },
       "CandidateView": {
         "additionalProperties": false,
         "properties": {
@@ -1241,6 +1452,119 @@
           "agent_budget"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "HypothesisSet": {
+        "additionalProperties": false,
+        "properties": {
+          "hypotheses": {
+            "items": {
+              "$ref": "#/components/schemas/HypothesisView"
+            },
+            "title": "Hypotheses",
+            "type": "array"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "leading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leading"
+          },
+          "untested": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Untested",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_id",
+          "hypotheses"
+        ],
+        "title": "HypothesisSet",
+        "type": "object"
+      },
+      "HypothesisView": {
+        "additionalProperties": false,
+        "description": "One candidate explanation and how it fared \u2014 MerchantOps v2 \u00a730.",
+        "properties": {
+          "adjudicated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjudicated At"
+          },
+          "contradiction_count": {
+            "title": "Contradiction Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "statement": {
+            "title": "Statement",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "support_count": {
+            "title": "Support Count",
+            "type": "integer"
+          },
+          "verdict_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict Reason"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "key",
+          "statement",
+          "status",
+          "proposed_by",
+          "support_count",
+          "contradiction_count"
+        ],
+        "title": "HypothesisView",
         "type": "object"
       },
       "IncidentBrief": {
@@ -2141,6 +2465,7 @@
       },
       "PlanBudget": {
         "additionalProperties": false,
+        "description": "MerchantOps v2 \u00a738's five bounds. All five belong to the plan.",
         "properties": {
           "max_actions": {
             "title": "Max Actions",
@@ -2157,13 +2482,18 @@
           "max_recovery_minor": {
             "title": "Max Recovery Minor",
             "type": "integer"
+          },
+          "max_risk_level": {
+            "title": "Max Risk Level",
+            "type": "string"
           }
         },
         "required": [
           "max_recovery_minor",
           "max_actions",
           "max_attempts_per_customer",
-          "max_duration_seconds"
+          "max_duration_seconds",
+          "max_risk_level"
         ],
         "title": "PlanBudget",
         "type": "object"
@@ -3920,6 +4250,109 @@
         "summary": "List Approvals"
       }
     },
+    "/campaigns": {
+      "get": {
+        "description": "Recovery campaigns still capable of acting \u2014 MerchantOps v2 \u00a737.\n\nA campaign IS a recovery plan; there is no second table. This is \u00a737's card\nover the same rows, with the affected/eligible split and the budget\nconsumption the plan does not store because both go stale the moment a\ncandidate moves.\n\nOrdered by expected recovery, so the campaign worth watching is first.\nFinished campaigns are excluded for the same reason `open_incidents`\nexcludes RESOLVED.",
+        "operationId": "list_campaigns_campaigns_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Campaigns"
+      }
+    },
+    "/campaigns/{plan_id}": {
+      "get": {
+        "description": "\u00a737's card for one campaign, finished or not.\n\nUnlike the list, this does not exclude a stopped campaign: the question\n\"what happened to RC-017\" is asked most often about one that ended.",
+        "operationId": "get_campaign_campaigns__plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Campaign"
+      }
+    },
     "/config/llm-provider": {
       "post": {
         "description": "Switch between providers that are already configured.\n\nDeliberately narrow. It selects among providers the process can already\nreach; it never accepts a credential. CONTRACT \u00a737 keeps secrets in the\nenvironment, and a browser form is not that.\n\nThe override is process-local and does not survive a restart \u2014 with more\nthan one worker, each would hold its own. Persisting it would make the\nactive provider a piece of durable state that no environment variable\nexplains, which is a worse trade.",
@@ -4503,6 +4936,62 @@
           }
         },
         "summary": "Get Evidence Graph"
+      }
+    },
+    "/incidents/{incident_id}/hypotheses": {
+      "get": {
+        "description": "The competing explanations and how each fared \u2014 MerchantOps v2 \u00a730.\n\nRead-only. Hypotheses are proposed and adjudicated during investigation,\nbecause a verdict computed at read time would differ between two people\nopening the same incident \u2014 which is the opposite of what an audit surface\nis for.\n\n`untested` is named rather than left to be counted off the list. A\nhypothesis nothing here can test is a gap in instrumentation, and it should\nbe as visible as the verdicts beside it.",
+        "operationId": "get_hypotheses_incidents__incident_id__hypotheses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HypothesisSet"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Hypotheses"
       }
     },
     "/incidents/{incident_id}/investigate": {

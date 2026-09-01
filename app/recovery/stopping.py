@@ -159,11 +159,18 @@ def evaluate_stopping_rules(session, plan: RecoveryPlan,
                             "proceed and must not be retried blindly.")
 
     # --- risk exceeds the allowed level -> ESCALATE ----------------------
-    if risk_level and RISK_ORDER.get(risk_level, 0) > RISK_ORDER[MAX_UNATTENDED_RISK]:
+    # The CAMPAIGN's ceiling, not the module's. v2 §38 counts maximum risk
+    # among the bounds every campaign must carry explicitly, and reading the
+    # constant here meant a plan authorised under one ceiling would silently
+    # start obeying another the moment the constant moved. Falls back to the
+    # constant for a plan created before the column existed.
+    ceiling = getattr(plan, "max_risk_level", None) or MAX_UNATTENDED_RISK
+    if risk_level and RISK_ORDER.get(risk_level, 0) > RISK_ORDER[ceiling]:
         return StopDecision(Disposition.ESCALATE, "risk_exceeds_allowed_level",
-                            f"An action graded {risk_level} is above the {MAX_UNATTENDED_RISK} "
-                            f"ceiling for automated recovery; it needs a human.",
-                            {"risk_level": risk_level, "ceiling": MAX_UNATTENDED_RISK})
+                            f"An action graded {risk_level} is above the {ceiling} "
+                            f"ceiling this campaign was authorised under; it needs "
+                            f"a human.",
+                            {"risk_level": risk_level, "ceiling": ceiling})
 
     # --- evidence insufficient -> ESCALATE -------------------------------
     # A plan with no candidates at all means the detection signals did not

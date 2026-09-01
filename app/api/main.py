@@ -534,6 +534,9 @@ def _plan_view(s, plan: RecoveryPlan, *, detail: bool = False) -> dict:
             "max_actions": plan.max_actions,
             "max_attempts_per_customer": plan.max_attempts_per_customer,
             "max_duration_seconds": plan.max_duration_seconds,
+            # v2 §38's fifth bound. Shown here too, so a reader of the plan
+            # sees the same five limits the campaign card shows.
+            "max_risk_level": plan.max_risk_level,
         },
         "stop_rule": plan.stop_rule, "stop_reason": plan.stop_reason,
         "planner_version": plan.planner_version,
@@ -585,6 +588,45 @@ def create_recovery_plan(incident_id: str,
 def get_recovery_plan(plan_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         return _plan_view(s, _owned_plan(s, plan_id, principal), detail=True)
+
+
+@app.get("/campaigns", response_model=schemas.CampaignList,
+         response_model_exclude_unset=True)
+def list_campaigns(principal: Principal = Depends(current_principal)):
+    """Recovery campaigns still capable of acting — MerchantOps v2 §37.
+
+    A campaign IS a recovery plan; there is no second table. This is §37's card
+    over the same rows, with the affected/eligible split and the budget
+    consumption the plan does not store because both go stale the moment a
+    candidate moves.
+
+    Ordered by expected recovery, so the campaign worth watching is first.
+    Finished campaigns are excluded for the same reason `open_incidents`
+    excludes RESOLVED.
+    """
+    from app.recovery.campaign import active_campaigns, summary
+
+    with session_scope() as s:
+        cards = [summary(s, p) for p in active_campaigns(s, principal.merchant_id)]
+        return {
+            "campaigns": cards,
+            "total_expected_recovery_minor": sum(
+                c["expected_recovery_minor"] for c in cards),
+        }
+
+
+@app.get("/campaigns/{plan_id}", response_model=schemas.CampaignView,
+         response_model_exclude_unset=True)
+def get_campaign(plan_id: str, principal: Principal = Depends(current_principal)):
+    """§37's card for one campaign, finished or not.
+
+    Unlike the list, this does not exclude a stopped campaign: the question
+    "what happened to RC-017" is asked most often about one that ended.
+    """
+    from app.recovery.campaign import summary
+
+    with session_scope() as s:
+        return summary(s, _owned_plan(s, plan_id, principal))
 
 
 @app.post("/recovery/plans/{plan_id}/settle", response_model=schemas.SettleReport,
@@ -931,6 +973,45 @@ def get_evidence_graph(incident_id: str,
             "edges": edges,
             "edge_count": sum(len(v) for v in edges.values()),
             "lines": why(s, incident_id),
+        }
+
+
+@app.get("/incidents/{incident_id}/hypotheses",
+         response_model=schemas.HypothesisSet,
+         response_model_exclude_unset=True)
+def get_hypotheses(incident_id: str,
+                   principal: Principal = Depends(current_principal)):
+    """The competing explanations and how each fared — MerchantOps v2 §30.
+
+    Read-only. Hypotheses are proposed and adjudicated during investigation,
+    because a verdict computed at read time would differ between two people
+    opening the same incident — which is the opposite of what an audit surface
+    is for.
+
+    `untested` is named rather than left to be counted off the list. A
+    hypothesis nothing here can test is a gap in instrumentation, and it should
+    be as visible as the verdicts beside it.
+    """
+    from app.evidence.hypotheses import for_incident, leading
+
+    with session_scope() as s:
+        _owned_incident(s, incident_id, principal)
+        rows = for_incident(s, incident_id)
+        top = leading(s, incident_id)
+        return {
+            "incident_id": incident_id,
+            "hypotheses": [{
+                "id": h.id, "label": h.label, "key": h.key,
+                "statement": h.statement, "status": h.status.value,
+                "proposed_by": h.proposed_by,
+                "support_count": h.support_count,
+                "contradiction_count": h.contradiction_count,
+                "verdict_reason": h.verdict_reason,
+                "adjudicated_at": (h.adjudicated_at.isoformat()
+                                   if h.adjudicated_at else None),
+            } for h in rows],
+            "leading": top.key if top else None,
+            "untested": [h.key for h in rows if h.status.value == "UNTESTED"],
         }
 
 

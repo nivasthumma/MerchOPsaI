@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
+from app.detection.baselines import explains_drop, seasonal_baseline
 from app.models import IncidentSeverity, IncidentType
 
 # The dataset's fixed anchor — see the module docstring.
@@ -121,6 +122,20 @@ def detect_payment_degradation(session, merchant_id: str, *,
         if drop_pp < DEGRADATION_THRESHOLD_PP:
             continue
 
+        # MerchantOps v2 §17. The flat baseline above compares this week against
+        # last week and knows nothing about WHEN either happened. Before the
+        # anomaly becomes an incident, ask whether the drop is explained by the
+        # hours it fell in -- a merchant whose evenings always convert worse
+        # should not get an incident every week for having evenings.
+        #
+        # A veto, never a trigger: this can only suppress, so a bug here leaves
+        # today's behaviour in place rather than inventing incidents. It stays
+        # silent unless there is enough history to have an opinion.
+        seasonal = seasonal_baseline(session, merchant_id, r["method"],
+                                     window_start=cut, history_days=PERIOD_DAYS)
+        if explains_drop(seasonal, cur_rate, DEGRADATION_THRESHOLD_PP):
+            continue
+
         # ---- MerchantOps §22: revenue at risk, computed, never inferred -----
         #   (expected successes - actual successes) x expected transaction value
         # `expected` is what this method's OWN baseline rate would have produced
@@ -166,6 +181,11 @@ def detect_payment_degradation(session, merchant_id: str, *,
                 "average_transaction_value_minor": avg_value,
                 "window_start": cut.isoformat(),
                 "window_end": as_of.isoformat(),
+                # v2 §17. Which baseline had an opinion, and what it expected.
+                # Recorded even when it did not veto: a reader comparing two
+                # incidents needs to know whether the seasonal check was
+                # actually able to run or merely had nothing to say.
+                "seasonal_baseline": seasonal.as_dict(),
             },
             started_at=started_at,
             evidence=[

@@ -668,6 +668,40 @@ MUTATIONS = [
         "    if actions_taken >= plan.max_actions:",
         "    if False:  # MUTANT",
     ),
+    # MerchantOps v2 §17. The seasonal baseline SUPPRESSES incidents, so every
+    # mutant here is a way for it to hide a real one.
+    (
+        "baselines: let a baseline with no history veto an incident",
+        "app/detection/baselines.py",
+        "    if not baseline.measured:\n        return False",
+        "    if False:  # MUTANT\n        return False",
+    ),
+    (
+        "baselines: veto on a single observation instead of a baseline",
+        "app/detection/baselines.py",
+        "MIN_SLOT_SAMPLES = 3",
+        "MIN_SLOT_SAMPLES = 1  # MUTANT",
+    ),
+    (
+        "baselines: extrapolate a seasonal opinion over gaps in the history",
+        "app/detection/baselines.py",
+        "        if coverage < MIN_COVERAGE:",
+        "        if False:  # MUTANT",
+    ),
+    # WITHDRAWN: "bucket slots in the server's timezone rather than UTC".
+    # The UTC cast is correct and stays, but the defect it prevents is a
+    # cross-environment disagreement -- two deployments placing the same payment
+    # in different hours. A uniform offset shifts the current window and the
+    # history together, so within one run the self-join pairs the same traffic
+    # and nothing observable changes. A mutant nothing CAN catch is not a gap in
+    # the suite; it is a mutant that does not describe a behaviour. See ADR-0038
+    # and `test_the_baseline_does_not_move_with_the_servers_timezone`.
+    (
+        "baselines: suppress any drop the seasonal baseline can partly explain",
+        "app/detection/baselines.py",
+        "    return (baseline.expected_rate - float(current_rate)) < threshold_pp",
+        "    return True  # MUTANT",
+    ),
 ]
 
 

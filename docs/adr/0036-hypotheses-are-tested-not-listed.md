@@ -92,6 +92,54 @@ list.
   and ordering by score would imply a precision that does not exist. When
   probes multiply per hypothesis, this becomes a real question.
 
+## What the mutation run found
+
+Seven mutants, and the first run's headline (`6/7 caught`) was worth less than
+it looked. Two entries read `suite crashed mid-run`, which the harness scores as
+caught; both were contamination — the scenario suite and its runner were edited
+while the harness was executing them, through a window where `runner.py` carried
+a live `NameError`. Re-run cleanly, both are caught properly, one by three
+scenarios.
+
+That is a defect in the harness as much as an operator error:
+**`run_suite` counts `<suite crashed mid-run>` as `caught = 1`.** A crash is not
+evidence the suite detects a defect; it is evidence the suite fell over.
+Counting it as a catch is the one direction that must not be generous, and it is
+what let two invalid results read as passes.
+
+### The survivor, and what it said about the dataset
+
+`hypotheses: let scattered error codes still mean one failing provider`
+survived everything. `_probe_provider_degradation` asks whether failures carry
+one dominant error code or many different ones — and 100% of seeded UPI failures
+carry `UPI_COLLECT_TIMEOUT`, so the rejecting branch never ran. Forcing the
+threshold to always pass changed no observable output.
+
+**A probe whose rejecting branch is unreachable has not been tested, however
+green the suite looks.** The threshold *is* the content of the probe; without a
+case where it can bite, the scenario asserting the verdict is asserting the
+dataset.
+
+`_shape_for_probes` constructs the two missing cases —
+`scatter_failure_reasons` spreads failures across unrelated causes,
+`spike_traffic` moves attempt volume — and HYP-04 and HYP-05 pin them. HYP-04
+is now the *only* thing catching that mutant; no unit test does.
+
+HYP-05 closed a second gap in passing: the mutant collapsing `CONTENDING` into
+`SUPPORTED` had passed every scenario, and naming the first of two survivors is
+exactly the single-shot answer §30 was written against.
+
+### One gap that stays open
+
+`evidence graph: draw an ungrounded conclusion as a root cause` is caught by
+unit tests and by no scenario, and cannot currently be closed.
+`DeterministicProvider` emits a `root_cause` finding only when it has evidence
+ids to cite and an `uncertainty` finding when it has none, so an ungrounded root
+cause is structurally unreachable from a scenario. Like ADR-0035's confidence
+cap, it becomes gradeable when a provider exists that can produce one, and is
+recorded here rather than closed with a scenario that would assert the rule
+while never exercising it.
+
 ## Consequences
 
 - Adjudication happens during investigation, not at read time. A verdict

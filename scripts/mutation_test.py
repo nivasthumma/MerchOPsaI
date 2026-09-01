@@ -817,6 +817,7 @@ def main() -> int:
         return 1
 
     survivors = []
+    invalid = []
     rows = []
 
     for label, relpath, find, replace in mutations:
@@ -838,13 +839,30 @@ def main() -> int:
             path.write_text(original.replace(find, replace, 1))
             passed, total, failed = run_suite()
             crashed = failed == ["<suite crashed mid-run>"]
-            caught = (total - passed) if not crashed else 1
+            caught = 0 if crashed else (total - passed)
             tests_ok, test_line = run_tests()
-            if caught == 0 and tests_ok:
+
+            if crashed:
+                # A crash is NOT a catch, and scoring it as one is the single
+                # direction this harness must not be generous in. A suite that
+                # fell over has demonstrated nothing about whether it detects
+                # the defect -- the run simply has no result.
+                #
+                # It read as `caught = 1` until a run where two mutants crashed
+                # because the scenario suite was being EDITED underneath it.
+                # Both reported CAUGHT; re-run cleanly, one turned out to be
+                # caught by three scenarios and the other by one. The scoring
+                # happened to flatter the truth that time, which is exactly why
+                # it could not be relied on.
+                invalid.append(label)
+                rows.append((label, "NO RESULT",
+                             "the suite crashed; this mutant was not graded",
+                             test_line if not tests_ok else ""))
+            elif caught == 0 and tests_ok:
                 survivors.append(label)
                 rows.append((label, "SURVIVED", "no scenario or test caught it", ""))
             else:
-                detail = "suite crashed" if crashed else f"{caught} scenario(s)"
+                detail = f"{caught} scenario(s)"
                 if not tests_ok:
                     detail += " + unit tests"
                 rows.append((label, "CAUGHT", detail,
@@ -865,11 +883,23 @@ def main() -> int:
 
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
-    print(f"RESULT: {caught_n}/{len(mutations)} mutations caught")
+    graded = len(mutations) - len(invalid)
+    print(f"RESULT: {caught_n}/{graded} mutations caught"
+          + (f" ({len(invalid)} not graded)" if invalid else ""))
+
+    if invalid:
+        # Reported separately and loudly. A mutant whose run crashed has no
+        # result, and rolling it into either column would turn "we do not know"
+        # into a verdict -- the same mistake UNKNOWN, INSUFFICIENT and UNTESTED
+        # exist to prevent elsewhere in this codebase.
+        print("\nNOT GRADED — the suite crashed; re-run these:")
+        for label in invalid:
+            print(f"  - {label}")
     if survivors:
         print("\nSURVIVING MUTATIONS — these are gaps in the suite:")
-        for s in survivors:
-            print(f"  - {s}")
+        for label in survivors:
+            print(f"  - {label}")
+    if survivors or invalid:
         return 1
     print("Every injected defect was detected.")
     return 0

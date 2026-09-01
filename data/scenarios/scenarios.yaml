@@ -2184,3 +2184,47 @@
     # and no scenario could watch it break (ADR-0037).
     campaign_counts_failed_attempts: true
     campaign_counts_are_coherent: true
+
+# ------------------------------------ closing the §30 probe gaps (2)
+# A mutation run reported "let scattered error codes still mean one failing
+# provider" as SURVIVED: forcing the dominance threshold to always pass changed
+# nothing observable, because 100% of seeded UPI failures carry a single error
+# code and no case existed where the threshold could matter. A probe whose
+# rejecting branch is unreachable has not been tested, however green the suite.
+- id: HYP-04
+  category: detection
+  critical: true
+  description: Failures spread across unrelated causes are not one failing provider.
+  investigate_first: true
+  # Four different error reasons across the same failures. Detection is
+  # unchanged — it reads success rates, not reasons — so this reshapes only
+  # what the probe finds.
+  initial_state: {scatter_failure_reasons: 4}
+  expect:
+    # The branch the survivor proved was never taken.
+    hypothesis_status:
+      provider_degradation: REJECTED
+      traffic_anomaly: REJECTED
+      customer_segment: REJECTED
+    # Nothing survives, so nothing is named. An explanation is not owed just
+    # because the merchant would like one.
+    leading_hypothesis: ""
+    untested_hypotheses: [merchant_configuration]
+
+- id: HYP-05
+  category: detection
+  critical: true
+  description: Two explanations that both fit leave neither promoted.
+  investigate_first: true
+  # Attempt volume that genuinely moved, so traffic supports rather than
+  # rejects and two hypotheses survive together.
+  initial_state: {spike_traffic: 400}
+  expect:
+    # CONTENDING, not SUPPORTED. Naming the first of two survivors is exactly
+    # the single-shot answer §30 was written against, and a mutant collapsing
+    # the two states passed every scenario until this one.
+    hypothesis_status:
+      provider_degradation: CONTENDING
+      traffic_anomaly: CONTENDING
+    leading_hypothesis: ""
+    hypothesis_verdicts_are_drawn: true

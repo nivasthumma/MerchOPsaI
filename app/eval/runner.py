@@ -383,6 +383,11 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
         _plant_untrusted_evidence(
             session, top, int(sc.initial_state["plant_untrusted_evidence"]))
 
+    # MerchantOps v2 §30's probes read the data AFTER detection, so these
+    # reshape what the probes will find without changing what was detected.
+    if top is not None:
+        _shape_for_probes(session, sc, top)
+
     task = None
     if sc.investigate_first and top is not None:
         r = investigate(session, top, principal)
@@ -572,6 +577,60 @@ def _plant_provider_events(session, sc: Scenario, principal) -> None:
                    "m": principal.merchant_id, "ent": f"pay_eval_{tag}_{i}",
                    **params})
     session.flush()
+
+
+def _shape_for_probes(session, sc: Scenario, incident) -> None:
+    """Reshape what a v2 §30 probe will find, without changing what was detected.
+
+    Both knobs exist because the seeded dataset only ever produces ONE outcome
+    per probe, so the branch that distinguishes a real finding from its opposite
+    is never taken. A mutation run proved the point: forcing
+    `_probe_provider_degradation`'s dominance threshold to always pass SURVIVED
+    the entire suite, because 100% of seeded UPI failures carry a single error
+    code and there was no case where a threshold could matter.
+
+    A probe whose rejecting branch is unreachable is a probe that has not been
+    tested, however green the suite looks.
+    """
+    method = (incident.signals or {}).get("method")
+
+    # Failures spread across unrelated causes — an expiring card cohort, a
+    # merchant-side validation change — rather than one failing provider.
+    n_reasons = int(sc.initial_state.get("scatter_failure_reasons") or 0)
+    if n_reasons and method:
+        reasons = ["GATEWAY_DECLINED", "INSUFFICIENT_FUNDS", "CARD_EXPIRED",
+                   "RISK_BLOCKED", "ISSUER_UNAVAILABLE"][:max(n_reasons, 2)]
+        session.execute(text("""
+            UPDATE payments p SET error_reason = x.r
+            FROM (
+                SELECT id, (ARRAY[:r0, :r1, :r2, :r3, :r4])[1 + (row_number()
+                       OVER (ORDER BY id))::int % :n] AS r
+                FROM payments
+                WHERE merchant_id = :m AND method = :method AND status = 'failed'
+            ) x
+            WHERE p.id = x.id
+        """), {"m": incident.merchant_id, "method": method, "n": len(reasons),
+               **{f"r{i}": (reasons[i] if i < len(reasons) else reasons[0])
+                  for i in range(5)}})
+        session.flush()
+
+    # Attempt volume that genuinely moved, so `_probe_traffic_anomaly` supports
+    # rather than rejects and TWO explanations survive — which is the only way
+    # to reach the CONTENDING branch.
+    n_spike = int(sc.initial_state.get("spike_traffic") or 0)
+    if n_spike and method:
+        session.execute(text("""
+            INSERT INTO payments (id, merchant_id, order_id, customer_id,
+                                  amount_minor, currency, method, status,
+                                  amount_refunded_minor, created_at)
+            SELECT 'SPIKE_' || g, p.merchant_id, p.order_id, p.customer_id,
+                   p.amount_minor, p.currency, :method, 'captured', 0, :start
+            FROM (SELECT * FROM payments
+                  WHERE merchant_id = :m AND method = :method LIMIT 1) p,
+                 generate_series(1, :n) g
+        """), {"m": incident.merchant_id, "method": method,
+               "start": incident.started_at, "n": n_spike})
+        session.flush()
 
 
 def _plant_untrusted_evidence(session, incident, n: int) -> None:

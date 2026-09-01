@@ -543,6 +543,61 @@ MUTATIONS = [
         "        return {k: (\"[REDACTED]\" if _SECRET_KEYS.search(str(k)) else redact(v))",
         "        return {k: redact(v)  # MUTANT",
     ),
+    # ---------------------------------------------------------- ADR-0033/0034
+    # MerchantOps v2 §18 and §33. Two controls the suite had no mutant for
+    # until the scenarios in COR-* and CNF-* existed to catch one.
+    (
+        "confidence: let the model's own number set the band",
+        "app/agent/confidence.py",
+        "    ceiling = _model_ceiling(model_confidence)\n"
+        "    if _rank(ceiling) < _rank(a.band):",
+        "    ceiling = _model_ceiling(model_confidence)\n"
+        "    a.band = ceiling  # MUTANT\n"
+        "    if _rank(ceiling) < _rank(a.band):",
+    ),
+    (
+        "confidence: let a confident model raise the band",
+        "app/agent/confidence.py",
+        "    if _rank(ceiling) < _rank(a.band):",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "confidence: count evidence rows instead of independent sources",
+        "app/agent/confidence.py",
+        "    a.independent_sources = len({getattr(e, \"source\", None) for e in trusted\n"
+        "                                 if getattr(e, \"source\", None)})",
+        "    a.independent_sources = len(trusted)  # MUTANT",
+    ),
+    (
+        "confidence: let untrusted evidence corroborate",
+        "app/agent/confidence.py",
+        "    trusted = [e for e in evidence if not getattr(e, \"untrusted\", False)]",
+        "    trusted = list(evidence)  # MUTANT",
+    ),
+    (
+        "correlation: call every anomaly corroborated",
+        "app/detection/correlation.py",
+        '                "multivariate": c.corroboration > 1,',
+        '                "multivariate": True,  # MUTANT',
+    ),
+    (
+        "correlation: let a rule corroborate itself",
+        "app/detection/correlation.py",
+        "            others = [r for r in c.independent_rules if r != a.detection_rule]",
+        "            others = list(c.independent_rules)  # MUTANT",
+    ),
+    (
+        "correlation: put every anomaly in the same episode",
+        "app/detection/correlation.py",
+        "        if a.started_at - previous.started_at <= CORRELATION_WINDOW:",
+        "        if True:  # MUTANT",
+    ),
+    (
+        "correlation: count anomalies instead of the rules that produced them",
+        "app/detection/correlation.py",
+        "        return len(self.independent_rules)",
+        "        return len(self.anomalies)  # MUTANT",
+    ),
 ]
 
 
@@ -579,6 +634,67 @@ def run_tests() -> tuple[bool, str]:
 LOCK = ROOT / ".mutation-in-progress"
 
 
+def _hold(lock: Path, relpath: str | None, original: str | None) -> None:
+    """Record which file is currently mutated, and what it said before.
+
+    The `finally` that reverts a mutation only runs if the process gets to run
+    it. SIGKILL, a killed container, a terminal closed on a foreground run --
+    none of those do, and each leaves a rewritten safety control on disk that
+    looks exactly like source someone wrote.
+
+    That is not hypothetical. It has happened twice: once leaving
+    `Decision.REQUIRE_APPROVAL` rewritten to `Decision.ALLOW` (every HIGH-risk
+    action auto-approving) and once leaving a re-verifier pinned to refunds.
+    Both were found by grep rather than by anything that would have stopped a
+    commit.
+
+    So the original is written to the lock BEFORE the mutation is applied. The
+    next run restores from it instead of asking a human to notice.
+    """
+    import json
+
+    lock.write_text(json.dumps({
+        "note": "Mutation test in progress. Source files are being rewritten.",
+        "file": relpath,
+        "original": original,
+    }))
+
+
+def _recover(lock: Path) -> bool:
+    """Restore a file a killed run left mutated. False if the tree is unsafe.
+
+    A lock with no payload is either a run in progress right now or one from
+    before this recovery existed; neither can be restored from, so it still
+    stops and asks. A lock WITH a payload is a killed run, and the file it names
+    is put back.
+    """
+    import json
+
+    if not lock.exists():
+        return True
+
+    try:
+        held = json.loads(lock.read_text())
+    except (ValueError, OSError):
+        held = {}
+
+    relpath, original = held.get("file"), held.get("original")
+    if relpath and original is not None:
+        path = ROOT / relpath
+        if path.read_text() != original:
+            path.write_text(original)
+            print(f"!! A previous run was killed with {relpath} mutated.")
+            print("!! It has been restored from the lock file.")
+        lock.unlink(missing_ok=True)
+        return True
+
+    print("A mutation run is already in progress, or a previous one was killed "
+          "before it could record what it was rewriting.")
+    print(f"Verify the tree ('git status', and grep for '# MUTANT' under app/) "
+          f"and remove {lock.name} before retrying.")
+    return False
+
+
 def main() -> int:
     # Optional substring filters. A full run is 20 mutants x (scenario suite +
     # test suite) and takes well over half an hour, which is too slow to sit in
@@ -605,12 +721,9 @@ def main() -> int:
     print(f"!! Lock file: {LOCK.name}")
     print()
 
-    if LOCK.exists():
-        print("A mutation run is already in progress (or a previous run was "
-              "killed). Verify the tree with 'git status' and remove "
-              f"{LOCK.name} before retrying.")
+    if not _recover(LOCK):
         return 1
-    LOCK.write_text("Mutation test in progress. Source files are being rewritten.\n")
+    _hold(LOCK, None, None)
 
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
@@ -644,6 +757,14 @@ def main() -> int:
             survivors.append(label)
             continue
         try:
+            # Recorded before the write, so a kill between the two lines still
+            # leaves the lock naming a file that is not yet mutated -- which
+            # restores to a no-op rather than to the wrong content.
+            _hold(LOCK, relpath, original)
+            # setdefault: the FIRST reading is the one to compare against, so
+            # two mutants in one file do not let the second record a mutated
+            # state as this run's baseline.
+            _ORIGINALS.setdefault(relpath, original)
             path.write_text(original.replace(find, replace, 1))
             passed, total, failed = run_suite()
             crashed = failed == ["<suite crashed mid-run>"]
@@ -660,6 +781,7 @@ def main() -> int:
                              ", ".join(failed[:4]) + ("…" if len(failed) > 4 else "")))
         finally:
             path.write_text(original)
+            _hold(LOCK, None, None)
 
     print()
     print(f"{'mutation':<52} {'result':<10} {'caught by'}")
@@ -683,22 +805,36 @@ def main() -> int:
     return 0
 
 
+# What each mutated file said before this run touched it, recorded as the run
+# goes. `_verify_tree_restored` compares against this rather than against HEAD.
+_ORIGINALS: dict[str, str] = {}
+
+
 def _verify_tree_restored() -> None:
-    """Every mutation is reverted in a finally block, but if the process is
-    killed between write and revert a mutant is left on disk. Say so loudly
-    rather than leaving a broken working tree looking clean."""
-    # `alembic` included since ADR-0030 put a mutant target there. A directory
-    # that is mutated but not checked is a directory where a killed run leaves a
-    # broken file behind looking clean, which is the whole point of this check.
-    r = subprocess.run(["git", "diff", "--name-only", "--", "app", "scripts", "alembic"],
-                       cwd=ROOT, capture_output=True, text=True)
-    dirty = [f for f in r.stdout.split() if f]
-    if dirty:
+    """Every mutation is reverted in a `finally`, but a process killed between
+    the write and the revert leaves a mutant on disk. Say so loudly rather than
+    leaving a broken working tree looking clean.
+
+    Compared against **what this run found**, not against HEAD.
+
+    It used to run `git diff --name-only -- app scripts alembic` and call every
+    dirty file a mutation artifact, with `git checkout --` as the advice. On a
+    clean tree that is right. On the ordinary tree of someone in the middle of a
+    change — the only tree anyone runs this from — it names their uncommitted
+    work and tells them to discard it. A safety check whose remedy destroys the
+    work it was protecting is worse than no check.
+
+    Comparing against the recorded originals cannot make that mistake: a file
+    this run never mutated is never mentioned, however dirty it is.
+    """
+    stranded = [relpath for relpath, original in _ORIGINALS.items()
+                if (ROOT / relpath).read_text() != original]
+    if stranded:
         print("\n" + "!" * 78)
         print("MUTATION ARTIFACTS LEFT ON DISK — do not commit:")
-        for f in dirty:
+        for f in stranded:
             print(f"  {f}")
-        print("Restore with:  git checkout -- " + " ".join(dirty))
+        print("Restore with:  git checkout -- " + " ".join(stranded))
         print("!" * 78)
 
 

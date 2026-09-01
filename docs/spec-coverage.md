@@ -3,6 +3,21 @@
 **Audited:** 2026-09-01, against `feat/incident-spine`.
 **Updated:** 2026-09-01 — the closable items below are now closed.
 
+> **This file audits v1.** `docs/MerchantOps-v2.md` now governs (ADR-0033), and its
+> section numbers are not these. Everything below remains accurate about v1; the §
+> references resolve through ADR-0033's crosswalk.
+>
+> Against v2, four of the ten new subsystems are built: §11–13 the event spine,
+> §62/§65 the live stream, §33 computed confidence (ADR-0034), §18 multivariate
+> correlation — the last two graded by scenarios and mutants per ADR-0035. Still
+> open: §14 digital twin, §17 adaptive baselines, §30 hypothesis engine, §32
+> evidence graph, §37–38 recovery campaigns, §40 strategy selection from history,
+> §20's full state machine, and the UI timeline that consumes `/events`.
+>
+> A full v2 audit belongs after that work, not before it — this file exists
+> because "all phases delivered" and "every section closed" are different claims,
+> and writing a v2 audit now would repeat the confusion it was created to prevent.
+
 `docs/gap-closure-plan.md` reports all eight phases delivered, and it is. That is not the
 same claim as "every section of the specification is closed", and this file exists so the
 two are not confused.

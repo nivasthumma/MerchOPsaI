@@ -1901,3 +1901,167 @@
   expect:
     plan_intervention: HUMAN_ESCALATION
     plan_executable_candidates: 0
+
+# ------------------------------------------- multivariate correlation (4)
+# MerchantOps v2 §18. One signal is an anomaly; several independent ones
+# agreeing are an incident. These grade the correlation the sweep records,
+# and COR-02 is the document's own worked example made real: `payments` says
+# the success rate fell and `webhook_events` says the provider was reporting
+# failures in the same window — two instruments, one episode.
+- id: COR-01
+  category: detection
+  critical: true
+  description: An uncorroborated anomaly is recorded as standing alone, not as confirmed.
+  expect:
+    incident_types: [PAYMENT_DEGRADATION, DUPLICATE_PAYMENT]
+    # Nothing else saw it. The seeded dataset has no provider events, so the
+    # degradation is one instrument reporting once.
+    incident_corroboration: {PAYMENT_DEGRADATION: 1, DUPLICATE_PAYMENT: 1}
+    corroborating_rules: {PAYMENT_DEGRADATION: []}
+    correlation_is_coherent: true
+
+- id: COR-02
+  category: detection
+  critical: true
+  description: Two independent rules seeing the same episode corroborate each other.
+  # The burst is planted INSIDE the degradation's window, which is what makes
+  # this v2 §18's example rather than two unrelated findings.
+  initial_state:
+    plant_provider_events: 6
+    plant_provider_events_correlated: true
+  expect:
+    incident_types: [PAYMENT_DEGRADATION, PROVIDER_FAILURE_BURST]
+    incident_corroboration: {PAYMENT_DEGRADATION: 2, PROVIDER_FAILURE_BURST: 2}
+    # Each names the other, and neither names itself.
+    corroborating_rules:
+      PAYMENT_DEGRADATION: [provider_failure_burst]
+      PROVIDER_FAILURE_BURST: [success_rate_below_baseline]
+    correlation_is_coherent: true
+
+- id: COR-03
+  category: detection
+  critical: true
+  description: A burst outside the degradation window is a separate episode, not corroboration.
+  # Same six events, planted at "now" rather than at the onset. Distance in
+  # time is the whole difference, so this is the control for COR-02.
+  initial_state: {plant_provider_events: 6}
+  expect:
+    incident_types: [PAYMENT_DEGRADATION, PROVIDER_FAILURE_BURST]
+    incident_corroboration: {PAYMENT_DEGRADATION: 1, PROVIDER_FAILURE_BURST: 1}
+    corroborating_rules: {PAYMENT_DEGRADATION: []}
+    correlation_is_coherent: true
+
+- id: COR-04
+  category: detection
+  critical: true
+  description: Correlation annotates and never suppresses; a lone signal still becomes an incident.
+  # v2 §18 places correlation before the expensive step, not before the record.
+  # An incident nobody opened is indistinguishable from one the system missed.
+  expect:
+    incidents_created: 3
+    incident_corroboration: {PAYMENT_DEGRADATION: 1}
+    second_sweep_creates: 0
+  detect_twice: true
+
+# ----------------------------------------------- computed confidence (4)
+# MerchantOps v2 §33, ADR-0034. The band is the platform's, computed from the
+# evidence. The model's own number is an input that may lower it and may never
+# raise it — which is the assertion CNF-02 exists for, and the one nothing
+# else in this suite would notice breaking.
+- id: CNF-01
+  category: detection
+  critical: true
+  description: Confidence is computed from the evidence, not taken from the model.
+  investigate_first: true
+  expect:
+    # Two independent sources — `payments` and `calculation_engine` — with no
+    # external confirmation and nothing else corroborating. That is MEDIUM,
+    # regardless of the 0.9 the planner reports for itself.
+    confidence_band: {PAYMENT_DEGRADATION: MEDIUM}
+    untrusted_evidence_excluded: true
+
+- id: CNF-02
+  category: detection
+  critical: true
+  description: A confident model cannot raise the band above what the evidence supports.
+  investigate_first: true
+  expect:
+    # Recomputed with the model's number withheld, the band must be no weaker
+    # than the one stored. Stronger stored than earned means the model raised
+    # it, which ADR-0034 forbids.
+    model_confidence_cannot_raise: true
+    confidence_band: {PAYMENT_DEGRADATION: MEDIUM}
+
+- id: CNF-03
+  category: detection
+  critical: true
+  description: Corroboration from a second rule lifts the band, because it is a real extra signal.
+  investigate_first: true
+  initial_state:
+    plant_provider_events: 6
+    plant_provider_events_correlated: true
+  expect:
+    # Where §18 and §33 meet: the corroborating rule is a third independent
+    # source, and three fresh agreeing sources is what HIGH means.
+    confidence_band: {PAYMENT_DEGRADATION: HIGH}
+    model_confidence_cannot_raise: true
+
+- id: CNF-04
+  category: detection
+  critical: true
+  description: An incident nobody has investigated carries no confidence at all.
+  # Null, not a default. An unassessed incident has no band, and rendering one
+  # would assert a view nobody formed.
+  expect:
+    incident_types: [PAYMENT_DEGRADATION]
+    # No `investigate_first`, so nothing is assessed. Asserted as a count of
+    # nulls rather than by the band grader finding nothing to look at — a
+    # check that passes because it had no subject is not a check.
+    incidents_created: 3
+    unassessed_incidents: 3
+    # The correlation facts, by contrast, exist from detection onward.
+    correlation_is_coherent: true
+    incident_corroboration: {PAYMENT_DEGRADATION: 1}
+
+# --------------------------------------------- closing the scenario gaps (2)
+# A first pass at COR-*/CNF-* left three mutants caught by unit tests and by no
+# scenario at all (ADR-0035). Two of the three were reachable once the fixture
+# could construct the state; these are them. The third is recorded there as
+# unreachable rather than papered over.
+- id: COR-05
+  category: detection
+  critical: true
+  description: Two findings from one rule are one signal, however many rows they produce.
+  # Two event types make `provider_failure_burst` fire twice in one window, so
+  # the cluster holds three anomalies from two rules. Until a cluster contained
+  # both, "count the rules" and "count the anomalies" were indistinguishable
+  # and a mutant swapping them changed nothing observable.
+  initial_state:
+    plant_provider_events: 6
+    plant_provider_events_correlated: true
+    plant_provider_events_second_type: true
+  expect:
+    incident_types: [PAYMENT_DEGRADATION, PROVIDER_FAILURE_BURST]
+    # Three anomalies, two rules. The corroboration is 2 — the instruments, not
+    # the readings.
+    incident_corroboration: {PAYMENT_DEGRADATION: 2, PROVIDER_FAILURE_BURST: 2}
+    corroborating_rules:
+      PAYMENT_DEGRADATION: [provider_failure_burst]
+    correlation_is_coherent: true
+
+- id: CNF-05
+  category: detection
+  critical: true
+  description: Untrusted content is counted and never corroborates.
+  investigate_first: true
+  # Three untrusted rows, each from a different source, carrying §39's classic
+  # payload. Distinct sources on purpose: rows sharing one source would not
+  # raise the independent-source count even if they were wrongly counted, and
+  # the scenario would pass whether the rule held or not.
+  initial_state: {plant_untrusted_evidence: 3}
+  expect:
+    # Five sources if untrusted evidence corroborated, which is HIGH. Two
+    # trusted sources, which is MEDIUM. Someone who can write an order note
+    # must not be able to raise what the system says it believes.
+    confidence_band: {PAYMENT_DEGRADATION: MEDIUM}
+    untrusted_evidence_excluded: true

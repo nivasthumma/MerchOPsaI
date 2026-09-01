@@ -46,6 +46,30 @@ class Expect(BaseModel):
     foreign_incidents: int | None = None            # cross-merchant leakage
     onset_hour_utc_between: list[int] | None = None  # [lo, hi] — §51 timeline
 
+    # --- multivariate correlation (MerchantOps v2 §18) ---
+    # How many independent RULES saw the episode a named incident belongs to,
+    # itself included. 1 means the signal stands alone.
+    incident_corroboration: dict[str, int] = Field(default_factory=dict)
+    # {incident_type: [rule, ...]} — which other rules corroborated it. Exact
+    # set, so a rule appearing that should not is a failure and not a shrug.
+    corroborating_rules: dict[str, list[str]] = Field(default_factory=dict)
+    # Every incident's correlation facts are internally consistent, and no rule
+    # is ever recorded as corroborating itself.
+    correlation_is_coherent: bool | None = None
+
+    # --- computed confidence (MerchantOps v2 §33) ---
+    # The band the PLATFORM assigned to a named incident after investigation.
+    confidence_band: dict[str, str] = Field(default_factory=dict)
+    # The asymmetry: recomputing without the model's number must never yield a
+    # WEAKER band than the one stored. If it does, the model raised it.
+    model_confidence_cannot_raise: bool | None = None
+    # Untrusted evidence must not appear among the corroborating sources.
+    untrusted_evidence_excluded: bool | None = None
+    # Incidents carrying no band at all. An unassessed incident has no
+    # confidence, and a default would assert a view nobody formed — so this
+    # asserts the null rather than letting an absent band pass by being absent.
+    unassessed_incidents: int | None = None
+
     # --- webhook assertions (MerchantOps §34, §35) ---
     webhook_status: str | None = None            # status of the LAST delivery
     webhook_events_stored: int | None = None     # rows in the durable store

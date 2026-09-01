@@ -598,6 +598,76 @@ MUTATIONS = [
         "        return len(self.independent_rules)",
         "        return len(self.anomalies)  # MUTANT",
     ),
+    # MerchantOps v2 §30. A hypothesis engine whose hypotheses cannot be
+    # contradicted is a list of guesses with ceremony, so every mutant here
+    # breaks the engine's ability to say no.
+    (
+        "hypotheses: accept every candidate instead of testing it",
+        "app/evidence/hypotheses.py",
+        "        if h.contradiction_count:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "hypotheses: report an untestable hypothesis as rejected",
+        "app/evidence/hypotheses.py",
+        "def _no_probe(detail: str) -> Probe:\n    return Probe(False, False, detail, {})",
+        "def _no_probe(detail: str) -> Probe:\n"
+        "    return Probe(False, True, detail, {})  # MUTANT",
+    ),
+    (
+        "hypotheses: promote a contended explanation to the sole survivor",
+        "app/evidence/hypotheses.py",
+        "            h.status = (HypothesisStatus.SUPPORTED if len(supported) == 1\n"
+        "                        else HypothesisStatus.CONTENDING)",
+        "            h.status = HypothesisStatus.SUPPORTED  # MUTANT",
+    ),
+    (
+        "hypotheses: stop drawing the verdict into the evidence graph",
+        "app/evidence/hypotheses.py",
+        "        if result.supports or result.contradicts:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        "hypotheses: let scattered error codes still mean one failing provider",
+        "app/evidence/hypotheses.py",
+        "    if share >= 0.8:",
+        "    if True:  # MUTANT",
+    ),
+    (
+        "hypotheses: call flat traffic a traffic anomaly",
+        "app/evidence/hypotheses.py",
+        "    if abs(change) >= 0.5:",
+        "    if True:  # MUTANT",
+    ),
+    (
+        "evidence graph: draw an ungrounded conclusion as a root cause",
+        "app/evidence/graph.py",
+        "        if not f.get(\"evidence_refs\"):",
+        "        if False:  # MUTANT",
+    ),
+    # MerchantOps v2 §37, §38. The campaign IS the plan, so these break the two
+    # things that were genuinely missing rather than a second entity.
+    (
+        "campaign: read the global risk ceiling instead of the campaign's own",
+        "app/recovery/stopping.py",
+        '    ceiling = getattr(plan, "max_risk_level", None) or MAX_UNATTENDED_RISK',
+        "    ceiling = MAX_UNATTENDED_RISK  # MUTANT",
+    ),
+    (
+        "campaign: count only successful attempts against the budget",
+        "app/recovery/campaign.py",
+        '    spent_minor = sum(by_status[s]["attributed"] for s in\n'
+        '                      ("ATTEMPTED", "RECOVERED", "FAILED", "UNKNOWN")\n'
+        "                      if s in by_status)",
+        '    spent_minor = sum(by_status[s]["attributed"] for s in ("RECOVERED",)\n'
+        "                      if s in by_status)  # MUTANT",
+    ),
+    (
+        "campaign: report no bound as ever exhausted",
+        "app/recovery/campaign.py",
+        "    if actions_taken >= plan.max_actions:",
+        "    if False:  # MUTANT",
+    ),
 ]
 
 

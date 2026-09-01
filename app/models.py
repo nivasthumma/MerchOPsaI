@@ -509,7 +509,7 @@ class RecoveryPlan(Base):
     expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
     expected_recovery_basis: Mapped[str] = mapped_column(Text, default="")
 
-    # --- §27: the bounds ---
+    # --- §27 / v2 §38: the bounds ---
     max_recovery_minor: Mapped[int] = mapped_column(Integer)
     max_actions: Mapped[int] = mapped_column(Integer)
     max_attempts_per_customer: Mapped[int] = mapped_column(Integer)
@@ -971,4 +971,89 @@ class EvidenceEdge(Base):
                          "object_type", "object_id", name="uq_edge_once",
                          postgresql_nulls_not_distinct=True),
         Index("ix_edge_subject", "incident_id", "subject_type", "subject_id"),
+    )
+
+
+# --------------------------------------------------------------------------
+# Hypotheses (MerchantOps v2 §30)
+# --------------------------------------------------------------------------
+class HypothesisStatus(str, enum.Enum):
+    """Where a candidate explanation stands once evidence has been weighed.
+
+    UNTESTED is not a synonym for REJECTED and the distinction is the point.
+    "We looked and found nothing supporting this" and "we have no way to look"
+    lead to different next actions -- the second is a gap in the platform's
+    instrumentation, and collapsing it into rejection would hide that gap by
+    making it look like a settled question. Same reasoning as UNKNOWN against
+    FAILED (§53) and INSUFFICIENT against LOW (§33).
+    """
+    SUPPORTED = "SUPPORTED"          # the strongest explanation the evidence allows
+    CONTENDING = "CONTENDING"        # supported, but not more than another
+    REJECTED = "REJECTED"            # evidence positively argues against it
+    UNTESTED = "UNTESTED"            # nothing here can speak to it either way
+
+
+class Hypothesis(Base):
+    """One candidate explanation for an incident — MerchantOps v2 §30.
+
+    §30's argument is that a single-shot answer is less robust than competing
+    explanations tested against evidence:
+
+        H1  UPI provider degradation
+        H2  Merchant configuration problem
+        H3  Traffic anomaly
+        H4  Customer-segment-specific problem
+
+    ## The platform adjudicates
+
+    Hypotheses may be *proposed* by anyone -- a template set per incident type,
+    or the model. Which one wins is decided by `app.evidence.hypotheses` from
+    supporting and contradicting evidence, never by the model asserting it.
+    This is §33's rule applied to explanations rather than to confidence: the
+    model reasons, the platform decides what the reasoning established.
+
+    ## Support lives in the graph, not in a column here
+
+    `support_count` and `contradiction_count` are cached totals of
+    `evidence_edges` rows whose subject is this hypothesis. The edges are the
+    record; these are for ordering without a join. A count that disagrees with
+    the edges is a bug in the writer, and `app.evidence.hypotheses.adjudicate`
+    recomputes rather than incrementing so the two cannot drift apart.
+    """
+    __tablename__ = "hypotheses"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    merchant_id: Mapped[str] = mapped_column(String(64), index=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("incidents.id"), index=True)
+
+    # "H1".."H4" — §30's own labels, stable within an incident so a merchant
+    # reading the console and a reviewer reading the trace mean the same thing.
+    label: Mapped[str] = mapped_column(String(8))
+    # A short machine key ("provider_degradation"), so a scenario or a metric
+    # can name a hypothesis without matching on prose.
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    statement: Mapped[str] = mapped_column(Text)
+
+    status: Mapped[HypothesisStatus] = mapped_column(
+        Enum(HypothesisStatus, native_enum=False),
+        default=HypothesisStatus.UNTESTED, index=True)
+
+    # "hypothesis_engine" for the template set, "agent" for one the model added.
+    proposed_by: Mapped[str] = mapped_column(String(32), default="hypothesis_engine")
+
+    support_count: Mapped[int] = mapped_column(Integer, default=0)
+    contradiction_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Why it ended where it did, in the platform's words rather than the
+    # model's. A rejected hypothesis with no stated reason is an assertion.
+    verdict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    adjudicated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    # One hypothesis per key per incident. Re-investigating re-tests the same
+    # four; it does not accumulate a fifth copy of each.
+    __table_args__ = (
+        UniqueConstraint("incident_id", "key", name="uq_hypothesis_once"),
     )

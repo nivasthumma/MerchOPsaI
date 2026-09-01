@@ -2065,3 +2065,106 @@
     # must not be able to raise what the system says it believes.
     confidence_band: {PAYMENT_DEGRADATION: MEDIUM}
     untrusted_evidence_excluded: true
+
+# ------------------------------------------- competing hypotheses (3)
+# MerchantOps v2 §30. The value is not that four sentences get written down —
+# it is that each one is TESTED and the test can fail. So HYP-01 pins the
+# verdicts, HYP-02 pins that a rejection is walkable, and HYP-03 pins the
+# distinction §30 would be worthless without: "we cannot test this" is not
+# "we tested this and it failed".
+- id: HYP-01
+  category: detection
+  critical: true
+  description: Competing explanations are tested, and the evidence picks the survivor.
+  investigate_first: true
+  expect:
+    # §30's worked example, from real probes over the seeded data: one dominant
+    # provider error supports H1, flat attempt volume rejects H3, failures
+    # spread across 37 customers reject H4.
+    hypothesis_status:
+      provider_degradation: SUPPORTED
+      traffic_anomaly: REJECTED
+      customer_segment: REJECTED
+    leading_hypothesis: provider_degradation
+
+- id: HYP-02
+  category: detection
+  critical: true
+  description: Every verdict is drawn into the evidence graph, so a rejection can be walked back.
+  investigate_first: true
+  expect:
+    # A hypothesis that reached a verdict has an edge; one that did not has
+    # none. This is what CONTRADICTS was added to the predicate set for (§32).
+    hypothesis_verdicts_are_drawn: true
+
+- id: HYP-03
+  category: detection
+  critical: true
+  description: A hypothesis nothing can test reports UNTESTED, never REJECTED.
+  investigate_first: true
+  expect:
+    # This system records no merchant payment configuration, so H2 cannot be
+    # tested either way. Folding that into REJECTED would hide a gap in
+    # instrumentation behind a verdict that looks settled — the same error as
+    # collapsing UNKNOWN into FAILED (§53).
+    untested_hypotheses: [merchant_configuration]
+    hypothesis_status: {merchant_configuration: UNTESTED}
+
+# ------------------------------------------- recovery campaigns (4)
+# MerchantOps v2 §37, §38. There is no campaign table — a campaign IS a
+# recovery plan — so these grade the two things that were genuinely missing:
+# the fifth bound as a property of the campaign rather than a module constant,
+# and the budget consumption a merchant watching an ACTIVE campaign needs.
+- id: CMP-01
+  category: recovery
+  critical: true
+  description: The risk ceiling belongs to the campaign, not to a constant in the source.
+  plan_for: DUPLICATE_PAYMENT
+  # One candidate, so the campaign is not bulk and would otherwise dispatch.
+  single_candidate: true
+  # The campaign was authorised under LOW. Any action graded above that needs
+  # a human, whatever the module's global ceiling happens to be.
+  budget_override: {max_risk_level: LOW}
+  dispatch_top_candidate: true
+  expect:
+    campaign_risk_ceiling: LOW
+    dispatch_refused: true
+    stop_rule: risk_exceeds_allowed_level
+    plan_status: ESCALATED
+
+- id: CMP-02
+  category: recovery
+  critical: true
+  description: A campaign created without an override carries the default ceiling explicitly.
+  plan_for: DUPLICATE_PAYMENT
+  expect:
+    # Not absent, not implied by a constant — carried, so an approver reading
+    # the plan can see what risk it was authorised to take.
+    campaign_risk_ceiling: HIGH
+
+- id: CMP-03
+  category: recovery
+  critical: true
+  description: Every bound is reported beside what has been used against it.
+  plan_for: PAYMENT_DEGRADATION
+  expect:
+    # §37 shows a budget next to an expected recovery. A merchant watching an
+    # ACTIVE campaign needs to know how much of it is already gone, and
+    # check_budget computed that per decision and threw it away.
+    campaign_reports_consumption: true
+    campaign_counts_are_coherent: true
+    # Nothing has been dispatched, so no bound is used up.
+    campaign_exhausted: []
+
+- id: CMP-04
+  category: recovery
+  critical: true
+  description: An exhausted bound is reported on the card, and reporting it decides nothing.
+  plan_for: DUPLICATE_PAYMENT
+  budget_override: {max_actions: 0}
+  expect:
+    # The stopping rules are the authority on whether a campaign may continue.
+    # A card that also decided would be a second place for the two to disagree.
+    campaign_exhausted: [max_actions]
+    plan_status: DRAFT
+    campaign_counts_are_coherent: true

@@ -32,6 +32,7 @@ from app.agent.confidence import assess
 from app.agent.runtime import AgentRuntime, Principal
 from app.audit.trace import record_incident
 from app.evidence.graph import build as build_graph
+from app.evidence.hypotheses import adjudicate
 from app.incidents.lifecycle import transition
 from app.models import (
     Incident, IncidentEvidence, IncidentSeverity, IncidentStatus as S,
@@ -126,6 +127,12 @@ def investigate(session, incident: Incident, principal: Principal,
     incident.confidence_band = assessment.band.value
     incident.confidence_inputs = assessment.as_dict()
     session.flush()
+
+    # MerchantOps v2 §30: test the competing explanations against the data and
+    # let the evidence settle which survives, rather than accepting the first
+    # one stated. Each verdict is drawn into the graph, so a rejection is
+    # walkable rather than asserted.
+    adjudicate(session, incident)
 
     # MerchantOps v2 §32: draw the evidence graph from what is now recorded, so
     # "why do you believe this?" has an answer that is not the model's prose.

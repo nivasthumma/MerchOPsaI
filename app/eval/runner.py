@@ -428,6 +428,50 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
                   f"stored={stored}, evidence alone supports {without.band.value}, "
                   f"model reported {task.agent_confidence}")
 
+        # ------------------------------- competing hypotheses (v2 §30)
+        if (e.hypothesis_status or e.leading_hypothesis is not None
+                or e.hypothesis_verdicts_are_drawn is not None
+                or e.untested_hypotheses):
+            from app.evidence.hypotheses import for_incident, leading
+            from app.models import EvidenceEdge as _Edge
+
+            found = {h.key: h for h in for_incident(session, top.id)}
+
+            for key, want in e.hypothesis_status.items():
+                got = found.get(key)
+                check(f"hypothesis:{key}",
+                      got is not None and got.status.value == want,
+                      f"expected {want}, got "
+                      f"{got.status.value if got else 'no such hypothesis'}")
+
+            if e.leading_hypothesis is not None:
+                top_h = leading(session, top.id)
+                got = top_h.key if top_h else ""
+                check("leading_hypothesis", got == e.leading_hypothesis,
+                      f"expected {e.leading_hypothesis!r}, got {got!r}")
+
+            if e.untested_hypotheses:
+                untested = sorted(k for k, h in found.items()
+                                  if h.status.value == "UNTESTED")
+                check("untested_hypotheses",
+                      untested == sorted(e.untested_hypotheses),
+                      f"expected {sorted(e.untested_hypotheses)}, got {untested}")
+
+            if e.hypothesis_verdicts_are_drawn is not None:
+                # Every hypothesis that reached a verdict has an edge, and
+                # every hypothesis that did not has none. A rejection nobody
+                # can walk back to is a rejection asserted rather than found.
+                drawn = {r.subject_id for r in session.query(_Edge).filter(
+                    _Edge.incident_id == top.id,
+                    _Edge.subject_type == "hypothesis").all()}
+                settled = {h.id for h in found.values()
+                           if h.status.value in ("SUPPORTED", "CONTENDING",
+                                                 "REJECTED")}
+                ok = drawn == settled
+                check("hypothesis_verdicts_are_drawn",
+                      ok == e.hypothesis_verdicts_are_drawn,
+                      f"{len(drawn)} edges for {len(settled)} settled hypotheses")
+
         if e.untrusted_evidence_excluded is not None:
             inputs = top.confidence_inputs or {}
             untrusted = sum(1 for ev in top.evidence if ev.untrusted)
@@ -678,6 +722,45 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
         if e.dispatch_refused is not None:
             check("dispatch_refused", refused == e.dispatch_refused,
                   f"refused={refused}")
+
+    # ----------------------------------- campaign card (v2 §37, §38)
+    if (e.campaign_risk_ceiling is not None
+            or e.campaign_counts_are_coherent is not None
+            or e.campaign_reports_consumption is not None
+            or e.campaign_exhausted is not None):
+        from app.recovery.campaign import summary as _campaign
+
+        card = _campaign(session, plan)
+
+        if e.campaign_risk_ceiling is not None:
+            got = card["budget"]["max_risk_level"]
+            check("campaign_risk_ceiling", got == e.campaign_risk_ceiling,
+                  f"expected {e.campaign_risk_ceiling}, got {got}")
+
+        if e.campaign_counts_are_coherent is not None:
+            buckets = sum(card[k] for k in ("eligible", "ineligible",
+                                            "attempted", "skipped"))
+            ok = buckets == card["affected"]
+            check("campaign_counts_are_coherent", ok == e.campaign_counts_are_coherent,
+                  f"buckets sum to {buckets}, affected={card['affected']}")
+
+        if e.campaign_reports_consumption is not None:
+            b = card["budget"]
+            pairs = (("max_recovery_minor", "spent_minor"),
+                     ("max_actions", "actions_taken"),
+                     ("max_duration_seconds", "elapsed_seconds"))
+            missing = [limit for limit, used in pairs
+                       if limit not in b or used not in b]
+            ok = not missing
+            check("campaign_reports_consumption",
+                  ok == e.campaign_reports_consumption,
+                  f"bounds with no consumption reading: {missing}")
+
+        if e.campaign_exhausted is not None:
+            check("campaign_exhausted",
+                  sorted(card["exhausted"]) == sorted(e.campaign_exhausted),
+                  f"expected {sorted(e.campaign_exhausted)}, "
+                  f"got {sorted(card['exhausted'])}")
         # A refused dispatch must not have moved money either.
         check("refusal_moved_no_money",
               (not refused) or (session.query(Refund).count() == money_before[0]),

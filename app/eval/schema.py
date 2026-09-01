@@ -70,6 +70,19 @@ class Expect(BaseModel):
     # asserts the null rather than letting an absent band pass by being absent.
     unassessed_incidents: int | None = None
 
+    # --- competing hypotheses (MerchantOps v2 §30) ---
+    # {hypothesis_key: status}. Exact, so a hypothesis quietly changing verdict
+    # is a failure rather than something nobody notices.
+    hypothesis_status: dict[str, str] = Field(default_factory=dict)
+    # The sole surviving explanation. Use "" to assert that there is none —
+    # either nothing survived or several did, and both are honest answers.
+    leading_hypothesis: str | None = None
+    # Every rejection and every support is drawn into the evidence graph, so a
+    # verdict is walkable rather than merely stated (§32).
+    hypothesis_verdicts_are_drawn: bool | None = None
+    # A hypothesis nothing could test reports UNTESTED, never REJECTED.
+    untested_hypotheses: list[str] = Field(default_factory=list)
+
     # --- webhook assertions (MerchantOps §34, §35) ---
     webhook_status: str | None = None            # status of the LAST delivery
     webhook_events_stored: int | None = None     # rows in the durable store
@@ -101,6 +114,18 @@ class Expect(BaseModel):
     ineligible_reasons_include: list[str] = Field(default_factory=list)
     stop_rule: str | None = None
     dispatch_refused: bool | None = None
+
+    # --- campaign bounds and card (MerchantOps v2 §37, §38) ---
+    # The risk ceiling the campaign is authorised under. §38 counts it among
+    # the bounds every campaign must carry; it used to be a module constant.
+    campaign_risk_ceiling: str | None = None
+    # Every candidate lands in exactly one bucket, so the buckets sum to
+    # `affected`. A card whose parts do not add up is a card nobody can trust.
+    campaign_counts_are_coherent: bool | None = None
+    # Each of §38's bounds is reported beside what has been used against it.
+    campaign_reports_consumption: bool | None = None
+    # Bounds already used up, exactly.
+    campaign_exhausted: list[str] | None = None
     plan_is_idempotent: bool | None = None
     no_financial_effect_from_planning: bool = False
 

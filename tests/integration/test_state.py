@@ -77,12 +77,38 @@ def test_operational_health_carries_the_metrics_registry(db, state):
 
 
 # ------------------------------------------------- GMV is not revenue
-def test_gmv_is_attempted_value_and_revenue_is_captured(state):
+def test_gmv_is_attempted_value_and_revenue_is_captured(db, state):
     """§14 lists both, and the ratio is the conversion story. Reporting GMV as
-    a bigger revenue number would tell the opposite one."""
+    a bigger revenue number would tell the opposite one.
+
+    Pinned to the arithmetic rather than bounded. An earlier version asserted
+    `gmv >= revenue` and `capture_rate <= 100`, and a mutation setting
+    `gmv = revenue` SURVIVED it — both hold when the two are equal. A bound is
+    not a test of a quantity that is supposed to differ.
+    """
+    from sqlalchemy import text
+
+    from app.state import PERIOD_DAYS
+    from scripts.seed_data import ANCHOR
+    from datetime import timedelta
+
     fin = state.financial.values
-    assert fin["gmv_minor"] >= fin["current_period_revenue_minor"]
-    assert fin["capture_rate_pct"] <= 100.0
+    expected = db.execute(text("""
+        SELECT COALESCE(SUM(amount_minor), 0)                         AS gmv,
+               COALESCE(SUM(amount_minor) FILTER (
+                   WHERE status <> 'failed'), 0)                      AS revenue,
+               COALESCE(SUM(amount_minor) FILTER (
+                   WHERE status = 'failed'), 0)                       AS failed
+        FROM payments WHERE merchant_id = 'MERCH_A' AND created_at >= :cut
+    """), {"cut": ANCHOR - timedelta(days=PERIOD_DAYS)}).mappings().one()
+
+    assert fin["gmv_minor"] == int(expected["gmv"])
+    # GMV is revenue PLUS what was attempted and not captured. The seeded data
+    # has failures, so the two genuinely differ and the gap is measurable.
+    assert int(expected["failed"]) > 0, "the fixture no longer exercises the gap"
+    assert fin["gmv_minor"] == fin["current_period_revenue_minor"] + int(expected["failed"])
+    assert fin["gmv_minor"] > fin["current_period_revenue_minor"]
+    assert fin["capture_rate_pct"] < 100.0
     # The definition travels with the figure, so it cannot be read as revenue.
     assert "captured" in fin["gmv_definition"]
 

@@ -982,27 +982,32 @@ def main() -> int:
             caught = 0 if crashed else (total - passed)
             tests_ok, test_line = run_tests()
 
-            if crashed:
-                # A crash is NOT a catch, and scoring it as one is the single
-                # direction this harness must not be generous in. A suite that
-                # fell over has demonstrated nothing about whether it detects
-                # the defect -- the run simply has no result.
+            if crashed and tests_ok:
+                # The scenario suite fell over and the unit tests saw nothing.
+                # NOTHING was established, so this is a non-result rather than
+                # a catch. Scoring a crash as `caught = 1` is the single
+                # direction this harness must not be generous in: it read that
+                # way until a run where two mutants crashed because the
+                # scenario suite was being EDITED underneath it, and both
+                # reported CAUGHT.
                 #
-                # It read as `caught = 1` until a run where two mutants crashed
-                # because the scenario suite was being EDITED underneath it.
-                # Both reported CAUGHT; re-run cleanly, one turned out to be
-                # caught by three scenarios and the other by one. The scoring
-                # happened to flatter the truth that time, which is exactly why
-                # it could not be relied on.
+                # The `and tests_ok` is a correction to that correction. The
+                # two suites are INDEPENDENT signals, and a crash in one does
+                # not invalidate a verdict from the other -- discarding a real
+                # unit-test catch because the scenario runner died is the same
+                # error in the opposite direction. `advance raise like
+                # transition` was reported ungraded while pytest was reporting
+                # "38 passed, 1 error" about it.
                 invalid.append(label)
                 rows.append((label, "NO RESULT",
-                             "the suite crashed; this mutant was not graded",
-                             test_line if not tests_ok else ""))
+                             "the suite crashed and no test caught it", ""))
             elif caught == 0 and tests_ok:
                 survivors.append(label)
                 rows.append((label, "SURVIVED", "no scenario or test caught it", ""))
             else:
-                detail = f"{caught} scenario(s)"
+                # Reached when scenarios caught it, or when the scenario suite
+                # crashed but the unit tests still returned a verdict.
+                detail = ("suite crashed" if crashed else f"{caught} scenario(s)")
                 if not tests_ok:
                     detail += " + unit tests"
                 rows.append((label, "CAUGHT", detail,

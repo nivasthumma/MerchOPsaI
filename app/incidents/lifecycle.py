@@ -36,13 +36,32 @@ TERMINAL = frozenset({S.CLOSED})
 _CANONICAL: dict[S, set[S]] = {
     S.DETECTED: {S.TRIAGED, S.INVESTIGATING},
     S.TRIAGED: {S.INVESTIGATING},
-    S.INVESTIGATING: {S.ROOT_CAUSE_IDENTIFIED, S.RESOLVED},
+    # v2 §20 inserts EVIDENCE_COLLECTING and DIAGNOSING between INVESTIGATING
+    # and its conclusion. Both are SKIPPABLE: a run that answers from state it
+    # already had makes no tool calls, and one that gathers evidence without
+    # reaching a conclusion never diagnoses. Requiring the full chain would
+    # strand exactly the runs that did least.
+    S.INVESTIGATING: {S.EVIDENCE_COLLECTING, S.DIAGNOSING,
+                      S.ROOT_CAUSE_IDENTIFIED, S.RESOLVED},
+    S.EVIDENCE_COLLECTING: {S.DIAGNOSING, S.ROOT_CAUSE_IDENTIFIED, S.RESOLVED},
+    S.DIAGNOSING: {S.ROOT_CAUSE_IDENTIFIED, S.RESOLVED},
     S.ROOT_CAUSE_IDENTIFIED: {S.RECOVERY_PLANNED, S.RESOLVED},
     S.RECOVERY_PLANNED: {S.POLICY_EVALUATING, S.RESOLVED},
     S.POLICY_EVALUATING: {S.APPROVAL_REQUIRED, S.EXECUTING, S.RESOLVED},
-    S.APPROVAL_REQUIRED: {S.EXECUTING, S.CANCELLED},
+    # v2 §20's APPROVED sits between the request and the act. EXECUTING stays
+    # directly reachable: policy that returns ALLOW never asks anyone, and an
+    # incident that needed no approval must not have to pretend it got one.
+    S.APPROVAL_REQUIRED: {S.APPROVED, S.EXECUTING, S.CANCELLED},
+    S.APPROVED: {S.EXECUTING, S.CANCELLED},
     S.EXECUTING: {S.VERIFYING},
-    S.VERIFYING: {S.RESOLVED},
+    # v2 §20. Verification that could not establish external state hands over
+    # to the reconciliation sweep. RECONCILING is where UNKNOWN goes when
+    # somebody is actually looking, which is why UNKNOWN can reach it too.
+    S.VERIFYING: {S.RECONCILING, S.MEASURING, S.RESOLVED},
+    S.RECONCILING: {S.MEASURING, S.RESOLVED},
+    # v2 §20. Totalling what was actually recovered (§49). RESOLVED used to
+    # claim both "we stopped acting" and "we know what it was worth".
+    S.MEASURING: {S.RESOLVED},
     S.RESOLVED: {S.CLOSED},
 }
 
@@ -51,7 +70,10 @@ _CANONICAL: dict[S, set[S]] = {
 # that can never leave UNKNOWN would convert an unsettled state into a
 # permanent one (MerchantOps §33).
 _FROM_EXCEPTION: dict[S, set[S]] = {
-    S.UNKNOWN: {S.VERIFYING, S.RESOLVED, S.ESCALATED, S.CLOSED},
+    # RECONCILING added with v2 §20: it is the state UNKNOWN moves to when the
+    # sweep picks the incident up, and it is the honest difference between
+    # "nobody could tell" and "somebody is looking".
+    S.UNKNOWN: {S.VERIFYING, S.RECONCILING, S.RESOLVED, S.ESCALATED, S.CLOSED},
     S.FAILED: {S.ESCALATED, S.CLOSED},
     S.ESCALATED: {S.CLOSED},
     S.CANCELLED: {S.CLOSED},
@@ -82,6 +104,60 @@ def legal_from(state: S) -> set[S]:
 
 def is_legal(frm: S, to: S) -> bool:
     return to in legal_from(frm)
+
+
+def advance(session, subject, to: S, *, reason: str,
+            actor: str = "system") -> Incident | None:
+    """Move an incident if the move is legal, and shrug if it is not — v2 §20.
+
+    The tolerant counterpart to `transition`, and the asymmetry between them is
+    the point.
+
+    `transition` refuses loudly because it guards the machine: a caller that
+    asks for an illegal move has a control-plane defect and should hear about
+    it. `advance` is called from paths where the work has *already happened* —
+    a plan computed, a provider contacted, money moved — and where the status
+    is a description of that work rather than permission for it. An incident
+    that could not be advanced (somebody closed it, the chain was skipped) must
+    not raise back through a path that has already spent money. The action
+    record and the audit trail are the durable truth (ADR-0029).
+
+    `subject` is an `Incident`, or anything carrying `incident_id` — a task, in
+    practice. A task with no incident is a merchant question rather than an
+    investigation; there is nothing to move and that is not an error.
+    """
+    import logging
+
+    if subject is None:
+        return None
+    if isinstance(subject, Incident):
+        incident = subject
+    else:
+        incident_id = getattr(subject, "incident_id", None)
+        if not incident_id:
+            return None
+        incident = session.get(Incident, incident_id)
+
+    if incident is None or incident.status is to:
+        return incident
+    try:
+        return transition(session, incident, to, reason=reason, actor=actor)
+    except IllegalTransition:
+        # Expected, and the ordinary case: a chain was skipped, or somebody
+        # closed the incident while an action was in flight.
+        #
+        # There used to be an `if to in legal_from(...)` guard here as well. It
+        # was redundant -- `transition` checks legality before it mutates
+        # anything -- and a mutation that removed it SURVIVED the whole suite,
+        # because removing a check that duplicates another check changes
+        # nothing observable. One authority on legality, not two.
+        logging.getLogger(__name__).info(
+            "incident %s stayed %s; %s is not reachable from it",
+            incident.id, incident.status.value, to.value)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "could not move incident %s to %s", incident.id, to, exc_info=True)
+    return incident
 
 
 def transition(session, incident: Incident, to: S, *, reason: str,

@@ -14,9 +14,11 @@ from __future__ import annotations
 
 from app.agent.runtime import AgentRuntime
 from app.audit.trace import record_incident
+from app.incidents.lifecycle import advance as _advance
+from app.models import IncidentStatus as _S
 from app.models import (
     AgentAction, CandidateStatus, Incident, Intervention, PlanStatus,
-    RecoveryCandidate, RecoveryPlan, VerificationState,
+    RecoveryCandidate, RecoveryPlan, TaskStatus, VerificationState,
 )
 from app.policy.risk import assess
 from app.recovery.stopping import Disposition, StopDecision, apply_stop, evaluate_stopping_rules
@@ -108,8 +110,20 @@ def dispatch_candidate(session, plan: RecoveryPlan, candidate: RecoveryCandidate
             session.flush()
         raise RecoveryStopped(decision)
 
+    # v2 §20. Dispatching a candidate IS the policy evaluation: the task below
+    # goes through the same gates as any other financial action, and the
+    # incident should say so while it happens rather than after.
+    _advance(session, session.get(Incident, plan.incident_id), _S.POLICY_EVALUATING,
+             reason="Recovery candidate dispatched for policy evaluation.")
+
     request = _request_for(plan, candidate)
     out = AgentRuntime(session, principal).run(request, incident_id=plan.incident_id)
+
+    # Policy halted the run for a human. The incident follows the task, which is
+    # this module's rule everywhere: task status in, incident status out.
+    if out.task.status is TaskStatus.AWAITING_APPROVAL:
+        _advance(session, out.task, _S.APPROVAL_REQUIRED,
+                 reason="Policy requires human approval before this action.")
 
     candidate.task_id = out.task.id
     candidate.attempts += 1

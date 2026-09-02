@@ -444,8 +444,13 @@ MUTATIONS = [
     (
         "recovery: record the stop instead of acting on it",
         "app/recovery/dispatch.py",
-        "        raise RecoveryStopped(decision)\n\n    request = ",
-        "        pass  # MUTANT\n\n    request = ",
+        # The trailing context that used to disambiguate this anchor was
+        # `\n\n    request = `, and v2 §20 inserted a POLICY_EVALUATING move
+        # between the two — turning the mutant into a silent SKIP. The line is
+        # unique in the file on its own, so the anchor no longer depends on
+        # what happens to follow it.
+        "        raise RecoveryStopped(decision)",
+        "        pass  # MUTANT",
     ),
     (
         "recovery: claim the whole failed volume was at risk",
@@ -701,6 +706,74 @@ MUTATIONS = [
         "app/detection/baselines.py",
         "    return (baseline.expected_rate - float(current_rate)) < threshold_pp",
         "    return True  # MUTANT",
+    ),
+    # MerchantOps v2 §20, ADR-0039. Each of these makes a state silently stop
+    # being entered -- the failure mode the whole ADR is about, since a state
+    # nothing enters looks exactly like a state nothing needed.
+    (
+        "lifecycle: stop reporting the agent's phases",
+        "app/agent/runtime.py",
+        "        if self.on_phase is None:\n            return",
+        "        if True:  # MUTANT\n            return",
+    ),
+    (
+        "lifecycle: skip the evidence phase and jump to the conclusion",
+        "app/agent/runtime.py",
+        '                    self._phase("evidence_collecting")',
+        "                    pass  # MUTANT",
+    ),
+    (
+        "lifecycle: let approval go straight to executing",
+        "app/agent/approval.py",
+        '    move_incident(session, task, _S.APPROVED, reason="Approval granted.")',
+        "    pass  # MUTANT",
+    ),
+    (
+        "lifecycle: leave the incident behind when the provider is called",
+        "app/agent/approval.py",
+        '    move_incident(session, task, _S.EXECUTING, reason="Provider action started.")',
+        "    pass  # MUTANT",
+    ),
+    (
+        "lifecycle: resolve without measuring what was recovered",
+        "app/agent/approval.py",
+        '        move_incident(session, task, _S.MEASURING,\n'
+        '                      reason="Action verified; measuring the outcome.")',
+        "        pass  # MUTANT",
+    ),
+    (
+        "lifecycle: let an unknown external state skip reconciliation",
+        "app/agent/approval.py",
+        '        move_incident(session, task, _S.RECONCILING,\n'
+        '                      reason="External state undetermined; handed to reconciliation.")',
+        "        pass  # MUTANT",
+    ),
+    (
+        "lifecycle: plan a recovery without moving the incident",
+        "app/recovery/planner.py",
+        "    _advance(session, incident, _S.RECOVERY_PLANNED,",
+        "    _noop = (lambda *a, **k: None)(session, incident, _S.RECOVERY_PLANNED,  # MUTANT",
+    ),
+    (
+        # Third attempt at this one, and the first two are worth recording.
+        #
+        #   "let advance move an incident illegally" removed a pre-check that
+        #   duplicated `transition`'s own -> unobservable. The duplication was
+        #   the real finding and the pre-check is gone.
+        #
+        #   Narrowing `except IllegalTransition` to a class never raised ->
+        #   also unobservable, because the broad `except Exception` below it
+        #   caught what the narrowed clause missed.
+        #
+        # Re-raising from inside the clause is the version that bites: a
+        # sibling `except` does not catch it, so tolerance genuinely goes away.
+        # That tolerance is the actual design decision in `advance` -- a path
+        # that has already contacted a provider must not be taken down by an
+        # incident it could not move.
+        "lifecycle: make advance raise like transition does",
+        "app/incidents/lifecycle.py",
+        "    except IllegalTransition:",
+        "    except IllegalTransition:\n        raise  # MUTANT",
     ),
 ]
 

@@ -151,9 +151,19 @@ class AgentRuntime:
     def __init__(self, session, principal: Principal,
                  provider: LLMProvider | None = None,
                  injector: FaultInjector | None = None,
-                 frozen_tools: dict | None = None):
+                 frozen_tools: dict | None = None,
+                 on_phase=None):
         self.session = session
         self.principal = principal
+        # MerchantOps v2 §20. Called with a phase name when the run reaches one,
+        # so an incident can move through EVIDENCE_COLLECTING and DIAGNOSING at
+        # the moment the work happens rather than being back-dated afterwards.
+        #
+        # A callback rather than the runtime moving the incident itself: this
+        # module runs for incident-dispatched tasks and for merchant questions
+        # that have no incident, and it has no business knowing which. The
+        # caller that owns an incident is the caller that may move one.
+        self.on_phase = on_phase
         self.provider = provider or get_provider()
         self.injector = injector or FaultInjector.disabled()
         self.settings = get_settings()
@@ -167,6 +177,23 @@ class AgentRuntime:
         # even when the run died before either was assigned.
         self._task: AgentTask | None = None
         self._correlation_id: str | None = None
+
+    def _phase(self, name: str) -> None:
+        """Tell the caller the run reached a phase — v2 §20.
+
+        Never fatal. A caller that cannot move its incident (an illegal
+        transition, an incident somebody closed underneath us) must not take
+        the agent run down with it: the investigation is the work, and the
+        status is a description of it.
+        """
+        if self.on_phase is None:
+            return
+        try:
+            self.on_phase(name)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "phase hook failed for %s", name, exc_info=True)
 
     # ------------------------------------------------------------------
     def run(self, request: str, **kwargs) -> RunOutcome:
@@ -335,6 +362,11 @@ class AgentRuntime:
 
             result_blocks = []
             for req in turn.tool_requests:
+                if seq == 0:
+                    # v2 §20: the first tool call is the moment evidence starts
+                    # arriving, and the difference between a run that was
+                    # dispatched and one that is working.
+                    self._phase("evidence_collecting")
                 seq += 1
                 tc, payload, halted, approval_obj = self._handle_tool(task, req, seq)
                 if approval_obj is not None:
@@ -442,6 +474,11 @@ class AgentRuntime:
             # the deterministic planner is not the only provider this runs on.
             record(self.session, task, "agent_output_absent", {})
             return prose, None, None
+
+        # v2 §20: a well-formed output block means the run is weighing what it
+        # gathered. Raised here rather than on the first finding because a run
+        # that reached a conclusion of "nothing" still diagnosed.
+        self._phase("diagnosing")
 
         task.intent = output.intent[:64]
         task.recommendation = {

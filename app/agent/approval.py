@@ -20,6 +20,8 @@ from sqlalchemy.exc import IntegrityError
 from app.models import (
     AgentAction, AgentTask, Approval, ApprovalSignature, TaskStatus, VerificationState,
 )
+from app.incidents.lifecycle import advance as move_incident
+from app.models import IncidentStatus as _S
 from app.policy.engine import (
     Decision, PolicyContext, approval_is_valid, evaluate,
 )
@@ -169,6 +171,10 @@ def approve_and_execute(session, task_id: str, principal,
     record(session, task, "approval_granted", {
         "approval_id": ap.id, "signatures": [s.user_id for s in signatures],
         "required": ap.required_signatures})
+    # v2 §20. The gap between a granted approval and the act. Previously
+    # invisible: an approval granted against a provider that was down looked
+    # identical to one nobody had answered.
+    move_incident(session, task, _S.APPROVED, reason="Approval granted.")
 
     # --- 2. approval still valid (expiry) --------------------------------
     ok, why = approval_is_valid(ap)
@@ -208,6 +214,7 @@ def approve_and_execute(session, task_id: str, principal,
     record(session, task, "action_executing",
            {"approval_id": ap.id, "adapter_mode": adapter.mode,
             "payment": payload.get("synthetic_payment_id")})
+    move_incident(session, task, _S.EXECUTING, reason="Provider action started.")
 
     executor = EXECUTORS.get(ap.action_type)
     if executor is None:
@@ -237,6 +244,8 @@ def approve_and_execute(session, task_id: str, principal,
                {"action_id": action.id,
                 "state": action.verification_state.value if action.verification_state else None,
                 "detail": action.verification_detail})
+        move_incident(session, task, _S.VERIFYING,
+                      reason="Verifying external state.")
 
     state = action.verification_state if action else None
     what = _SUCCESS_PROSE.get(ap.action_type, "The action completed and was verified.")
@@ -262,6 +271,25 @@ def approve_and_execute(session, task_id: str, principal,
         task.status = TaskStatus.FAILED
         task.failure_code = result.error_code or "VERIFICATION_FAILED"
         task.final_answer = f"The {noun} did not complete: {result.data}"
+
+    # v2 §20. Where the incident goes next follows the verification outcome,
+    # and the two branches are deliberately different states:
+    #
+    #   SUCCESS  -> MEASURING    the act settled; the ledger totals what it was
+    #                            worth (§49). RESOLVED used to claim both "we
+    #                            stopped acting" and "we know what it came to".
+    #   UNKNOWN  -> RECONCILING  somebody is looking. Distinct from the UNKNOWN
+    #                            state, which says nobody could tell (§53).
+    #
+    # PARTIAL and failure are left where they are: a partial execution is not
+    # settled and not unresolvable, and moving it to either would assert
+    # something nobody established.
+    if state is VerificationState.SUCCESS:
+        move_incident(session, task, _S.MEASURING,
+                      reason="Action verified; measuring the outcome.")
+    elif state is VerificationState.UNKNOWN:
+        move_incident(session, task, _S.RECONCILING,
+                      reason="External state undetermined; handed to reconciliation.")
 
     session.flush()
     record(session, task, "task_completed",

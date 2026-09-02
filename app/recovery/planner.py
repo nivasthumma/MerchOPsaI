@@ -59,9 +59,11 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record_incident
+from app.incidents.lifecycle import advance as _advance
 from app.config import get_settings
 from app.recovery.history import MIN_SAMPLE, outcome_for
 from app.recovery.stopping import MAX_UNATTENDED_RISK
+from app.models import IncidentStatus as _S
 from app.models import (
     CandidateStatus, Incident, IncidentType, Intervention, PlanStatus,
     RecoveryCandidate, RecoveryPlan,
@@ -383,6 +385,14 @@ def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
         ))
     session.add_all(candidates)
     session.flush()
+
+    # v2 §20. Planning is the moment RECOVERY_PLANNED describes, and until now
+    # the incident stayed where the investigation left it while a plan existed
+    # beside it. Tolerant for the same reason the execution path is: a plan
+    # that was computed is a fact, and an incident somebody moved underneath us
+    # must not undo it.
+    _advance(session, incident, _S.RECOVERY_PLANNED,
+             reason=f"Recovery planned: {intervention.value}.")
 
     record_incident(session, incident, "recovery_planned", {
         "plan_id": plan.id, "intervention": intervention.value,

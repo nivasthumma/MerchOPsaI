@@ -17,11 +17,20 @@ system state, applied to the incident.
 
 ## Scope boundary
 
-Investigation stops at ROOT_CAUSE_IDENTIFIED. `RECOVERY_PLANNED` onwards belongs
-to the recovery planner (MerchantOps §23), which is not built. The one exception
-is an investigation that reaches a policy decision requiring approval: those
-states are entered because policy genuinely evaluated and genuinely required a
-human, not to make the chain look complete.
+Investigation stops at ROOT_CAUSE_IDENTIFIED. Everything after it belongs to the
+recovery planner and the execution path, which move the incident themselves
+through `lifecycle.advance` (v2 §20, ADR-0039). The one exception is an
+investigation that reaches a policy decision requiring approval: those states
+are entered because policy genuinely evaluated and genuinely required a human,
+not to make the chain look complete.
+
+## The phases inside an investigation
+
+v2 §20 splits INVESTIGATING into the work it is made of, and the runtime reports
+reaching each phase through `on_phase` so the incident moves *while* it happens
+rather than being back-dated afterwards. Both are skippable: a run that answers
+from state it already had makes no tool calls and never enters
+EVIDENCE_COLLECTING; one that produces no output block never enters DIAGNOSING.
 """
 from __future__ import annotations
 
@@ -33,7 +42,7 @@ from app.agent.runtime import AgentRuntime, Principal
 from app.audit.trace import record_incident
 from app.evidence.graph import build as build_graph
 from app.evidence.hypotheses import adjudicate
-from app.incidents.lifecycle import transition
+from app.incidents.lifecycle import legal_from, transition
 from app.models import (
     Incident, IncidentEvidence, IncidentSeverity, IncidentStatus as S,
     IncidentType, TaskStatus,
@@ -101,7 +110,25 @@ def investigate(session, incident: Incident, principal: Principal,
                    reason="Agent investigation started.", actor=principal.user_id)
 
     request = build_investigation_request(incident)
-    runtime = AgentRuntime(session, principal, provider=provider)
+
+    # MerchantOps v2 §20. The runtime tells us when it reaches a phase and we
+    # move the incident, so the timeline shows the states as they happened
+    # rather than reconstructed at the end. Skips stay legal: a run that makes
+    # no tool calls never enters EVIDENCE_COLLECTING, and one that produces no
+    # output block never enters DIAGNOSING.
+    _PHASES = {"evidence_collecting": S.EVIDENCE_COLLECTING,
+               "diagnosing": S.DIAGNOSING}
+
+    def on_phase(name: str) -> None:
+        target = _PHASES.get(name)
+        if target is None or incident.status is target:
+            return
+        if target in legal_from(incident.status):
+            transition(session, incident, target,
+                       reason=f"Agent reached {name}.", actor="system")
+
+    runtime = AgentRuntime(session, principal, provider=provider,
+                           on_phase=on_phase)
     # Bound at creation. Binding after the run would put none of the run's own
     # events on the incident's trace -- see the note in AgentRuntime.run.
     # §58: the incident's id ties detection, its lifecycle and every task it

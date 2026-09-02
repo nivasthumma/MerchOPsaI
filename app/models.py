@@ -161,23 +161,79 @@ class IncidentSeverity(str, enum.Enum):
 
 
 class IncidentStatus(str, enum.Enum):
-    """MerchantOps §13 canonical lifecycle, plus the terminal/exception set.
+    """The incident lifecycle — MerchantOps §13, extended to v2 §20.
 
     The order of the canonical states is meaningful: `app.incidents.lifecycle`
     derives the legal forward transitions from it. Terminal states are listed
     separately because they are reachable from anywhere, not from a predecessor.
+
+    ## Every state here is one the code actually reaches
+
+    v2 §20 lists seventeen canonical states. Five were genuinely missing and are
+    added below. Two belong to a different entity, and one has no moment on this
+    entity at all — see ADR-0039. A state nothing ever transitions through is
+    worse than a smaller honest machine: no scenario can grade it, and a
+    merchant reading a status list finds half its entries unreachable.
+
+    ## v2 §20 crosswalk
+
+        v2                     here
+        RECEIVED               webhook_events.status — the EVENT's lifecycle
+        VALIDATING             webhook_events — signature validation, §34
+        DETECTED               DETECTED
+        TRIAGING               TRIAGED
+        INVESTIGATING          INVESTIGATING
+        EVIDENCE_COLLECTING    EVIDENCE_COLLECTING      (new)
+        DIAGNOSING             DIAGNOSING               (new)
+        IMPACT_CALCULATING     — computed by detection, before the incident row
+        RECOVERY_PLANNING      RECOVERY_PLANNED
+        POLICY_EVALUATING      POLICY_EVALUATING
+        APPROVAL_REQUIRED      APPROVAL_REQUIRED
+        APPROVED               APPROVED                 (new)
+        EXECUTING              EXECUTING
+        VERIFYING              VERIFYING
+        RECONCILING            RECONCILING              (new)
+        MEASURING              MEASURING                (new)
+        RESOLVED               RESOLVED
+
+    The three `-ING` renames are not made. ADR-0016 settled that renaming for
+    its own sake is "a large diff whose only effect is to change strings", and
+    these names appear in 187 scenario expectations, the API contract and the
+    stored rows of every incident ever raised.
     """
     DETECTED = "DETECTED"
     TRIAGED = "TRIAGED"
     INVESTIGATING = "INVESTIGATING"
+    # v2 §20. The agent is running tools. Distinct from INVESTIGATING, which
+    # only says a task was dispatched: this says evidence is actually arriving,
+    # which is the difference between a run that started and one that is working.
+    EVIDENCE_COLLECTING = "EVIDENCE_COLLECTING"
+    # v2 §20. Weighing what the evidence means. ROOT_CAUSE_IDENTIFIED is the
+    # RESULT; this is the activity, and §30's competing hypotheses are decided
+    # here. Keeping both is what lets an incident that diagnosed and concluded
+    # nothing be told apart from one that never got that far.
+    DIAGNOSING = "DIAGNOSING"
     ROOT_CAUSE_IDENTIFIED = "ROOT_CAUSE_IDENTIFIED"
     RECOVERY_PLANNED = "RECOVERY_PLANNED"
     POLICY_EVALUATING = "POLICY_EVALUATING"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    # v2 §20. A human said yes and nothing has been executed yet. Previously
+    # invisible: an incident went straight from APPROVAL_REQUIRED to EXECUTING,
+    # so an approval granted against a provider that was down looked identical
+    # to one nobody had answered.
+    APPROVED = "APPROVED"
     EXECUTING = "EXECUTING"
     VERIFYING = "VERIFYING"
+    # v2 §20. Verification could not establish external state and the
+    # reconciliation sweep owns it now. Distinct from UNKNOWN: this says
+    # somebody is looking, UNKNOWN says nobody could tell.
+    RECONCILING = "RECONCILING"
+    # v2 §20. Actions have settled and the ledger is totalling what was actually
+    # recovered (§49). The gap between "we finished acting" and "we know what it
+    # was worth" is real, and RESOLVED claimed both.
+    MEASURING = "MEASURING"
     RESOLVED = "RESOLVED"
-    # exception / terminal (MerchantOps §13)
+    # exception / terminal (MerchantOps §13, v2 §20)
     FAILED = "FAILED"
     UNKNOWN = "UNKNOWN"
     ESCALATED = "ESCALATED"

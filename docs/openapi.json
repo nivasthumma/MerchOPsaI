@@ -2186,6 +2186,67 @@
         "title": "Me",
         "type": "object"
       },
+      "MerchantStateView": {
+        "additionalProperties": false,
+        "description": "MerchantOps v2 \u00a714's MerchantState.\n\nBranches are `dict` rather than modelled field by field. Their contents are\nassembled from modules that own their own shapes \u2014 the ledger, the metrics\nregistry, the dashboard \u2014 and mirroring those here would create a second\ndefinition that drifts from the first. That is the same reasoning the module\ndocstring gives for typing audit payloads as `dict`.\n\nA branch that could not be measured carries `measured: false` and a reason\nrather than a zero.",
+        "properties": {
+          "as_of": {
+            "title": "As Of",
+            "type": "string"
+          },
+          "customers": {
+            "additionalProperties": true,
+            "title": "Customers",
+            "type": "object"
+          },
+          "financial": {
+            "additionalProperties": true,
+            "title": "Financial",
+            "type": "object"
+          },
+          "incidents": {
+            "additionalProperties": true,
+            "title": "Incidents",
+            "type": "object"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "operational_health": {
+            "additionalProperties": true,
+            "title": "Operational Health",
+            "type": "object"
+          },
+          "payments": {
+            "additionalProperties": true,
+            "title": "Payments",
+            "type": "object"
+          },
+          "period_days": {
+            "title": "Period Days",
+            "type": "integer"
+          },
+          "recovery": {
+            "additionalProperties": true,
+            "title": "Recovery",
+            "type": "object"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "as_of",
+          "period_days",
+          "financial",
+          "payments",
+          "customers",
+          "incidents",
+          "recovery",
+          "operational_health"
+        ],
+        "title": "MerchantStateView",
+        "type": "object"
+      },
       "MessageView": {
         "additionalProperties": false,
         "properties": {
@@ -5679,6 +5740,53 @@
           }
         },
         "summary": "Run One"
+      }
+    },
+    "/state": {
+      "get": {
+        "description": "The merchant digital twin \u2014 MerchantOps v2 \u00a714.\n\nOne coherent view of operational health, assembled from the modules that\nalready own each figure rather than recomputed here. Computed per read: the\nnumbers derive from rows that change underneath them, and a cached count\ndisagrees with its rows the first time a candidate moves (ADR-0040).\n\n`/recovery/ledger` and the dashboard remain: this calls them. A branch \u00a714\nnames that nothing measures reports `measured: false` with a reason instead\nof a zero.",
+        "operationId": "get_merchant_state_state_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantStateView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Merchant State"
       }
     },
     "/tasks": {

@@ -590,6 +590,26 @@ def get_recovery_plan(plan_id: str, principal: Principal = Depends(current_princ
         return _plan_view(s, _owned_plan(s, plan_id, principal), detail=True)
 
 
+@app.get("/state", response_model=schemas.MerchantStateView,
+         response_model_exclude_unset=True)
+def get_merchant_state(principal: Principal = Depends(current_principal)):
+    """The merchant digital twin — MerchantOps v2 §14.
+
+    One coherent view of operational health, assembled from the modules that
+    already own each figure rather than recomputed here. Computed per read: the
+    numbers derive from rows that change underneath them, and a cached count
+    disagrees with its rows the first time a candidate moves (ADR-0040).
+
+    `/recovery/ledger` and the dashboard remain: this calls them. A branch §14
+    names that nothing measures reports `measured: false` with a reason instead
+    of a zero.
+    """
+    from app.state import build_state
+
+    with session_scope() as s:
+        return build_state(s, principal.merchant_id).as_dict()
+
+
 @app.get("/campaigns", response_model=schemas.CampaignList,
          response_model_exclude_unset=True)
 def list_campaigns(principal: Principal = Depends(current_principal)):

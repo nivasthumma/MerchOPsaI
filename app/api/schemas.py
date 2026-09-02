@@ -395,6 +395,32 @@ class WebhookEventList(Contract):
     unattributed_count: int
 
 
+# ------------------------------------------------------ merchant state (§14)
+class MerchantStateView(Contract):
+    """MerchantOps v2 §14's MerchantState.
+
+    Branches are `dict` rather than modelled field by field. Their contents are
+    assembled from modules that own their own shapes — the ledger, the metrics
+    registry, the dashboard — and mirroring those here would create a second
+    definition that drifts from the first. That is the same reasoning the module
+    docstring gives for typing audit payloads as `dict`.
+
+    A branch that could not be measured carries `measured: false` and a reason
+    rather than a zero.
+    """
+    merchant_id: str
+    # Computed per read, so the figures are as of this request. A dashboard
+    # number with no as-of is one somebody quotes an hour later.
+    as_of: str
+    period_days: int
+    financial: dict
+    payments: dict
+    customers: dict
+    incidents: dict
+    recovery: dict
+    operational_health: dict
+
+
 # --------------------------------------------------------- campaigns (§37)
 class CampaignBudget(Contract):
     """§38's five bounds, each beside what has been used against it.

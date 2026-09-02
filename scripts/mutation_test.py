@@ -707,6 +707,39 @@ MUTATIONS = [
         "    return (baseline.expected_rate - float(current_rate)) < threshold_pp",
         "    return True  # MUTANT",
     ),
+    # MerchantOps v2 §14, ADR-0040. The twin is a view over figures other
+    # modules own, so its failure modes are disagreeing with them and inventing
+    # what it cannot measure.
+    (
+        "state: report an unmeasurable latency as a number anyway",
+        "app/state.py",
+        '        "latency": {\n            "measured": False,',
+        '        "latency": {\n            "measured": True, "p50_ms": 240,  # MUTANT',
+    ),
+    (
+        "state: report GMV as revenue",
+        "app/state.py",
+        '        "gmv_minor": gmv,',
+        '        "gmv_minor": revenue,  # MUTANT',
+    ),
+    (
+        "state: recompute revenue at risk instead of reading the ledger",
+        "app/state.py",
+        '        "revenue_at_risk_minor": ledger.at_risk_minor,',
+        '        "revenue_at_risk_minor": gmv - revenue,  # MUTANT',
+    ),
+    (
+        "state: hand the model the whole twin instead of a slice",
+        "app/state.py",
+        '        relevant = [m for m in methods if method and m["method"] == method]',
+        "        relevant = list(methods)  # MUTANT",
+    ),
+    (
+        "state: let one merchant's twin read another's customers",
+        "app/state.py",
+        "          (SELECT COUNT(*) FROM customers WHERE merchant_id = :m)      AS active,",
+        "          (SELECT COUNT(*) FROM customers)      AS active,  -- MUTANT",
+    ),
     # MerchantOps v2 §20, ADR-0039. Each of these makes a state silently stop
     # being entered -- the failure mode the whole ADR is about, since a state
     # nothing enters looks exactly like a state nothing needed.
@@ -974,6 +1007,15 @@ def main() -> int:
                     detail += " + unit tests"
                 rows.append((label, "CAUGHT", detail,
                              ", ".join(failed[:4]) + ("…" if len(failed) > 4 else "")))
+
+            # Printed as it happens, not only in the table at the end. A full
+            # run is 108 mutants and the better part of four hours; with the
+            # result withheld until the end it is impossible to tell a run that
+            # is working from one that is stuck, and killing it to find out
+            # throws away everything it had done.
+            done = len(rows)
+            print(f"  [{done:3}/{len(mutations)}] {rows[-1][1]:<10} {label}",
+                  flush=True)
         finally:
             path.write_text(original)
             _hold(LOCK, None, None)

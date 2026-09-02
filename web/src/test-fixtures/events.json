@@ -1,0 +1,370 @@
+{
+  "events": [
+    {
+      "id": "EVT_54A1A5783EF84F73",
+      "event": "incident.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.029869+10:00",
+      "payload_hash": "f4f833f11d5752d076189a6d8c37f7e12ed7f1cfb0e163bb58b2ca958aa4a1c5",
+      "payload": {
+        "duration_ms": 21.498650996363722,
+        "incident_type": "PAYMENT_DEGRADATION",
+        "severity": "MEDIUM",
+        "rule": "success_rate_below_baseline",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 2926106,
+        "correlation_id": "COR_7B0F7C27D415",
+        "signals": {
+          "method": "upi",
+          "current_success_rate_pct": 73.2,
+          "baseline_success_rate_pct": 91.8,
+          "drop_pct_points": 18.6,
+          "threshold_pct_points": 10.0,
+          "current_attempts": 123,
+          "current_failures": 33,
+          "expected_successes": 112.9,
+          "actual_successes": 90,
+          "shortfall_transactions": 22.9,
+          "average_transaction_value_minor": 127677,
+          "window_start": "2026-08-13T00:00:00+00:00",
+          "window_end": "2026-08-20T00:00:00+00:00",
+          "seasonal_baseline": {
+            "granularity": "HOUR",
+            "expected_rate_pct": 92.3,
+            "coverage": 0.91,
+            "slots": 12,
+            "samples": 63,
+            "min_slot_samples": 3
+          },
+          "correlation": {
+            "corroboration": 1,
+            "corroborating_rules": [],
+            "cluster_size": 1,
+            "cluster_revenue_at_risk_minor": 2926106,
+            "multivariate": false
+          }
+        }
+      }
+    },
+    {
+      "id": "EVT_71C39129EC7A4A9A",
+      "event": "incident.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_9E1AB982F0",
+      "task_id": null,
+      "correlation_id": "COR_4B7CC044CE17",
+      "occurred_at": "2026-09-02T22:26:21.034456+10:00",
+      "payload_hash": "49f1b34f2f9e63775fb70c5644b1b0a28a6d7fc4da8c25ab7b14f76ad7be1c4b",
+      "payload": {
+        "duration_ms": 24.126245989464223,
+        "incident_type": "DUPLICATE_PAYMENT",
+        "severity": "LOW",
+        "rule": "duplicate_capture_on_order",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 499900,
+        "correlation_id": "COR_4B7CC044CE17",
+        "signals": {
+          "order_id": "SYN_ORD_DUP01",
+          "customer_id": "SYN_CUS_A0012",
+          "first_payment_id": "SYN_PAY_0001",
+          "excess_payment_ids": [
+            "SYN_PAY_0002"
+          ],
+          "capture_count": 2,
+          "amount_minor": 499900,
+          "time_separation_seconds": [
+            34
+          ],
+          "already_refunded_minor": 0,
+          "window_seconds": 600,
+          "correlation": {
+            "corroboration": 1,
+            "corroborating_rules": [],
+            "cluster_size": 1,
+            "cluster_revenue_at_risk_minor": 499900,
+            "multivariate": false
+          }
+        }
+      }
+    },
+    {
+      "id": "EVT_F459ACA9234E442D",
+      "event": "incident.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_B0B533C35A",
+      "task_id": null,
+      "correlation_id": "COR_7518655964C9",
+      "occurred_at": "2026-09-02T22:26:21.037170+10:00",
+      "payload_hash": "5047ac170d759de412a1f20b7cf00a8568f9d047e43bbca202e0d8817376ec5f",
+      "payload": {
+        "duration_ms": 24.126684991642833,
+        "incident_type": "DUPLICATE_PAYMENT",
+        "severity": "LOW",
+        "rule": "duplicate_capture_on_order",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 149900,
+        "correlation_id": "COR_7518655964C9",
+        "signals": {
+          "order_id": "SYN_ORD_DUP02",
+          "customer_id": "SYN_CUS_A0045",
+          "first_payment_id": "SYN_PAY_0003",
+          "excess_payment_ids": [
+            "SYN_PAY_0004"
+          ],
+          "capture_count": 2,
+          "amount_minor": 149900,
+          "time_separation_seconds": [
+            112
+          ],
+          "already_refunded_minor": 0,
+          "window_seconds": 600,
+          "correlation": {
+            "corroboration": 1,
+            "corroborating_rules": [],
+            "cluster_size": 1,
+            "cluster_revenue_at_risk_minor": 149900,
+            "multivariate": false
+          }
+        }
+      }
+    },
+    {
+      "id": "EVT_83B1B777FB7D4767",
+      "event": "agent.started",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": "TASK_5A5BB8A994",
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.046647+10:00",
+      "payload_hash": "03829587d408ef0083286a2370dbc1abe4a5b81af121f0cdbbd81e85690eeb06",
+      "payload": {
+        "request": "INCIDENT INC_AA6A885EF3 (PAYMENT_DEGRADATION, severity MEDIUM)\nUPI payment degradation\n\nFACT (measured by the detection engine, not to be re-estimated):\n  actual_successes: 90\n  average_transaction_value_minor: 127677\n  baseline_success_rate_pct: 91.8\n  correlation: {'corroboration': 1, 'corroborating_rules': [], 'cluster_size': 1, 'cluster_revenue_at_risk_minor': 2926106, 'multivariate': False}\n  current_attempts: 123\n  current_failures: 33\n  current_success_rate_pct: 73.2\n  drop_pct_points: 18.6\n  expected_successes: 112.9\n  method: upi\n  seasonal_baseline: {'granularity': 'HOUR', 'expected_rate_pct': 92.3, 'coverage': 0.91, 'slots': 12, 'samples': 63, 'min_slot_samples': 3}\n  shortfall_transactions: 22.9\n  threshold_pct_points: 10.0\n  window_end: 2026-08-20T00:00:00+00:00\n  window_start: 2026-08-13T00:00:00+00:00\n\nTASK\nInvestigate this incident using the available tools. Establish what is driving it, cite the evidence you used, and state the impact. Do not invent figures the tools did not return.",
+        "provider": "deterministic",
+        "model": "deterministic-planner-v1",
+        "replay": false
+      }
+    },
+    {
+      "id": "EVT_9A3CBC2298B04E20",
+      "event": "policy.evaluated",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": "TASK_5A5BB8A994",
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.053127+10:00",
+      "payload_hash": "7ddbfbd059ae37d8c32ea5cec5f9d09d1e9752ea319cf77bfdc6bbd6f35e3fd1",
+      "payload": {
+        "tool": "calculate_recovery_candidates",
+        "decision": "ALLOW",
+        "rule": "low_risk_authorized",
+        "reason": "Read-only operation, user authorized.",
+        "arguments": {
+          "incident_id": "INC_AA6A885EF3"
+        },
+        "duration_ms": 0.01122899993788451
+      }
+    },
+    {
+      "id": "EVT_A50678421383416F",
+      "event": "tool.completed",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": "TASK_5A5BB8A994",
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.058970+10:00",
+      "payload_hash": "6791542cbb8052e215f78231860c6e9bcd66fe0fc9652d07a6c20a142d42f0b8",
+      "payload": {
+        "seq": 1,
+        "tool": "calculate_recovery_candidates",
+        "success": true,
+        "tool_call_id": "TC_D3C1D7395B",
+        "duration_ms": 3
+      }
+    },
+    {
+      "id": "EVT_E6CA8CA20CDF44E3",
+      "event": "recommendation.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": "TASK_5A5BB8A994",
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.068242+10:00",
+      "payload_hash": "81cc0764d5b1384b01c40a95341c4e40dbf63f4a2100c0a1418be448e73e2f97",
+      "payload": {
+        "intent": "revenue_investigation",
+        "confidence": 0.9,
+        "requires_human": false,
+        "findings": 1,
+        "recommendation": {
+          "type": "investigate_further",
+          "detail": "The degraded method warrants a recovery plan."
+        }
+      }
+    },
+    {
+      "id": "EVT_7BE2A1161E564665",
+      "event": "hypothesis.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.116406+10:00",
+      "payload_hash": "f27dfbf5aa512902c1e42e1f32332f50ec2fb4e42382e85f66bc926bc7b5cc75",
+      "payload": {
+        "hypothesis_id": "HYP_D2ED7DAE89",
+        "label": "H1",
+        "key": "provider_degradation",
+        "statement": "The payment provider degraded for this method.",
+        "status": "UNTESTED",
+        "reason": null
+      }
+    },
+    {
+      "id": "EVT_9EDD1BCC034A45E5",
+      "event": "hypothesis.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.119196+10:00",
+      "payload_hash": "09676934cc92055e7ea1e2b5ebe4293cdbb921e29efc47e663302344c1fd2e01",
+      "payload": {
+        "hypothesis_id": "HYP_A8F85D4707",
+        "label": "H2",
+        "key": "merchant_configuration",
+        "statement": "A merchant configuration change broke this method.",
+        "status": "UNTESTED",
+        "reason": null
+      }
+    },
+    {
+      "id": "EVT_4C42CC8B701B49F8",
+      "event": "hypothesis.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.121538+10:00",
+      "payload_hash": "67b3bc6cdb913bf9deaf83b4ef936b87ea24890a1f8ab43e246a615df5cfe57e",
+      "payload": {
+        "hypothesis_id": "HYP_3643BCD4FD",
+        "label": "H3",
+        "key": "traffic_anomaly",
+        "statement": "A change in traffic volume explains the movement.",
+        "status": "UNTESTED",
+        "reason": null
+      }
+    },
+    {
+      "id": "EVT_B274FB2CEF404337",
+      "event": "hypothesis.created",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.123860+10:00",
+      "payload_hash": "27dc87f6622283f146fd94e51b125ce48a5b42924aeb282cca6210a275d58470",
+      "payload": {
+        "hypothesis_id": "HYP_7237E7E1D4",
+        "label": "H4",
+        "key": "customer_segment",
+        "statement": "The problem is specific to a segment of customers.",
+        "status": "UNTESTED",
+        "reason": null
+      }
+    },
+    {
+      "id": "EVT_08DBB760EC624688",
+      "event": "hypothesis.rejected",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.133372+10:00",
+      "payload_hash": "9c04b590f2fad560c6e29fced907cbe205acb31642b75f9e7459f512658b6693",
+      "payload": {
+        "hypothesis_id": "HYP_3643BCD4FD",
+        "label": "H3",
+        "key": "traffic_anomaly",
+        "statement": "A change in traffic volume explains the movement.",
+        "status": "REJECTED",
+        "reason": "upi attempt volume moved only -14%; the failures are not explained by a change in traffic"
+      }
+    },
+    {
+      "id": "EVT_00BEF304C0554BDD",
+      "event": "hypothesis.rejected",
+      "schema_version": "v1",
+      "tenant_id": null,
+      "merchant_id": "MERCH_A",
+      "entity_id": null,
+      "provider": null,
+      "incident_id": "INC_AA6A885EF3",
+      "task_id": null,
+      "correlation_id": "COR_7B0F7C27D415",
+      "occurred_at": "2026-09-02T22:26:21.134827+10:00",
+      "payload_hash": "39b582fc956d4b138262ae64b1665b3c7d1aff3d7a68441dc71060033770ddba",
+      "payload": {
+        "hypothesis_id": "HYP_7237E7E1D4",
+        "label": "H4",
+        "key": "customer_segment",
+        "statement": "The problem is specific to a segment of customers.",
+        "status": "REJECTED",
+        "reason": "43 failures are spread across 37 customers, so this is not specific to a segment"
+      }
+    }
+  ],
+  "next_cursor": "EVT_00BEF304C0554BDD",
+  "pending": 13
+}

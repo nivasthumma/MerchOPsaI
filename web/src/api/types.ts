@@ -423,3 +423,45 @@ export interface RecoveryPlanView {
                  expected_recovery_minor: number; actual_recovery_minor: number;
                  executable: boolean; attempts: number; task_id: string | null }[];
 }
+
+/** One frame of the live event stream — MerchantOps v2 §11's field list,
+ *  §62's names.
+ *
+ *  `event` is one of §62's fifteen and the set is closed server-side: the
+ *  backend refuses to publish a name outside it, so a frame arriving here with
+ *  an unfamiliar type means the vocabulary grew and this app has not caught up
+ *  — which the timeline renders as itself rather than dropping. */
+export interface LiveEvent {
+  id: string;
+  event: string;
+  schema_version: string;
+  occurred_at: string;
+  payload_hash: string;
+  payload: Record<string, unknown>;
+  /** Optional, not merely nullable. The endpoint is served with
+   *  `response_model_exclude_unset=True`, so a field the view did not set is
+   *  ABSENT from the JSON rather than present as null. Declaring these
+   *  `string | null` failed `contract.ts` against the generated schema — which
+   *  is the whole reason that check exists, and it caught this before a
+   *  browser did. */
+  tenant_id?: string | null;
+  merchant_id?: string | null;
+  entity_id?: string | null;
+  provider?: string | null;
+  incident_id?: string | null;
+  task_id?: string | null;
+  correlation_id?: string | null;
+}
+
+export interface LiveEventList {
+  events: LiveEvent[];
+  /** Pass back as `after` to continue. Null when nothing was returned — a
+   *  cursor of "nothing" is the cursor you already had. Optional for the same
+   *  `exclude_unset` reason as the fields above. */
+  next_cursor?: string | null;
+  /** Frames written but not yet delivered to consumers. A number that only
+   *  grows means the drain has stopped, which is invisible from the frames
+   *  themselves: the timeline just stops moving, which looks like a quiet
+   *  system rather than a broken one. */
+  pending: number;
+}

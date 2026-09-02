@@ -10,7 +10,8 @@ import type {
   Dashboard,
   IncidentDetail,
   IncidentSummary,
-  EscalatedAction, Health, Metrics, ReconcileReport, ReplayResult, Scenario,
+  EscalatedAction, Health, LiveEventList, Metrics, ReconcileReport, ReplayResult,
+  Scenario,
   Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
@@ -182,6 +183,33 @@ export const api = {
 
   getIncident: (id: string) =>
     request<IncidentDetail>(`/incidents/${encodeURIComponent(id)}`),
+
+  /** MerchantOps v2 §62, §65 — the live event stream, read as a cursor.
+   *
+   *  Polled rather than streamed, and that is not a shortcut. The server also
+   *  exposes `/events/stream` as `text/event-stream`, but the browser's
+   *  `EventSource` cannot set request headers, so it cannot present this app's
+   *  bearer token. The alternatives are putting a credential in a query string
+   *  — where it lands in access logs and browser history — or moving the whole
+   *  app to cookie auth for one screen. Neither is worth it, and the server's
+   *  own docstring already says the cursor is the real mechanism and the
+   *  stream is sugar over it.
+   *
+   *  `after` is an event id rather than a timestamp: two frames written in one
+   *  transaction share a timestamp to the microsecond, so a time cursor would
+   *  either replay one or skip one. */
+  events: (after?: string | null, limit = 100) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (after) q.set("after", after);
+    return request<LiveEventList>(`/events?${q.toString()}`);
+  },
+
+  /** Deliver pending frames to their consumers. Exposed because this
+   *  deployment has no worker; the claim is `FOR UPDATE SKIP LOCKED`, so
+   *  pressing it twice costs a wasted query rather than a double delivery. */
+  drainEvents: () =>
+    request<{ claimed: number; published: number; failed: number }>(
+      "/events/drain", { method: "POST" }),
 
   /** Selects among providers the server can already reach. It never carries a
    *  credential — CONTRACT §37 keeps those in the environment. */

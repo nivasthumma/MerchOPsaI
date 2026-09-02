@@ -10,6 +10,7 @@ import Investigate from "./routes/Investigate";
 import TaskDetail from "./routes/TaskDetail";
 import Scenarios from "./routes/Scenarios";
 import Operations from "./routes/Operations";
+import Timeline from "./routes/Timeline";
 import Settings from "./routes/Settings";
 import "./styles.css";
 
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: "tasks/:taskId", element: <TaskDetail /> },
       { path: "scenarios", element: <Scenarios /> },
       { path: "operations", element: <Operations /> },
+      { path: "timeline", element: <Timeline /> },
       { path: "settings", element: <Settings /> },
     ],
   },

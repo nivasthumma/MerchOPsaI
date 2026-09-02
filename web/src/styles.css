@@ -1265,3 +1265,37 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
                     letter-spacing: .05em; }
 .transcript pre { margin: 0; max-height: 16rem; overflow: auto; font-size: .78rem;
                   white-space: pre-wrap; word-break: break-word; }
+
+/* --- §62 / §65 live timeline -------------------------------------------
+   Deliberately NOT `.timeline`/`.ev`: those belong to the incident detail
+   page, where `.ev` is the event NAME rather than the row. Sharing them
+   would have let a change on this screen restyle that one. */
+.live-feed { list-style: none; margin: 0; padding: 0; }
+.feed-row { display: grid; gap: .7rem; align-items: baseline; padding: .3rem 0;
+            grid-template-columns: 5.5rem 12rem 1fr auto auto;
+            border-bottom: 1px solid var(--line); font-size: .85rem; }
+.feed-at { font-variant-numeric: tabular-nums; color: var(--text-dim);
+           font-size: .78rem; }
+/* The event name is the one thing a reader scans down the column, so it is the
+   monospaced, weighted element and everything else defers to it. */
+.feed-name { font-family: ui-monospace, monospace; font-weight: 600;
+             font-size: .78rem; }
+.feed-what { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;
+             white-space: nowrap; }
+.feed-links { display: flex; gap: .5rem; font-size: .75rem; }
+.feed-ago { color: var(--text-dim); font-size: .75rem; white-space: nowrap; }
+
+/* Tone follows the same vocabulary as the rest of the app: clay only where
+   money is about to move, green only where something was verified. */
+.feed-ok    .feed-name { color: var(--ok); }
+.feed-warn  .feed-name { color: var(--warn); }
+.feed-info  .feed-name { color: var(--accent); }
+.feed-muted .feed-name { color: var(--text-dim); }
+
+@media (max-width: 720px) {
+  /* The links and the relative time are the first things to go: on a narrow
+     screen the name and its one-line summary are what the feed is for. */
+  .feed-row { grid-template-columns: 4.5rem 1fr; }
+  .feed-what { grid-column: 1 / -1; white-space: normal; }
+  .feed-links, .feed-ago { display: none; }
+}

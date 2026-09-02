@@ -84,6 +84,7 @@ export default function App() {
             <NavLink to="/dashboard">Dashboard</NavLink>
             <NavLink to="/incidents">Incidents</NavLink>
             <NavLink to="/scenarios">Scenarios</NavLink>
+            <NavLink to="/timeline">Timeline</NavLink>
             <NavLink to="/operations">Operations</NavLink>
           </nav>
 

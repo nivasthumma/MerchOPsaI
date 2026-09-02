@@ -17,6 +17,8 @@ import type {
   Approval,
   FailureClass,
   Finding,
+  LiveEvent,
+  LiveEventList,
   RunVersions,
   Task,
 } from "./types";
@@ -38,4 +40,5 @@ export type _Finding = ServerFits<Schema["FindingView"], Finding>;
 export type _Versions = ServerFits<Schema["RunVersions"], RunVersions>;
 export type _Failure = ServerFits<Schema["FailureClassView"], FailureClass>;
 export type _Message = ServerFits<Schema["MessageView"], AgentMessage>;
-
+export type _LiveEvent = ServerFits<Schema["LiveEventView"], LiveEvent>;
+export type _LiveEvents = ServerFits<Schema["LiveEventList"], LiveEventList>;

@@ -93,6 +93,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Campaigns
+         * @description Recovery campaigns still capable of acting — MerchantOps v2 §37.
+         *
+         *     A campaign IS a recovery plan; there is no second table. This is §37's card
+         *     over the same rows, with the affected/eligible split and the budget
+         *     consumption the plan does not store because both go stale the moment a
+         *     candidate moves.
+         *
+         *     Ordered by expected recovery, so the campaign worth watching is first.
+         *     Finished campaigns are excluded for the same reason `open_incidents`
+         *     excludes RESOLVED.
+         */
+        get: operations["list_campaigns_campaigns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/campaigns/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Campaign
+         * @description §37's card for one campaign, finished or not.
+         *
+         *     Unlike the list, this does not exclude a stopped campaign: the question
+         *     "what happened to RC-017" is asked most often about one that ended.
+         */
+        get: operations["get_campaign_campaigns__plan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/llm-provider": {
         parameters: {
             query?: never;
@@ -138,6 +190,93 @@ export interface paths {
          *     one row and rupees on the next.
          */
         get: operations["merchant_dashboard_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Events
+         * @description The event stream as a cursor-paged read — MerchantOps v2 §62.
+         *
+         *     This is the endpoint the UI timeline actually runs on, and `/events/stream`
+         *     is a convenience layered over it. Polling a cursor is unglamorous and it is
+         *     also the only thing that works on the deployment target: a Vercel function
+         *     has a wall-clock limit, so a held-open SSE connection is a connection that
+         *     drops on a timer and reconnects, which is a poll with extra steps and worse
+         *     failure modes.
+         *
+         *     Scoped to the caller's merchant. `pending` is reported alongside because a
+         *     drain that has stopped is invisible from the frames themselves — the
+         *     timeline simply stops moving, which looks like a quiet system.
+         */
+        get: operations["list_events_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/drain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Drain Events
+         * @description Deliver pending events to their in-process consumers.
+         *
+         *     Exposed as a route because this deployment has no worker: v2 §13 permits a
+         *     "managed queue/event mechanism", and on Vercel the available one is a
+         *     scheduled invocation. Draining is idempotent and safe to call concurrently
+         *     — the claim is `FOR UPDATE SKIP LOCKED` — so a cron that overlaps itself
+         *     costs a wasted query rather than a double delivery.
+         */
+        post: operations["drain_events_events_drain_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Events
+         * @description The same events as `text/event-stream` — MerchantOps v2 §62, §65.
+         *
+         *     Bounded on purpose. The connection closes after `seconds` and the browser's
+         *     `EventSource` reconnects with `Last-Event-ID`, which is the cursor. An
+         *     unbounded stream would hold a database connection for as long as a tab is
+         *     open; on Vercel it would be killed anyway, and holding one per idle tab is
+         *     how a connection pool is exhausted by users who are reading rather than
+         *     doing anything.
+         *
+         *     The merchant scope is resolved once, here, from the bearer token — never
+         *     from a query parameter. A stream is still an authorised read.
+         */
+        get: operations["stream_events_events_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -241,6 +380,63 @@ export interface paths {
         };
         /** Get Incident */
         get: operations["get_incident_incidents__incident_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incident_id}/evidence-graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Evidence Graph
+         * @description MerchantOps v2 §32 — "why do you believe this?", as structure.
+         *
+         *     The trace next door says what the system *did*. This says what it took any
+         *     of it to *mean*, which a flat evidence list cannot: that one shows what was
+         *     looked at, and leaves the reasoning in prose the platform did not write and
+         *     cannot check.
+         *
+         *     `lines` is the same graph, one line per edge, so a reader can confirm that
+         *     nothing was added between the edges and any sentence written from them.
+         */
+        get: operations["get_evidence_graph_incidents__incident_id__evidence_graph_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incident_id}/hypotheses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Hypotheses
+         * @description The competing explanations and how each fared — MerchantOps v2 §30.
+         *
+         *     Read-only. Hypotheses are proposed and adjudicated during investigation,
+         *     because a verdict computed at read time would differ between two people
+         *     opening the same incident — which is the opposite of what an audit surface
+         *     is for.
+         *
+         *     `untested` is named rather than left to be counted off the list. A
+         *     hypothesis nothing here can test is a gap in instrumentation, and it should
+         *     be as visible as the verdicts beside it.
+         */
+        get: operations["get_hypotheses_incidents__incident_id__hypotheses_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -576,6 +772,35 @@ export interface paths {
         put?: never;
         /** Run One */
         post: operations["run_one_scenarios__scenario_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Merchant State
+         * @description The merchant digital twin — MerchantOps v2 §14.
+         *
+         *     One coherent view of operational health, assembled from the modules that
+         *     already own each figure rather than recomputed here. Computed per read: the
+         *     numbers derive from rows that change underneath them, and a cached count
+         *     disagrees with its rows the first time a candidate moves (ADR-0040).
+         *
+         *     `/recovery/ledger` and the dashboard remain: this calls them. A branch §14
+         *     names that nothing measures reports `measured: false` with a reason instead
+         *     of a zero.
+         */
+        get: operations["get_merchant_state_state_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1004,6 +1229,93 @@ export interface components {
             /** Signed By */
             signed_by: string[];
         };
+        /**
+         * CampaignBudget
+         * @description §38's five bounds, each beside what has been used against it.
+         *
+         *     A limit with no consumption reading is a limit nobody can see approaching,
+         *     which for a merchant watching an ACTIVE campaign is the only thing they
+         *     actually want to know.
+         */
+        CampaignBudget: {
+            /** Actions Taken */
+            actions_taken: number;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Max Actions */
+            max_actions: number;
+            /** Max Attempts Per Customer */
+            max_attempts_per_customer: number;
+            /** Max Duration Seconds */
+            max_duration_seconds: number;
+            /** Max Recovery Minor */
+            max_recovery_minor: number;
+            /** Max Risk Level */
+            max_risk_level: string;
+            /** Spent Minor */
+            spent_minor: number;
+        };
+        /** CampaignList */
+        CampaignList: {
+            /** Campaigns */
+            campaigns: components["schemas"]["CampaignView"][];
+            /** Total Expected Recovery Minor */
+            total_expected_recovery_minor: number;
+        };
+        /**
+         * CampaignView
+         * @description MerchantOps v2 §37's card. A projection of a plan, not a second entity.
+         */
+        CampaignView: {
+            /** Affected */
+            affected: number;
+            /** Attempted */
+            attempted: number;
+            budget: components["schemas"]["CampaignBudget"];
+            /** Eligible */
+            eligible: number;
+            /** Eligible Recovery Minor */
+            eligible_recovery_minor: number;
+            /**
+             * Exhausted
+             * @default []
+             */
+            exhausted: string[];
+            /** Expected Recovery Basis */
+            expected_recovery_basis: string;
+            /** Expected Recovery Minor */
+            expected_recovery_minor: number;
+            /** Expires At */
+            expires_at: string;
+            /** Failed */
+            failed: number;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id: string;
+            /** Ineligible */
+            ineligible: number;
+            /** Intervention */
+            intervention: string;
+            /** Objective */
+            objective: string;
+            /** Recovered */
+            recovered: number;
+            /** Recovered Minor */
+            recovered_minor: number;
+            /** Revenue At Risk Minor */
+            revenue_at_risk_minor: number;
+            /** Skipped */
+            skipped: number;
+            /** Status */
+            status: string;
+            /** Stop Reason */
+            stop_reason?: string | null;
+            /** Stop Rule */
+            stop_rule?: string | null;
+            /** Unknown */
+            unknown: number;
+        };
         /** CandidateView */
         CandidateView: {
             /** Actual Recovery Minor */
@@ -1079,6 +1391,15 @@ export interface components {
             };
             task: components["schemas"]["TaskView"];
         };
+        /** DrainReport */
+        DrainReport: {
+            /** Claimed */
+            claimed: number;
+            /** Failed */
+            failed: number;
+            /** Published */
+            published: number;
+        };
         /** EscalatedAction */
         EscalatedAction: {
             /** Amount Minor */
@@ -1105,6 +1426,47 @@ export interface components {
             verification_state?: string | null;
             /** Verify Attempts */
             verify_attempts: number;
+        };
+        /**
+         * EvidenceEdgeView
+         * @description One typed relationship — MerchantOps v2 §32.
+         */
+        EvidenceEdgeView: {
+            /** At */
+            at: string;
+            /** Drawn By */
+            drawn_by: string;
+            /** Id */
+            id: string;
+            /** Object */
+            object: {
+                [key: string]: unknown;
+            };
+            /** Subject */
+            subject: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * EvidenceGraph
+         * @description §32's answer to "why do you believe this?", grouped by relationship.
+         *
+         *     Predicates are keys rather than a flat list because the question is asked
+         *     one relationship at a time: what caused it, what it affects, what it
+         *     creates, what supports it. A flat list would put the reader back where the
+         *     evidence table left them.
+         */
+        EvidenceGraph: {
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: {
+                [key: string]: components["schemas"]["EvidenceEdgeView"][];
+            };
+            /** Incident Id */
+            incident_id: string;
+            /** Lines */
+            lines: string[];
         };
         /**
          * FailureClassView
@@ -1213,11 +1575,56 @@ export interface components {
             /** Webhook Signature Verification */
             webhook_signature_verification: boolean;
         };
+        /** HypothesisSet */
+        HypothesisSet: {
+            /** Hypotheses */
+            hypotheses: components["schemas"]["HypothesisView"][];
+            /** Incident Id */
+            incident_id: string;
+            /** Leading */
+            leading?: string | null;
+            /**
+             * Untested
+             * @default []
+             */
+            untested: string[];
+        };
+        /**
+         * HypothesisView
+         * @description One candidate explanation and how it fared — MerchantOps v2 §30.
+         */
+        HypothesisView: {
+            /** Adjudicated At */
+            adjudicated_at?: string | null;
+            /** Contradiction Count */
+            contradiction_count: number;
+            /** Id */
+            id: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Proposed By */
+            proposed_by: string;
+            /** Statement */
+            statement: string;
+            /** Status */
+            status: string;
+            /** Support Count */
+            support_count: number;
+            /** Verdict Reason */
+            verdict_reason?: string | null;
+        };
         /**
          * IncidentBrief
          * @description What a detection sweep reports about what it raised.
          */
         IncidentBrief: {
+            /**
+             * Corroboration
+             * @default 1
+             */
+            corroboration: number;
             /** Id */
             id: string;
             /** Revenue At Risk Minor */
@@ -1251,6 +1658,12 @@ export interface components {
         };
         /** IncidentSummary */
         IncidentSummary: {
+            /** Confidence */
+            confidence?: string | null;
+            /** Confidence Inputs */
+            confidence_inputs?: {
+                [key: string]: unknown;
+            } | null;
             /** Correlation Id */
             correlation_id?: string | null;
             /** Detected At */
@@ -1347,6 +1760,49 @@ export interface components {
             /** Unknown Minor */
             unknown_minor: number;
         };
+        /** LiveEventList */
+        LiveEventList: {
+            /** Events */
+            events: components["schemas"]["LiveEventView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Pending */
+            pending: number;
+        };
+        /**
+         * LiveEventView
+         * @description One frame of the live stream — MerchantOps v2 §11's field list, §62's names.
+         */
+        LiveEventView: {
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Event */
+            event: string;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Merchant Id */
+            merchant_id?: string | null;
+            /** Occurred At */
+            occurred_at: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Payload Hash */
+            payload_hash: string;
+            /** Provider */
+            provider?: string | null;
+            /** Schema Version */
+            schema_version: string;
+            /** Task Id */
+            task_id?: string | null;
+            /** Tenant Id */
+            tenant_id?: string | null;
+        };
         /** Me */
         Me: {
             /** Merchant Id */
@@ -1359,6 +1815,51 @@ export interface components {
             tenant_id?: string | null;
             /** User Id */
             user_id: string;
+        };
+        /**
+         * MerchantStateView
+         * @description MerchantOps v2 §14's MerchantState.
+         *
+         *     Branches are `dict` rather than modelled field by field. Their contents are
+         *     assembled from modules that own their own shapes — the ledger, the metrics
+         *     registry, the dashboard — and mirroring those here would create a second
+         *     definition that drifts from the first. That is the same reasoning the module
+         *     docstring gives for typing audit payloads as `dict`.
+         *
+         *     A branch that could not be measured carries `measured: false` and a reason
+         *     rather than a zero.
+         */
+        MerchantStateView: {
+            /** As Of */
+            as_of: string;
+            /** Customers */
+            customers: {
+                [key: string]: unknown;
+            };
+            /** Financial */
+            financial: {
+                [key: string]: unknown;
+            };
+            /** Incidents */
+            incidents: {
+                [key: string]: unknown;
+            };
+            /** Merchant Id */
+            merchant_id: string;
+            /** Operational Health */
+            operational_health: {
+                [key: string]: unknown;
+            };
+            /** Payments */
+            payments: {
+                [key: string]: unknown;
+            };
+            /** Period Days */
+            period_days: number;
+            /** Recovery */
+            recovery: {
+                [key: string]: unknown;
+            };
         };
         /** MessageView */
         MessageView: {
@@ -1453,7 +1954,10 @@ export interface components {
             /** Unavailable */
             unavailable: components["schemas"]["MetricView"][];
         };
-        /** PlanBudget */
+        /**
+         * PlanBudget
+         * @description MerchantOps v2 §38's five bounds. All five belong to the plan.
+         */
         PlanBudget: {
             /** Max Actions */
             max_actions: number;
@@ -1463,6 +1967,8 @@ export interface components {
             max_duration_seconds: number;
             /** Max Recovery Minor */
             max_recovery_minor: number;
+            /** Max Risk Level */
+            max_risk_level: string;
         };
         /** PlanView */
         PlanView: {
@@ -2060,6 +2566,70 @@ export interface operations {
             };
         };
     };
+    list_campaigns_campaigns_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_campaign_campaigns__plan_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_llm_provider_config_llm_provider_post: {
         parameters: {
             query?: never;
@@ -2113,6 +2683,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DashboardView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_events_events_get: {
+        parameters: {
+            query?: {
+                after?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveEventList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    drain_events_events_drain_post: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DrainReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_events_events_stream_get: {
+        parameters: {
+            query?: {
+                after?: string | null;
+                seconds?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2261,6 +2932,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IncidentSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_evidence_graph_incidents__incident_id__evidence_graph_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                incident_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hypotheses_incidents__incident_id__hypotheses_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                incident_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HypothesisSet"];
                 };
             };
             /** @description Validation Error */
@@ -2698,6 +3435,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_merchant_state_state_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MerchantStateView"];
                 };
             };
             /** @description Validation Error */

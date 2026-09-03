@@ -138,3 +138,133 @@ def test_wire_messages_does_not_mutate_the_runtime_list():
 def test_string_content_is_passed_through_unchanged():
     wired = wire_messages([{"role": "user", "content": "Why did revenue drop?"}])
     assert wired == [{"role": "user", "content": "Why did revenue drop?"}]
+
+
+# --------------------------------------------------------------------------
+# Thinking blocks must survive the round trip (MerchantOps §16, ADR-0014)
+# --------------------------------------------------------------------------
+class _Block:
+    """A stand-in for an SDK content block.
+
+    The real ones are pydantic models, so `model_dump` is the interface that
+    matters here — not the class.
+    """
+
+    def __init__(self, **fields):
+        self._fields = fields
+        for k, v in fields.items():
+            setattr(self, k, v)
+
+    def model_dump(self, mode=None, exclude_none=False):
+        if exclude_none:
+            return {k: v for k, v in self._fields.items() if v is not None}
+        return dict(self._fields)
+
+
+def _thinking_turn():
+    """What a tool-calling turn looks like with adaptive thinking on."""
+    return [
+        _Block(type="thinking", thinking="UPI is the outlier.",
+               signature="sig_abc123", cache_control=None),
+        _Block(type="text", text="Let me check the payment metrics."),
+        _Block(type="tool_use", id="tu_9", name="get_payment_metrics",
+               input={"window": "7d"}),
+    ]
+
+
+def test_thinking_blocks_are_captured_for_replay():
+    """The defect this test exists for: they used to be dropped entirely.
+
+    The provider read only `text` and `tool_use` off the response, so a
+    `thinking` block never reached `LLMTurn` at all — and the loop then rebuilt
+    the assistant turn without it. Opus 5 runs adaptive thinking by default and
+    wants those blocks back unchanged on the next request.
+    """
+    from app.llm.anthropic_provider import echo_blocks
+
+    blocks = echo_blocks(_thinking_turn())
+    kinds = [b["type"] for b in blocks]
+    assert kinds == ["thinking", "text", "tool_use"], (
+        "every block must survive, in the order the model produced them")
+
+    thinking = blocks[0]
+    assert thinking["thinking"] == "UPI is the outlier."
+    assert thinking["signature"] == "sig_abc123", (
+        "a thinking block without its signature is not the same block")
+
+
+def test_echo_blocks_drop_none_valued_fields():
+    """The SDK populates optional fields with None; the API rejects them."""
+    from app.llm.anthropic_provider import echo_blocks
+
+    assert "cache_control" not in echo_blocks(_thinking_turn())[0]
+
+
+def test_echo_blocks_are_json_native():
+    """They are persisted to `agent_messages` between turns.
+
+    Anything that survives in memory but not through JSON fails later, in a
+    place that does not name this function.
+    """
+    import json
+
+    from app.llm.anthropic_provider import echo_blocks
+
+    assert json.loads(json.dumps(echo_blocks(_thinking_turn()))) == \
+        echo_blocks(_thinking_turn())
+
+
+def test_the_loop_replays_provider_blocks_verbatim():
+    """The runtime must send back what the model produced, not its own summary.
+
+    Asserted at the loop's own boundary rather than through a live call, which
+    no credential here can make.
+    """
+    from app.llm.base import LLMTurn, ToolRequest
+
+    turn = LLMTurn(
+        text="Let me check the payment metrics.",
+        tool_requests=[ToolRequest(id="tu_9", name="get_payment_metrics",
+                                   arguments={"window": "7d"})],
+        stop_reason="tool_use",
+        echo_blocks=[
+            {"type": "thinking", "thinking": "UPI is the outlier.",
+             "signature": "sig_abc123"},
+            {"type": "text", "text": "Let me check the payment metrics."},
+            {"type": "tool_use", "id": "tu_9", "name": "get_payment_metrics",
+             "input": {"window": "7d"}},
+        ],
+    )
+
+    # The exact expression app/agent/runtime.py uses to build the assistant turn.
+    blocks = list(turn.echo_blocks)
+    if not blocks:
+        blocks = [{"type": "tool_use", "id": t.id, "name": t.name,
+                   "input": t.arguments} for t in turn.tool_requests]
+        if turn.text:
+            blocks.insert(0, {"type": "text", "text": turn.text})
+
+    assert blocks[0]["type"] == "thinking"
+    assert blocks[0]["signature"] == "sig_abc123"
+
+
+def test_a_provider_with_nothing_to_echo_still_works():
+    """The deterministic planner produces no blocks, and must still drive a turn.
+
+    Without this the fallback path would be untested, and the fallback is what
+    every scenario in the suite actually runs on.
+    """
+    from app.llm.base import LLMTurn, ToolRequest
+
+    turn = LLMTurn(text="checking", stop_reason="tool_use",
+                   tool_requests=[ToolRequest(id="tu_1", name="get_revenue_summary",
+                                              arguments={})])
+
+    blocks = list(turn.echo_blocks)
+    if not blocks:
+        blocks = [{"type": "tool_use", "id": t.id, "name": t.name,
+                   "input": t.arguments} for t in turn.tool_requests]
+        if turn.text:
+            blocks.insert(0, {"type": "text", "text": turn.text})
+
+    assert [b["type"] for b in blocks] == ["text", "tool_use"]

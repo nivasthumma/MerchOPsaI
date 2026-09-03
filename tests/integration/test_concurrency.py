@@ -307,3 +307,60 @@ def test_two_approvals_for_one_payment_produce_one_refund(committed_session, mon
         f"Both approvals cleared policy in the same window and both reserved -- "
         f"that is the double refund. Thread outcomes: {results}"
     )
+
+
+# ------------------------------------------------------------------ numeric range
+def test_money_columns_hold_more_than_a_32_bit_ceiling(db):
+    """Money is bigint, demonstrated by storing a value integer cannot hold.
+
+    Asserting the declared type would only restate `app/models.py`. The property
+    that matters is what the database accepts, so this writes a real figure past
+    the 32-bit ceiling and reads it back. Under the old `integer` columns both
+    of these raised `integer out of range`.
+
+    ₹30 million is not a stress-test number. It is a mid-sized merchant having a
+    bad afternoon -- which is exactly when revenue-at-risk is read.
+    """
+    over_32_bit = 3_000_000_000     # ₹30,000,000.00 in paise
+    assert over_32_bit > 2_147_483_647
+
+    # A per-payment amount, and an aggregate. The aggregate is the one that
+    # would have overflowed first in practice.
+    payment_id = db.execute(text(MAPPED_PAYMENT_SQL)).mappings().first()["id"]
+    db.execute(text("UPDATE payments SET amount_minor = :a WHERE id = :p"),
+               {"a": over_32_bit, "p": payment_id})
+    assert db.execute(text("SELECT amount_minor FROM payments WHERE id = :p"),
+                      {"p": payment_id}).scalar() == over_32_bit
+
+    incident_id = db.execute(
+        text("SELECT id FROM incidents LIMIT 1")).scalar()
+    if incident_id is not None:
+        db.execute(
+            text("UPDATE incidents SET revenue_at_risk_minor = :a WHERE id = :i"),
+            {"a": over_32_bit, "i": incident_id})
+        assert db.execute(
+            text("SELECT revenue_at_risk_minor FROM incidents WHERE id = :i"),
+            {"i": incident_id}).scalar() == over_32_bit
+
+
+def test_every_money_column_is_64_bit(db):
+    """No monetary column may be left at 32 bits.
+
+    Named columns get widened; the next one somebody adds is the risk. This
+    reads the live catalogue rather than the models, so a column added as
+    `Integer` fails here even if nobody remembers this file exists.
+    """
+    narrow = db.execute(text("""
+        SELECT table_name, column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND (column_name LIKE '%_minor' OR column_name LIKE '%_amount')
+          AND data_type <> 'bigint'
+        ORDER BY table_name, column_name
+    """)).mappings().all()
+
+    assert not narrow, (
+        "monetary columns still narrower than bigint: "
+        + ", ".join(f"{r['table_name']}.{r['column_name']} ({r['data_type']})"
+                    for r in narrow)
+    )

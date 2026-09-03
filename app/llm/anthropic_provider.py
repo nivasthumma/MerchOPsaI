@@ -141,7 +141,31 @@ class AnthropicProvider(LLMProvider):
             stop_reason=resp.stop_reason or "end_turn",
             raw=resp,
             usage=_usage(resp),
+            echo_blocks=echo_blocks(resp.content),
         )
+
+
+def echo_blocks(content) -> list[dict]:
+    """The assistant turn in wire form, to be replayed unchanged next request.
+
+    Every block the model produced, in order, including `thinking` and
+    `redacted_thinking` -- which the loop cannot reconstruct and must not drop.
+    A thinking block carries a `signature`, and returning it altered or absent
+    is not the same conversation as far as the model is concerned.
+
+    `mode="json"` because these are persisted to `agent_messages` as JSON
+    between turns, so anything that is not JSON-native here fails later and
+    somewhere less obvious. `exclude_none` keeps optional fields the SDK
+    populates with None off the wire, which the Messages API rejects on some
+    block types.
+    """
+    out: list[dict] = []
+    for block in content:
+        if hasattr(block, "model_dump"):
+            out.append(block.model_dump(mode="json", exclude_none=True))
+        elif isinstance(block, dict):
+            out.append({k: v for k, v in block.items() if v is not None})
+    return out
 
 
 def _usage(resp) -> dict:

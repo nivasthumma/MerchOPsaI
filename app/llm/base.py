@@ -28,6 +28,21 @@ class LLMTurn:
     raw: Any = None
     usage: dict = field(default_factory=dict)
 
+    # The assistant content to replay verbatim on the next request, in wire
+    # form and in the order the model produced it.
+    #
+    # The loop used to rebuild this from `text` and `tool_requests`, which is
+    # lossy in a way that matters: it silently dropped every `thinking` block.
+    # Claude Opus 5 runs adaptive thinking by default, and thinking blocks must
+    # be echoed back unchanged when the conversation continues on the same
+    # model -- on precisely the turns that carry tool calls. A reconstruction
+    # cannot round-trip a block it never saw, so the provider hands back what
+    # to send instead of the loop guessing.
+    #
+    # Empty for providers with nothing to preserve (the deterministic planner),
+    # and the loop falls back to reconstruction for those.
+    echo_blocks: list[dict] = field(default_factory=list)
+
     @property
     def wants_tools(self) -> bool:
         return bool(self.tool_requests)

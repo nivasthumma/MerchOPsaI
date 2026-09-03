@@ -15,6 +15,27 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Money is BigInteger everywhere, never Integer.
+#
+# Every monetary column in this schema is an integer count of minor units --
+# paise, not rupees -- which is the right decision and is not what this note is
+# about. The width is.
+#
+# PostgreSQL's `integer` is 32-bit and tops out at 2,147,483,647, which in paise
+# is about ₹21.47 million. On a single payment that ceiling is arguable. On the
+# aggregates it is not: `revenue_at_risk_minor`, `eligible_recovery_minor` and
+# their siblings accumulate across every affected transaction in an incident,
+# and a mid-sized merchant clears ₹21.47 million in an afternoon. PostgreSQL
+# raises `integer out of range` rather than wrapping, so the symptom is a failed
+# write and a 500 on the dashboard at exactly the moment the incident being
+# measured is at its worst -- the system fails when it is needed most, and
+# reports the failure as a bug in the dashboard.
+#
+# `bigint` moves the ceiling to roughly ₹92 quadrillion for the same eight bytes
+# a float would have cost, and without a float's rounding. There is no reason to
+# spend the smaller type here.
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -250,7 +271,7 @@ class Product(Base):
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(64))
-    price_minor: Mapped[int] = mapped_column(Integer)
+    price_minor: Mapped[int] = mapped_column(BigInteger)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -260,7 +281,7 @@ class Order(Base):
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[str] = mapped_column(String(8), default="INR")
     status: Mapped[str] = mapped_column(String(32))        # created | paid | failed
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -274,12 +295,12 @@ class Payment(Base):
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"), index=True)
     customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[str] = mapped_column(String(8), default="INR")
     method: Mapped[str] = mapped_column(String(32), index=True)   # upi | card | netbanking | wallet
     status: Mapped[str] = mapped_column(String(32), index=True)   # captured | failed | refunded
     error_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    amount_refunded_minor: Mapped[int] = mapped_column(Integer, default=0)
+    amount_refunded_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     refund_status: Mapped[str | None] = mapped_column(String(32), nullable=True)  # null|partial|full
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -296,7 +317,7 @@ class Refund(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), index=True)
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(32))        # processed | pending | failed
     external_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -319,7 +340,7 @@ class PaymentLink(Base):
     customer_id: Mapped[str] = mapped_column(String(64), index=True)
     # The failed payment this link is trying to recover, for traceability.
     source_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[str] = mapped_column(String(8), default="INR")
     status: Mapped[str] = mapped_column(String(32), default="created")  # created|paid|expired|cancelled
     short_url: Mapped[str] = mapped_column(String(200))
@@ -422,7 +443,7 @@ class Incident(Base):
 
     # MerchantOps §22: the number is owned by the calculation engine. It is
     # written here by deterministic code and is never model output.
-    revenue_at_risk_minor: Mapped[int] = mapped_column(Integer, default=0)
+    revenue_at_risk_minor: Mapped[int] = mapped_column(BigInteger, default=0)
 
     # The metrics that tripped the rule: baseline, observed, threshold, window.
     # Kept so an operator can see *why* this was called an anomaly.
@@ -493,13 +514,13 @@ class RecoveryPlan(Base):
     plan_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
 
     # --- §22: computed, never model output ---
-    revenue_at_risk_minor: Mapped[int] = mapped_column(Integer, default=0)
-    eligible_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
-    expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+    revenue_at_risk_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    eligible_recovery_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    expected_recovery_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     expected_recovery_basis: Mapped[str] = mapped_column(Text, default="")
 
     # --- §27: the bounds ---
-    max_recovery_minor: Mapped[int] = mapped_column(Integer)
+    max_recovery_minor: Mapped[int] = mapped_column(BigInteger)
     max_actions: Mapped[int] = mapped_column(Integer)
     max_attempts_per_customer: Mapped[int] = mapped_column(Integer)
     max_duration_seconds: Mapped[int] = mapped_column(Integer)
@@ -533,7 +554,7 @@ class RecoveryCandidate(Base):
 
     payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), index=True)
     customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
 
     intervention: Mapped[Intervention] = mapped_column(Enum(Intervention, native_enum=False))
     status: Mapped[CandidateStatus] = mapped_column(
@@ -543,9 +564,9 @@ class RecoveryCandidate(Base):
     # The share of this candidate's amount attributable to the incident. The
     # ledger measures at-risk, recoverable and attempted in this unit so the
     # figures nest (MerchantOps §49); `amount_minor` is the gross charge.
-    attributed_amount_minor: Mapped[int] = mapped_column(Integer, default=0)
-    expected_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
-    actual_recovery_minor: Mapped[int] = mapped_column(Integer, default=0)
+    attributed_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    expected_recovery_minor: Mapped[int] = mapped_column(BigInteger, default=0)
+    actual_recovery_minor: Mapped[int] = mapped_column(BigInteger, default=0)
 
     # Whether an executable tool exists for this intervention today. A candidate
     # for an intervention with no tool is a real recommendation, not a bug --
@@ -684,7 +705,7 @@ class AgentAction(Base):
     action_type: Mapped[str] = mapped_column(String(32))
     target_payment_id: Mapped[str] = mapped_column(String(64))
     external_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    amount_minor: Mapped[int] = mapped_column(Integer)
+    amount_minor: Mapped[int] = mapped_column(BigInteger)
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     status: Mapped[ActionStatus] = mapped_column(Enum(ActionStatus, native_enum=False), default=ActionStatus.PENDING)
     external_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)

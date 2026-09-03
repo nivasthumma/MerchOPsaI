@@ -287,3 +287,48 @@ def test_a_webhook_records_the_tenant_it_resolved(db):
     )).mappings().one()
     assert row["tenant_id"] == "TEN_KETTLE"
     assert row["merchant_id"] == "MERCH_A"
+
+
+# --------------------------------------------------------------------------
+# Argument-shape defences at the policy layer
+# --------------------------------------------------------------------------
+def test_a_boolean_amount_is_refused(db, owner):
+    """`isinstance(True, int)` is True in Python, and `True > 0`.
+
+    A naive integer check therefore passes a boolean straight through, and it
+    arrives downstream as a one-paise refund. The tool contract validates
+    arguments before policy sees them, but this is the layer that calls itself
+    the authorization authority — it should not need another layer to be
+    correct about what a number is.
+    """
+    from app.policy.engine import Decision, PolicyContext, evaluate
+
+    res = evaluate(db, PolicyContext(
+        tenant_id=owner.tenant_id, user_id=owner.user_id,
+        merchant_id=owner.merchant_id, role=owner.role,
+        permissions=owner.permissions, tool_name="request_refund",
+        risk_level="HIGH",
+        arguments={"synthetic_payment_id": "SYN_PAY_0001", "amount_minor": True},
+    ))
+    assert res.decision is Decision.DENY
+    assert res.rule == "invalid_amount"
+
+
+def test_an_unknown_order_is_refused_like_an_unknown_payment(db, owner):
+    """The two ownership gates must agree about what a missing row means.
+
+    The order branch used to fall through when the row did not exist, skipping
+    both isolation checks. Nothing leaked — `get_order` is merchant-scoped in
+    its own SQL — but a reader had to know which resource they were looking at
+    to know whether the gate applied at all.
+    """
+    from app.policy.engine import Decision, PolicyContext, evaluate
+
+    res = evaluate(db, PolicyContext(
+        tenant_id=owner.tenant_id, user_id=owner.user_id,
+        merchant_id=owner.merchant_id, role=owner.role,
+        permissions=owner.permissions, tool_name="get_order",
+        risk_level="LOW", arguments={"order_id": "SYN_ORD_DOES_NOT_EXIST"},
+    ))
+    assert res.decision is Decision.DENY
+    assert res.rule == "unknown_resource"

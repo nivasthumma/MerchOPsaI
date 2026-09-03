@@ -178,6 +178,17 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
             SELECT o.merchant_id, m.tenant_id FROM orders o
             JOIN merchants m ON m.id = o.merchant_id WHERE o.id = :o
         """), {"o": order_id}).mappings().first()
+        # An order nobody owns is refused, exactly as an unknown payment is.
+        # This branch used to fall through: `owner is None` skipped both
+        # isolation checks and the call proceeded. The tool underneath is
+        # merchant-scoped in its own SQL so nothing leaked, but the two
+        # ownership gates disagreed about what a missing row means, and a
+        # reader had to know which resource they were looking at to know
+        # whether the gate applied.
+        if owner is None:
+            return PolicyResult(Decision.DENY,
+                                f"Order {order_id} does not exist.",
+                                "unknown_resource", risk)
         if owner is not None and owner["tenant_id"] != ctx.tenant_id:
             return PolicyResult(
                 Decision.DENY,
@@ -201,7 +212,15 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
     # ---- 5. Financial constraints ---------------------------------------
     # A positive integer amount is required of ANY tool that names one.
     amount = ctx.arguments.get("amount_minor")
-    if amount is not None and (not isinstance(amount, int) or amount <= 0):
+    # `isinstance(True, int)` is True in Python, and `True > 0`, so a boolean
+    # satisfies both halves of a naive check and arrives downstream as a
+    # one-paise refund. bool is excluded explicitly rather than relying on the
+    # argument validator upstream: this is the layer that calls itself the
+    # authorization authority, and it should not need a second layer to be
+    # correct about what a number is.
+    if amount is not None and (isinstance(amount, bool)
+                               or not isinstance(amount, int)
+                               or amount <= 0):
         return PolicyResult(Decision.DENY, f"Invalid amount: {amount!r}.",
                             "invalid_amount", risk)
 

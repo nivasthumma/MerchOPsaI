@@ -1,0 +1,5362 @@
+{
+  "components": {
+    "schemas": {
+      "ActionDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idempotency_key_prefix": {
+            "title": "Idempotency Key Prefix",
+            "type": "string"
+          },
+          "provider_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Latency Ms"
+          },
+          "recovery_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Candidate Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Payment Id"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "verification_detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Latency Ms"
+          },
+          "verification_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SUCCESS",
+                  "FAILED",
+                  "PARTIAL",
+                  "UNKNOWN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification State"
+          },
+          "verify_attempts": {
+            "title": "Verify Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "action_type",
+          "status",
+          "verify_attempts",
+          "idempotency_key_prefix",
+          "created_at"
+        ],
+        "title": "ActionDetail",
+        "type": "object"
+      },
+      "ActionView": {
+        "additionalProperties": false,
+        "description": "The action as it appears inside a task.",
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Payment Id"
+          },
+          "verification_detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "SUCCESS",
+                  "FAILED",
+                  "PARTIAL",
+                  "UNKNOWN"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification State"
+          },
+          "verify_attempts": {
+            "title": "Verify Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "action_type",
+          "status",
+          "target_payment_id",
+          "external_payment_id",
+          "amount_minor",
+          "external_reference",
+          "verification_state",
+          "verification_detail",
+          "verify_attempts"
+        ],
+        "title": "ActionView",
+        "type": "object"
+      },
+      "AgentActivity": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "title": "Awaiting Approval",
+            "type": "integer"
+          },
+          "escalations": {
+            "title": "Escalations",
+            "type": "integer"
+          },
+          "investigations": {
+            "title": "Investigations",
+            "type": "integer"
+          },
+          "recommendations": {
+            "title": "Recommendations",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "investigations",
+          "recommendations",
+          "awaiting_approval",
+          "escalations",
+          "tool_calls"
+        ],
+        "title": "AgentActivity",
+        "type": "object"
+      },
+      "AgentBudget": {
+        "additionalProperties": false,
+        "properties": {
+          "capped_by_platform": {
+            "title": "Capped By Platform",
+            "type": "boolean"
+          },
+          "configured_wall_clock_seconds": {
+            "title": "Configured Wall Clock Seconds",
+            "type": "integer"
+          },
+          "enforced_wall_clock_seconds": {
+            "title": "Enforced Wall Clock Seconds",
+            "type": "integer"
+          },
+          "max_llm_turns": {
+            "title": "Max Llm Turns",
+            "type": "integer"
+          },
+          "max_tool_calls": {
+            "title": "Max Tool Calls",
+            "type": "integer"
+          },
+          "platform_timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Timeout Seconds"
+          }
+        },
+        "required": [
+          "configured_wall_clock_seconds",
+          "enforced_wall_clock_seconds",
+          "capped_by_platform",
+          "max_tool_calls",
+          "max_llm_turns"
+        ],
+        "title": "AgentBudget",
+        "type": "object"
+      },
+      "ApprovalQueue": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalQueueItem"
+            },
+            "title": "Approvals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "approvals"
+        ],
+        "title": "ApprovalQueue",
+        "type": "object"
+      },
+      "ApprovalQueueItem": {
+        "additionalProperties": false,
+        "properties": {
+          "action_payload": {
+            "additionalProperties": true,
+            "title": "Action Payload",
+            "type": "object"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "required_signatures": {
+            "title": "Required Signatures",
+            "type": "integer"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "signed_by": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Signed By",
+            "type": "array"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "action_type",
+          "action_payload",
+          "risk_level",
+          "decision",
+          "required_signatures",
+          "created_at",
+          "expires_at",
+          "expired"
+        ],
+        "title": "ApprovalQueueItem",
+        "type": "object"
+      },
+      "ApprovalView": {
+        "additionalProperties": false,
+        "properties": {
+          "action_payload": {
+            "additionalProperties": true,
+            "title": "Action Payload",
+            "type": "object"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "required_signatures": {
+            "title": "Required Signatures",
+            "type": "integer"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "signed_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signed By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "decision",
+          "action_type",
+          "action_payload",
+          "risk_level",
+          "expires_at",
+          "decided_by",
+          "required_signatures",
+          "signed_by"
+        ],
+        "title": "ApprovalView",
+        "type": "object"
+      },
+      "CandidateView": {
+        "additionalProperties": false,
+        "properties": {
+          "actual_recovery_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Recovery Minor"
+          },
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "executable": {
+            "title": "Executable",
+            "type": "boolean"
+          },
+          "expected_recovery_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Recovery Minor"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "ineligible_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ineligible Reason"
+          },
+          "intervention": {
+            "title": "Intervention",
+            "type": "string"
+          },
+          "payment_id": {
+            "title": "Payment Id",
+            "type": "string"
+          },
+          "rank": {
+            "title": "Rank",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "rank",
+          "payment_id",
+          "amount_minor",
+          "intervention",
+          "status",
+          "executable",
+          "attempts"
+        ],
+        "title": "CandidateView",
+        "type": "object"
+      },
+      "CorrelationTrace": {
+        "additionalProperties": false,
+        "description": "\u00a758's complete trace: everything one operation touched, in one ordering.",
+        "properties": {
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "span_count": {
+            "title": "Span Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "correlation_id",
+          "events",
+          "span_count"
+        ],
+        "title": "CorrelationTrace",
+        "type": "object"
+      },
+      "DashboardView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_activity": {
+            "$ref": "#/components/schemas/AgentActivity"
+          },
+          "incidents": {
+            "$ref": "#/components/schemas/IncidentCounts"
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/LedgerView"
+          }
+        },
+        "required": [
+          "recovery",
+          "incidents",
+          "agent_activity"
+        ],
+        "title": "DashboardView",
+        "type": "object"
+      },
+      "DetectResult": {
+        "additionalProperties": false,
+        "properties": {
+          "already_known": {
+            "title": "Already Known",
+            "type": "integer"
+          },
+          "anomalies_found": {
+            "title": "Anomalies Found",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "incidents": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentBrief"
+            },
+            "title": "Incidents",
+            "type": "array"
+          },
+          "incidents_created": {
+            "title": "Incidents Created",
+            "type": "integer"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "scanned_rules": {
+            "title": "Scanned Rules",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "anomalies_found",
+          "incidents_created",
+          "already_known",
+          "scanned_rules",
+          "duration_ms",
+          "incidents"
+        ],
+        "title": "DetectResult",
+        "type": "object"
+      },
+      "DispatchResult": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/PlanView"
+          },
+          "risk": {
+            "additionalProperties": true,
+            "title": "Risk",
+            "type": "object"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskView"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "task",
+          "risk",
+          "plan"
+        ],
+        "title": "DispatchResult",
+        "type": "object"
+      },
+      "EscalatedAction": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "target_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Payment Id"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Updated At"
+          },
+          "verification_detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Detail"
+          },
+          "verification_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification State"
+          },
+          "verify_attempts": {
+            "title": "Verify Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "merchant_id",
+          "verify_attempts"
+        ],
+        "title": "EscalatedAction",
+        "type": "object"
+      },
+      "FailureClassView": {
+        "additionalProperties": false,
+        "description": "MerchantOps \u00a756. A code says what broke; this says whether trying again\nis even the question.",
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {},
+            "title": "Evidence",
+            "type": "array"
+          },
+          "is_classified": {
+            "title": "Is Classified",
+            "type": "boolean"
+          },
+          "owning_subsystem": {
+            "title": "Owning Subsystem",
+            "type": "string"
+          },
+          "recommended_next_action": {
+            "title": "Recommended Next Action",
+            "type": "string"
+          },
+          "retryability": {
+            "enum": [
+              "NEVER",
+              "BOUNDED_BACKOFF",
+              "RECONCILE",
+              "ESCALATE"
+            ],
+            "title": "Retryability",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "category",
+          "retryability",
+          "owning_subsystem",
+          "recommended_next_action",
+          "correlation_id",
+          "evidence",
+          "is_classified"
+        ],
+        "title": "FailureClassView",
+        "type": "object"
+      },
+      "FailureTaxonomy": {
+        "additionalProperties": false,
+        "properties": {
+          "failures": {
+            "items": {
+              "$ref": "#/components/schemas/FailureTaxonomyEntry"
+            },
+            "title": "Failures",
+            "type": "array"
+          }
+        },
+        "required": [
+          "failures"
+        ],
+        "title": "FailureTaxonomy",
+        "type": "object"
+      },
+      "FailureTaxonomyEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "error_code": {
+            "title": "Error Code",
+            "type": "string"
+          },
+          "owning_subsystem": {
+            "title": "Owning Subsystem",
+            "type": "string"
+          },
+          "recommended_next_action": {
+            "title": "Recommended Next Action",
+            "type": "string"
+          },
+          "retryability": {
+            "title": "Retryability",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code",
+          "category",
+          "retryability",
+          "owning_subsystem",
+          "recommended_next_action"
+        ],
+        "title": "FailureTaxonomyEntry",
+        "type": "object"
+      },
+      "FindingView": {
+        "additionalProperties": false,
+        "description": "\u00a720's FACT / INFERENCE / RECOMMENDATION split, as stored.\n\nFindings come from two places and stay distinguishable. A deterministic\nOBSERVED finding is built from what a tool returned and carries `metric` and\n`value`; a model finding is tagged `source: \"model\"` and carries its own\n`finding_type` and the `E`-labels it cited. Both shapes are served on the\nsame list, so both sets of fields are optional here \u2014 which is the schema\ntelling the truth about a union rather than pretending it is one shape.",
+        "properties": {
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "evidence_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Ids"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "finding_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Type"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "claim",
+          "kind"
+        ],
+        "title": "FindingView",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_budget": {
+            "$ref": "#/components/schemas/AgentBudget"
+          },
+          "auth": {
+            "title": "Auth",
+            "type": "string"
+          },
+          "auth_secret_is_development_default": {
+            "title": "Auth Secret Is Development Default",
+            "type": "boolean"
+          },
+          "llm_credential_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Credential Source"
+          },
+          "llm_model": {
+            "title": "Llm Model",
+            "type": "string"
+          },
+          "llm_provider": {
+            "title": "Llm Provider",
+            "type": "string"
+          },
+          "llm_provider_is_explicit": {
+            "title": "Llm Provider Is Explicit",
+            "type": "boolean"
+          },
+          "llm_provider_source": {
+            "title": "Llm Provider Source",
+            "type": "string"
+          },
+          "payment_adapter": {
+            "title": "Payment Adapter",
+            "type": "string"
+          },
+          "razorpay_execution_is_real": {
+            "title": "Razorpay Execution Is Real",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "webhook_signature_verification": {
+            "title": "Webhook Signature Verification",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "llm_provider",
+          "llm_provider_is_explicit",
+          "llm_provider_source",
+          "llm_model",
+          "payment_adapter",
+          "razorpay_execution_is_real",
+          "auth",
+          "auth_secret_is_development_default",
+          "webhook_signature_verification",
+          "agent_budget"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "IncidentBrief": {
+        "additionalProperties": false,
+        "description": "What a detection sweep reports about what it raised.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "severity",
+          "title",
+          "revenue_at_risk_minor",
+          "started_at"
+        ],
+        "title": "IncidentBrief",
+        "type": "object"
+      },
+      "IncidentCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "open": {
+            "title": "Open",
+            "type": "integer"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open",
+          "resolved",
+          "by_status"
+        ],
+        "title": "IncidentCounts",
+        "type": "object"
+      },
+      "IncidentList": {
+        "additionalProperties": false,
+        "properties": {
+          "incidents": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentSummary"
+            },
+            "title": "Incidents",
+            "type": "array"
+          },
+          "total_revenue_at_risk_minor": {
+            "title": "Total Revenue At Risk Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "incidents",
+          "total_revenue_at_risk_minor"
+        ],
+        "title": "IncidentList",
+        "type": "object"
+      },
+      "IncidentSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "detected_at": {
+            "title": "Detected At",
+            "type": "string"
+          },
+          "detection_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection Rule"
+          },
+          "detection_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection Version"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "legal_transitions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Transitions"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signals"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "tasks": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tasks"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeline"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchant_id",
+          "type",
+          "severity",
+          "status",
+          "title",
+          "revenue_at_risk_minor",
+          "started_at",
+          "detected_at"
+        ],
+        "title": "IncidentSummary",
+        "type": "object"
+      },
+      "IncidentTrace": {
+        "additionalProperties": false,
+        "properties": {
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "title": "Trace",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_id",
+          "trace"
+        ],
+        "title": "IncidentTrace",
+        "type": "object"
+      },
+      "InvestigateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "incident": {
+            "$ref": "#/components/schemas/IncidentSummary"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskView"
+          }
+        },
+        "required": [
+          "incident",
+          "task"
+        ],
+        "title": "InvestigateResult",
+        "type": "object"
+      },
+      "LedgerView": {
+        "additionalProperties": false,
+        "description": "\u00a749's six figures. They nest, and `invariants_broken` is reported rather\nthan raised \u2014 a ledger whose figures do not nest is a defect that has to be\nvisible.",
+        "properties": {
+          "at_risk_minor": {
+            "title": "At Risk Minor",
+            "type": "integer"
+          },
+          "attempted_minor": {
+            "title": "Attempted Minor",
+            "type": "integer"
+          },
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "by_incident": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Incident",
+            "type": "array"
+          },
+          "by_method": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Method",
+            "type": "array"
+          },
+          "failed_minor": {
+            "title": "Failed Minor",
+            "type": "integer"
+          },
+          "invariants_broken": {
+            "items": {},
+            "title": "Invariants Broken",
+            "type": "array"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "outstanding_minor": {
+            "title": "Outstanding Minor",
+            "type": "integer"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "unknown_minor": {
+            "title": "Unknown Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "basis",
+          "at_risk_minor",
+          "recoverable_minor",
+          "attempted_minor",
+          "recovered_minor",
+          "failed_minor",
+          "unknown_minor",
+          "outstanding_minor",
+          "by_incident",
+          "by_method",
+          "invariants_broken"
+        ],
+        "title": "LedgerView",
+        "type": "object"
+      },
+      "Me": {
+        "additionalProperties": false,
+        "properties": {
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "merchant_id",
+          "role",
+          "permissions"
+        ],
+        "title": "Me",
+        "type": "object"
+      },
+      "MessageView": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "char_count": {
+            "title": "Char Count",
+            "type": "integer"
+          },
+          "contains_untrusted": {
+            "title": "Contains Untrusted",
+            "type": "boolean"
+          },
+          "content": {
+            "items": {},
+            "title": "Content",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "turn": {
+            "title": "Turn",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "turn",
+          "role",
+          "content",
+          "contains_untrusted",
+          "char_count",
+          "at"
+        ],
+        "title": "MessageView",
+        "type": "object"
+      },
+      "MetricView": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "unit",
+          "available",
+          "reason",
+          "sample_size"
+        ],
+        "title": "MetricView",
+        "type": "object"
+      },
+      "MetricsStrip": {
+        "additionalProperties": false,
+        "description": "Business counts for the operations strip, scoped to one merchant.",
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "integer"
+          },
+          "gated": {
+            "title": "Gated",
+            "type": "integer"
+          },
+          "moved_minor": {
+            "title": "Moved Minor",
+            "type": "integer"
+          },
+          "p50_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Duration Ms"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "signing_secret_is_development_default": {
+            "title": "Signing Secret Is Development Default",
+            "type": "boolean"
+          },
+          "tool_calls": {
+            "title": "Tool Calls",
+            "type": "integer"
+          },
+          "tool_error_rate": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Error Rate"
+          },
+          "tool_errors": {
+            "title": "Tool Errors",
+            "type": "integer"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_hours",
+          "gated",
+          "approved",
+          "rejected",
+          "moved_minor",
+          "tool_calls",
+          "tool_errors",
+          "signing_secret_is_development_default"
+        ],
+        "title": "MetricsStrip",
+        "type": "object"
+      },
+      "ObjectiveView": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "holds": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holds"
+          },
+          "measured": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target",
+          "detail"
+        ],
+        "title": "ObjectiveView",
+        "type": "object"
+      },
+      "Objectives": {
+        "additionalProperties": false,
+        "properties": {
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectiveView"
+            },
+            "title": "Objectives",
+            "type": "array"
+          }
+        },
+        "required": [
+          "objectives"
+        ],
+        "title": "Objectives",
+        "type": "object"
+      },
+      "OperationalMetrics": {
+        "additionalProperties": false,
+        "description": "\u00a759, split into what is measured and what cannot be.",
+        "properties": {
+          "available": {
+            "items": {
+              "$ref": "#/components/schemas/MetricView"
+            },
+            "title": "Available",
+            "type": "array"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/MetricView"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "available",
+          "unavailable",
+          "note"
+        ],
+        "title": "OperationalMetrics",
+        "type": "object"
+      },
+      "PlanBudget": {
+        "additionalProperties": false,
+        "properties": {
+          "max_actions": {
+            "title": "Max Actions",
+            "type": "integer"
+          },
+          "max_attempts_per_customer": {
+            "title": "Max Attempts Per Customer",
+            "type": "integer"
+          },
+          "max_duration_seconds": {
+            "title": "Max Duration Seconds",
+            "type": "integer"
+          },
+          "max_recovery_minor": {
+            "title": "Max Recovery Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_recovery_minor",
+          "max_actions",
+          "max_attempts_per_customer",
+          "max_duration_seconds"
+        ],
+        "title": "PlanBudget",
+        "type": "object"
+      },
+      "PlanView": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/PlanBudget"
+          },
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CandidateView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "created": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created"
+          },
+          "eligible_recovery_minor": {
+            "title": "Eligible Recovery Minor",
+            "type": "integer"
+          },
+          "expected_recovery_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Recovery Basis"
+          },
+          "expected_recovery_minor": {
+            "title": "Expected Recovery Minor",
+            "type": "integer"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "intervention": {
+            "title": "Intervention",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "planner_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planner Version"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "stop_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Rule"
+          }
+        },
+        "required": [
+          "id",
+          "incident_id",
+          "merchant_id",
+          "status",
+          "intervention",
+          "revenue_at_risk_minor",
+          "eligible_recovery_minor",
+          "expected_recovery_minor",
+          "budget",
+          "expires_at"
+        ],
+        "title": "PlanView",
+        "type": "object"
+      },
+      "ProviderChange": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_from": {
+            "title": "Changed From",
+            "type": "string"
+          },
+          "llm_model": {
+            "title": "Llm Model",
+            "type": "string"
+          },
+          "llm_provider": {
+            "title": "Llm Provider",
+            "type": "string"
+          },
+          "llm_provider_source": {
+            "title": "Llm Provider Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "llm_provider",
+          "llm_provider_source",
+          "llm_model",
+          "changed_from"
+        ],
+        "title": "ProviderChange",
+        "type": "object"
+      },
+      "ProviderRequest": {
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "ProviderRequest",
+        "type": "object"
+      },
+      "RecommendationView": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "detail"
+        ],
+        "title": "RecommendationView",
+        "type": "object"
+      },
+      "ReconcileReport": {
+        "additionalProperties": false,
+        "properties": {
+          "details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "escalated": {
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "settled": {
+            "title": "Settled",
+            "type": "integer"
+          },
+          "skipped_too_recent": {
+            "title": "Skipped Too Recent",
+            "type": "integer"
+          },
+          "still_unsettled": {
+            "title": "Still Unsettled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scanned",
+          "settled",
+          "still_unsettled",
+          "escalated",
+          "skipped_too_recent",
+          "details"
+        ],
+        "title": "ReconcileReport",
+        "type": "object"
+      },
+      "ReplayResult": {
+        "additionalProperties": false,
+        "properties": {
+          "divergence": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Divergence"
+          },
+          "external_calls_made": {
+            "title": "External Calls Made",
+            "type": "integer"
+          },
+          "final_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Answer"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "replay_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Task Id"
+          },
+          "request": {
+            "title": "Request",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ReplayStep"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "title": "Trace",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "task_id",
+          "request",
+          "status",
+          "steps",
+          "trace",
+          "external_calls_made"
+        ],
+        "title": "ReplayResult",
+        "type": "object"
+      },
+      "ReplayStep": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "policy_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Decision"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "tool",
+          "success"
+        ],
+        "title": "ReplayStep",
+        "type": "object"
+      },
+      "ReverifyResult": {
+        "additionalProperties": false,
+        "properties": {
+          "task": {
+            "$ref": "#/components/schemas/TaskView"
+          },
+          "verification": {
+            "additionalProperties": true,
+            "title": "Verification",
+            "type": "object"
+          }
+        },
+        "required": [
+          "task",
+          "verification"
+        ],
+        "title": "ReverifyResult",
+        "type": "object"
+      },
+      "RunVersions": {
+        "additionalProperties": false,
+        "description": "MerchantOps \u00a741 \u2014 everything needed to reproduce a run.",
+        "properties": {
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "model_provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Provider"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "tool_registry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Registry"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow"
+          }
+        },
+        "required": [
+          "agent",
+          "model_provider",
+          "model",
+          "prompt",
+          "tool_registry",
+          "policy",
+          "workflow"
+        ],
+        "title": "RunVersions",
+        "type": "object"
+      },
+      "ScenarioCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "passed",
+          "detail"
+        ],
+        "title": "ScenarioCheck",
+        "type": "object"
+      },
+      "ScenarioRunResult": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ScenarioCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "title": "Metrics",
+            "type": "object"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "scenario_id",
+          "passed",
+          "checks",
+          "metrics",
+          "provider",
+          "model"
+        ],
+        "title": "ScenarioRunResult",
+        "type": "object"
+      },
+      "ScenarioView": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "critical": {
+            "title": "Critical",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "expect": {
+            "additionalProperties": true,
+            "title": "Expect",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "principal": {
+            "title": "Principal",
+            "type": "string"
+          },
+          "request": {
+            "title": "Request",
+            "type": "string"
+          },
+          "setup": {
+            "additionalProperties": true,
+            "title": "Setup",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "critical",
+          "description",
+          "request",
+          "principal",
+          "expect",
+          "setup"
+        ],
+        "title": "ScenarioView",
+        "type": "object"
+      },
+      "SettleReport": {
+        "additionalProperties": false,
+        "properties": {
+          "actual_recovery_minor": {
+            "title": "Actual Recovery Minor",
+            "type": "integer"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "expected_recovery_minor": {
+            "title": "Expected Recovery Minor",
+            "type": "integer"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "status",
+          "expected_recovery_minor",
+          "actual_recovery_minor",
+          "by_status"
+        ],
+        "title": "SettleReport",
+        "type": "object"
+      },
+      "TaskEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallView"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id",
+          "tool_calls"
+        ],
+        "title": "TaskEvidence",
+        "type": "object"
+      },
+      "TaskMessages": {
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageView"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "total_chars": {
+            "title": "Total Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "messages",
+          "total_chars"
+        ],
+        "title": "TaskMessages",
+        "type": "object"
+      },
+      "TaskRequest": {
+        "properties": {
+          "request": {
+            "title": "Request",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "TaskRequest",
+        "type": "object"
+      },
+      "TaskTrace": {
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "title": "Trace",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id",
+          "trace"
+        ],
+        "title": "TaskTrace",
+        "type": "object"
+      },
+      "TaskView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ActionView"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "agent_confidence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Confidence"
+          },
+          "agent_version": {
+            "title": "Agent Version",
+            "type": "string"
+          },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalView"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "awaiting_signatures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting Signatures"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FailureClassView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "final_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Answer"
+          },
+          "findings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FindingView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Findings"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "is_replay": {
+            "title": "Is Replay",
+            "type": "boolean"
+          },
+          "llm_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Turns"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "model_requires_human": {
+            "title": "Model Requires Human",
+            "type": "boolean"
+          },
+          "model_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendationView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replayed_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replayed From"
+          },
+          "request": {
+            "title": "Request",
+            "type": "string"
+          },
+          "requires_human": {
+            "title": "Requires Human",
+            "type": "boolean"
+          },
+          "signed_by": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed By"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "RUNNING",
+              "AWAITING_APPROVAL",
+              "COMPLETED",
+              "DENIED",
+              "REJECTED",
+              "FAILED",
+              "ABORTED_BUDGET"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/RunVersions"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "merchant_id",
+          "user_id",
+          "request",
+          "status",
+          "final_answer",
+          "failure_code",
+          "findings",
+          "tool_calls",
+          "intent",
+          "recommendation",
+          "agent_confidence",
+          "requires_human",
+          "model_requires_human",
+          "llm_turns",
+          "duration_ms",
+          "versions",
+          "agent_version",
+          "model_version",
+          "prompt_version",
+          "failure",
+          "is_replay",
+          "replayed_from",
+          "approvals",
+          "actions"
+        ],
+        "title": "TaskView",
+        "type": "object"
+      },
+      "ToolCallView": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments"
+          },
+          "data": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Data",
+            "type": "object"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "evidence": {
+            "default": [],
+            "items": {},
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "policy_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Decision"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "tool",
+          "success"
+        ],
+        "title": "ToolCallView",
+        "type": "object"
+      },
+      "TraceEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "canonical_event": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Event"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "event",
+          "payload"
+        ],
+        "title": "TraceEvent",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationDetail": {
+        "additionalProperties": false,
+        "description": "The verdict, the sentence explaining it, and what it was computed from.\n\nA JSON column rather than a string, and modelled rather than left as `dict`\nbecause the frontend narrows on `state` \u2014 leaving it open meant the\ngenerated type was `{[key: string]: unknown}`, which the hand-written mirror\nwas quietly asserting more than.",
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "SUCCESS",
+              "FAILED",
+              "PARTIAL",
+              "UNKNOWN"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "reason"
+        ],
+        "title": "VerificationDetail",
+        "type": "object"
+      },
+      "WebhookAck": {
+        "additionalProperties": false,
+        "description": "Always 200 once the delivery is stored, including a refused one: a\nprovider retries a non-2xx, and retrying a forgery achieves only load.",
+        "properties": {
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reverified": {
+            "default": [],
+            "items": {},
+            "title": "Reverified",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stored_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "WebhookAck",
+        "type": "object"
+      },
+      "WebhookEventList": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "unattributed_count": {
+            "title": "Unattributed Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "events",
+          "unattributed_count"
+        ],
+        "title": "WebhookEventList",
+        "type": "object"
+      },
+      "WebhookEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Id"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "signature_valid": {
+            "title": "Signature Valid",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_type",
+          "status",
+          "signature_valid",
+          "received_at"
+        ],
+        "title": "WebhookEventView",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "MerchantOps Agent",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/actions/escalated": {
+      "get": {
+        "description": "Actions automatic reconciliation could not settle \u2014 the operator queue.",
+        "operationId": "list_escalated_actions_escalated_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "max_attempts",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Max Attempts",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EscalatedAction"
+                  },
+                  "title": "Response List Escalated Actions Escalated Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Escalated"
+      }
+    },
+    "/actions/reconcile": {
+      "post": {
+        "description": "Settle actions left UNKNOWN/PARTIAL. Re-reads state only; never retries\nthe financial action.",
+        "operationId": "run_reconcile_actions_reconcile_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "min_age_seconds",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Min Age Seconds",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_attempts",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "title": "Max Attempts",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconcileReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Reconcile"
+      }
+    },
+    "/actions/{action_id}": {
+      "get": {
+        "description": "One external action \u2014 MerchantOps \u00a765.\n\nEverything a person needs to judge whether money moved: the verification\nstate and its detail, the idempotency key it was claimed under, the\nprovider reference, and how long each half took.",
+        "operationId": "get_action_actions__action_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Action"
+      }
+    },
+    "/approvals": {
+      "get": {
+        "description": "The approval queue \u2014 MerchantOps \u00a765.\n\nReachable before only through the task that owned it, which meant an\noperator wanting \"what is waiting on me\" had to assemble one client-side.\nAn approval is a thing a person acts on, so it is a resource.",
+        "operationId": "list_approvals_approvals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "pending_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Pending Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalQueue"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Approvals"
+      }
+    },
+    "/config/llm-provider": {
+      "post": {
+        "description": "Switch between providers that are already configured.\n\nDeliberately narrow. It selects among providers the process can already\nreach; it never accepts a credential. CONTRACT \u00a737 keeps secrets in the\nenvironment, and a browser form is not that.\n\nThe override is process-local and does not survive a restart \u2014 with more\nthan one worker, each would hold its own. Persisting it would make the\nactive provider a piece of durable state that no environment variable\nexplains, which is a worse trade.",
+        "operationId": "set_llm_provider_config_llm_provider_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Llm Provider"
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "description": "MerchantOps \u00a750. Revenue at risk, recovery, incidents and agent activity.\n\nDeliberately separate from `/metrics`, which counts operations. Merging a\nrevenue figure into an ops counter strip is how \"12\" comes to mean tasks on\none row and rupees on the next.",
+        "operationId": "merchant_dashboard_dashboard_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merchant Dashboard"
+      }
+    },
+    "/failures/taxonomy": {
+      "get": {
+        "description": "MerchantOps \u00a756/\u00a757. What every failure this system raises means, who\nowns it, and whether retrying it is sensible.\n\nPublished rather than kept internal so an operator or an integrator can see\nthat `UNKNOWN_EXTERNAL_STATE` is answered by reconciling and never by\nretrying \u2014 the single most important entry in the table.",
+        "operationId": "failure_taxonomy_failures_taxonomy_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FailureTaxonomy"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Failure Taxonomy"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/incidents": {
+      "get": {
+        "description": "The operations console. Scoped to the caller's merchant, ordered by\nrevenue at risk \u2014 the largest problem is the one to open first.",
+        "operationId": "list_incidents_incidents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_closed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Closed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Incidents"
+      }
+    },
+    "/incidents/detect": {
+      "post": {
+        "description": "Run the detection sweep for the caller's merchant.\n\nIdempotent: re-running over the same window records `already_known` rather\nthan creating a second incident for one anomaly.",
+        "operationId": "run_detection_incidents_detect_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetectResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Detection"
+      }
+    },
+    "/incidents/{incident_id}": {
+      "get": {
+        "operationId": "get_incident_incidents__incident_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Incident"
+      }
+    },
+    "/incidents/{incident_id}/investigate": {
+      "post": {
+        "description": "Dispatch the bounded agent against an incident.\n\nThe incident's next state is derived from the task's recorded status, never\nfrom the model's prose (MerchantOps \u00a738).",
+        "operationId": "investigate_incident_incidents__incident_id__investigate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Investigate Incident"
+      }
+    },
+    "/incidents/{incident_id}/recovery": {
+      "post": {
+        "description": "Plan recovery for an incident \u2014 MerchantOps \u00a723.\n\nPlanning does not execute. It computes affected transactions, eligibility\nand expected recovery, and bounds the campaign; acting on a candidate is a\nseparate, individually gated call.",
+        "operationId": "create_recovery_plan_incidents__incident_id__recovery_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Recovery Plan"
+      }
+    },
+    "/incidents/{incident_id}/trace": {
+      "get": {
+        "description": "MerchantOps \u00a758 \u2014 detection, every lifecycle move, and every event of\nevery task the incident dispatched, in one ordering.",
+        "operationId": "get_incident_trace_incidents__incident_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentTrace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Incident Trace"
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "Who the caller is, as the server understands it.\n\nThe client never asserts this. It is returned so an interface can show the\nacting identity \u2014 the same screen behaves differently for an owner and an\nanalyst, and an operator should not have to infer which one they are.",
+        "operationId": "whoami_me_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whoami"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Counts for the operations strip, scoped to the caller's merchant.\n\nEverything here is derived from rows this merchant owns. There is no\ncross-merchant aggregate and there will not be one on this route: the\nisolation that applies to a task applies to a count of tasks.\n\n`moved_minor` deliberately counts only actions that were both executed and\nindependently verified as SUCCESS. An action that is UNKNOWN has not been\nshown to have moved money, and this number must never imply it did \u2014 the\nunsettled queue is what reports those, and it reports them as unsettled.",
+        "operationId": "metrics_metrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window_hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Window Hours",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsStrip"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Metrics"
+      }
+    },
+    "/metrics/objectives": {
+      "get": {
+        "description": "MerchantOps \u00a760. Each objective with what was measured against it \u2014\nan SLO nobody is timing is a wish.",
+        "operationId": "slos_metrics_objectives_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Objectives"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Slos"
+      }
+    },
+    "/metrics/operational": {
+      "get": {
+        "description": "MerchantOps \u00a759. Measured metrics, and the ones that are not.\n\nThe split is the point: a figure computed from nothing is worse than a\nblank, because the blank prompts a question and the number closes it.",
+        "operationId": "operational_metrics_operational_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalMetrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Operational"
+      }
+    },
+    "/metrics/prometheus": {
+      "get": {
+        "description": "Runtime metrics for a scraper \u2014 ADR-0031.\n\nDeliberately not `/metrics`, which is this merchant's business counts and\nstays that way. These are process health: no tenant scoping, because a\nlatency histogram does not belong to a merchant, and therefore no principal\nto scope it to.\n\n**Authenticated, and not by a user.** A scraper has no merchant and should\nnot be given one, so `METRICS_SCRAPE_TOKEN` is a shared secret compared in\nconstant time \u2014 Prometheus sends it as `authorization: Bearer <token>`.\nFalling back to an ordinary principal would mean minting a user for a robot\nand giving it a merchant it has no business having.\n\nUnset, the route returns 404 rather than serving to anyone. An\nunauthenticated metrics endpoint publishes route names, traffic shape and\nerror rates to whoever asks \u2014 a smaller leak than data and still a leak,\nand this project already has one route open that should not be.",
+        "operationId": "prometheus_metrics_prometheus_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prometheus"
+      }
+    },
+    "/recovery/candidates/{candidate_id}/dispatch": {
+      "post": {
+        "description": "Hand one candidate to the ordinary agent path, bounds permitting.\n\nReturns 409 with the stopping rule that fired when \u00a727's budget or \u00a728's\nrules refuse. That is a normal outcome for a bounded campaign, not an error\ncondition \u2014 the rule name is the answer.",
+        "operationId": "dispatch_recovery_candidate_recovery_candidates__candidate_id__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Recovery Candidate"
+      }
+    },
+    "/recovery/ledger": {
+      "get": {
+        "description": "MerchantOps \u00a749. Six figures that nest, in one unit.\n\n`invariants_broken` is returned rather than enforced by refusing to answer:\na violated ordering is a reporting defect that has to be visible, and a\ndashboard that will not render is a dashboard nobody can use to find out why.",
+        "operationId": "recovery_ledger_recovery_ledger_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recovery Ledger"
+      }
+    },
+    "/recovery/plans/{plan_id}": {
+      "get": {
+        "operationId": "get_recovery_plan_recovery_plans__plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Recovery Plan"
+      }
+    },
+    "/recovery/plans/{plan_id}/settle": {
+      "post": {
+        "description": "Read each dispatched candidate's outcome back from its verified action.",
+        "operationId": "settle_recovery_plan_recovery_plans__plan_id__settle_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettleReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Settle Recovery Plan"
+      }
+    },
+    "/scenarios": {
+      "get": {
+        "description": "The suite, including what each scenario actually asserts.\n\nThe description is prose; `expect` is the contract. A reader deciding\nwhether \"106/106\" means anything needs the second, and returning only the\nfirst left them opening the YAML to find out. Setup that changes what a\nscenario means \u2014 who runs it, an injected fault, a back-dated approval \u2014 is\nreturned for the same reason.\n\nAll of it is static configuration that ships in the repository. Nothing here\nis per-merchant or secret, which is why the route stays unauthenticated\nalongside the runner.",
+        "operationId": "list_scenarios_scenarios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioView"
+                  },
+                  "title": "Response List Scenarios Scenarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scenarios"
+      }
+    },
+    "/scenarios/{scenario_id}/run": {
+      "post": {
+        "operationId": "run_one_scenarios__scenario_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioRunResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run One"
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "create_task_tasks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Task"
+      }
+    },
+    "/tasks/{task_id}": {
+      "get": {
+        "operationId": "get_task_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Task"
+      }
+    },
+    "/tasks/{task_id}/approve": {
+      "post": {
+        "description": "Record this caller's approval, and execute once enough people have signed.\n\nFor a CRITICAL action policy demands two signatures from two different\npeople, so a single call here returns with `awaiting_signatures` set and\nnothing external touched. Signing twice yourself is refused by a database\nconstraint, not by this handler.",
+        "operationId": "approve_tasks__task_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve"
+      }
+    },
+    "/tasks/{task_id}/evidence": {
+      "get": {
+        "description": "The evidence behind a task's findings and its pending action.\n\nCONTRACT \u00a721 says the human reviews payment, amount, reason, **evidence**\nand risk before approving. The Streamlit UI reads `tool_calls` straight from\nthe database to do that; an HTTP client had no route to the same facts, so a\nnon-Streamlit approval screen could only show four of the five.\n\n`untrusted` is carried through deliberately (CONTRACT \u00a736). Merchant and\ncustomer free text is an injection surface, and a client needs to know which\nvalues to render as quarantined data rather than as system text. Stripping\nthe flag here would push that judgement onto every consumer.",
+        "operationId": "get_evidence_tasks__task_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskEvidence"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Evidence"
+      }
+    },
+    "/tasks/{task_id}/messages": {
+      "get": {
+        "description": "The conversation the model actually saw \u2014 MerchantOps \u00a766, \u00a738.\n\nDistinct from the trace, which records what the application DID. This is\nwhat the model was looking at when it decided to do it, and it is the only\nway to answer \"why did it call that tool\" without reconstructing an answer\nfrom the outside.\n\n`contains_untrusted` is carried through deliberately (\u00a739). Merchant free\ntext was quarantined when the model saw it, and a client rendering a stored\ntranscript needs to know which messages to render as data rather than as\nsystem text.",
+        "operationId": "get_messages_tasks__task_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskMessages"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Messages"
+      }
+    },
+    "/tasks/{task_id}/reject": {
+      "post": {
+        "operationId": "reject_task_tasks__task_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Task"
+      }
+    },
+    "/tasks/{task_id}/replay": {
+      "post": {
+        "operationId": "replay_task_tasks__task_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "PLAYBACK",
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replay Task"
+      }
+    },
+    "/tasks/{task_id}/reverify": {
+      "post": {
+        "description": "CONTRACT \u00a726 (amended) \u2014 the UNKNOWN exit path.",
+        "operationId": "reverify_task_tasks__task_id__reverify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReverifyResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reverify Task"
+      }
+    },
+    "/tasks/{task_id}/trace": {
+      "get": {
+        "operationId": "get_trace_tasks__task_id__trace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTrace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Trace"
+      }
+    },
+    "/trace/{correlation_id}": {
+      "get": {
+        "description": "MerchantOps \u00a758. Everything one operation touched, in one ordering.\n\nScoped to the caller's merchant: a trace is as much a merchant's data as\nthe task it describes.",
+        "operationId": "get_correlation_trace_trace__correlation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "correlation_id",
+            "required": true,
+            "schema": {
+              "title": "Correlation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrelationTrace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Correlation Trace"
+      }
+    },
+    "/webhooks/events": {
+      "get": {
+        "description": "The event store, scoped to the caller's merchant.\n\nEvents we could not attribute to a merchant \u2014 an unknown entity, or a\ndelivery that failed its signature and was therefore never resolved \u2014 are\nvisible only in aggregate. Showing their bodies to whoever asks first would\nmake an unauthenticated endpoint into a cross-tenant read.",
+        "operationId": "list_webhook_events_webhooks_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Webhook Events"
+      }
+    },
+    "/webhooks/razorpay": {
+      "post": {
+        "description": "Ingest one provider delivery.\n\nDeliberately outside `current_principal`: the provider holds no bearer token,\nso the HMAC signature is the authentication, not a token. This is a distinct\ntrust path and it is the only unauthenticated write in the application.\n\nAlways returns 200 once the delivery is stored, including for a signature\nthat failed. A provider that receives a non-2xx retries, and retrying a\nforged or malformed delivery achieves nothing except load \u2014 the outcome is\nin the body, and in `webhook_events`.",
+        "operationId": "razorpay_webhook_webhooks_razorpay_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-razorpay-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Razorpay-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-razorpay-event-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Razorpay-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Razorpay Webhook"
+      }
+    }
+  }
+}

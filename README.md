@@ -55,6 +55,7 @@ directly is the second entry point, not the only one.
 | | |
 |---|---|
 | [⚙️ Setup](#-setup) · [🔌 API](#-api) | Local install; the endpoint surface |
+| [🚨 Runbook](docs/runbook.md) | Health, the `UNKNOWN` queue, deploys, restore, triage |
 | [🚧 Known limitations](#-known-limitations) | Split by *why* each one exists |
 | [🗺️ Roadmap](#-roadmap) · [📁 Repository layout](#-repository-layout) | What is next; where things live |
 | [📄 License / disclaimer](#-license--disclaimer) | MIT, and what this project is not |
@@ -643,5 +644,10 @@ Independent developer project, provided as-is for demonstration purposes. Uses
 Razorpay Test Mode APIs where applicable. Not affiliated with, sponsored by, or
 endorsed by Razorpay. No real-money transactions are performed anywhere in this
 codebase.
+
+Operating it: [`docs/runbook.md`](docs/runbook.md) — health checks, the
+reconciliation and escalation queues, migration hazards, the backup/restore
+drill (rehearsed, and honest about what it does not tell you), and triage for
+the two objectives whose target is zero.
 
 Security reports: [`SECURITY.md`](SECURITY.md).

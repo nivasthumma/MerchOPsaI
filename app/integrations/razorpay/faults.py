@@ -50,11 +50,11 @@ class FaultInjector:
     down: bool = False
 
     @classmethod
-    def disabled(cls) -> "FaultInjector":
+    def disabled(cls) -> FaultInjector:
         return cls(fault=None)
 
     @classmethod
-    def from_scenario(cls, cfg: dict | None) -> "FaultInjector":
+    def from_scenario(cls, cfg: dict | None) -> FaultInjector:
         if not cfg:
             return cls.disabled()
         raw = cfg.get("fault")

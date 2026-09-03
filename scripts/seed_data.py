@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import random
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -20,7 +20,15 @@ from sqlalchemy import text
 
 from app.db import get_engine, session_scope
 from app.models import (
-    Base, Customer, Merchant, Order, Payment, Product, Refund, Tenant, User,
+    Base,
+    Customer,
+    Merchant,
+    Order,
+    Payment,
+    Product,
+    Refund,
+    Tenant,
+    User,
 )
 
 SEED = 20260825
@@ -30,7 +38,7 @@ DATASET_VERSION = "synthetic-v1"
 # Midnight, so that ANCHOR - N days lands on clean day boundaries. With a
 # midday anchor the 7-day period cut bisects a generated day and the current
 # window silently collects ~8 days of traffic against the previous window's ~6.
-ANCHOR = datetime(2026, 8, 20, 0, 0, 0, tzinfo=timezone.utc)
+ANCHOR = datetime(2026, 8, 20, 0, 0, 0, tzinfo=UTC)
 
 TENANT_A = "TEN_KETTLE"
 TENANT_B = "TEN_NORTHWIND"

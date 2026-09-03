@@ -55,13 +55,22 @@ STATEMENTS = [
 def harden(session) -> None:
     for stmt in STATEMENTS:
         session.execute(text(stmt))
-    # Grants are best-effort: the role may already lack them, or may be the owner.
+    # Grants are best-effort: the role may already lack them, or may be the
+    # owner. Best-effort is not the same as unobserved, though — these are
+    # REVOKEs on the audit log, and one failing silently is a security control
+    # that did not apply and said nothing. The trigger is the real defence and
+    # `verify()` below proves it fires, so a failure here is a warning rather
+    # than an error; it still has to be legible.
     for stmt in ("REVOKE UPDATE ON audit_logs FROM PUBLIC;",
                  "REVOKE DELETE ON audit_logs FROM PUBLIC;"):
+        sp = session.begin_nested()
         try:
             session.execute(text(stmt))
-        except Exception:                                     # noqa: BLE001
-            pass
+            sp.commit()
+        except Exception as exc:
+            sp.rollback()
+            print(f"  warn  {stmt.strip()} did not apply: "
+                  f"{type(exc).__name__}: {str(exc).splitlines()[0]}")
 
 
 def verify(session) -> list[tuple[str, bool, str]]:
@@ -83,7 +92,7 @@ def verify(session) -> list[tuple[str, bool, str]]:
             """))
             session.flush()
             results.append(("INSERT", True, "permitted"))
-        except Exception as e:                                # noqa: BLE001
+        except Exception as e:
             results.append(("INSERT", False, f"BROKEN — appends rejected: {e}"))
             return results
 
@@ -101,7 +110,7 @@ def verify(session) -> list[tuple[str, bool, str]]:
                 session.execute(text(sql), {"i": probe_id})
                 sp.rollback()
                 results.append((op, False, "SUCCEEDED — the audit trail is mutable"))
-            except Exception as e:                            # noqa: BLE001
+            except Exception as e:
                 sp.rollback()
                 results.append((op, True, f"rejected: {str(e).splitlines()[0][:88]}"))
     finally:

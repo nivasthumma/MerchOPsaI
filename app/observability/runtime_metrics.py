@@ -77,7 +77,7 @@ def _capped(store: dict, name: str, key: tuple) -> tuple:
 
 def _register(name: str, kind: str, help_text: str, labels: dict | None) -> None:
     _meta.setdefault(name, (kind, help_text))
-    _label_names.setdefault(name, tuple(sorted((labels or {}))))
+    _label_names.setdefault(name, tuple(sorted(labels or {})))
 
 
 def counter(name: str, help_text: str = "", labels: dict | None = None,
@@ -160,7 +160,10 @@ def render() -> str:
             else:
                 for key, entry in sorted(_histograms[name].items()):
                     cumulative = 0
-                    for upper, count in zip(entry["buckets"], entry["counts"]):
+                    # strict: counts is built as [0] * len(buckets), so a
+                    # length mismatch means the histogram is corrupt.
+                    for upper, count in zip(entry["buckets"], entry["counts"],
+                                            strict=True):
                         cumulative += count
                         lines.append(
                             f'{name}_bucket{_render_labels(key, (("le", _fmt(upper)),))} '

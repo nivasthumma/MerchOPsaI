@@ -34,13 +34,17 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.models import (
-    CandidateStatus, PlanStatus, RecoveryCandidate, RecoveryPlan, RISK_ORDER,
+    RISK_ORDER,
+    CandidateStatus,
+    PlanStatus,
+    RecoveryCandidate,
+    RecoveryPlan,
 )
 
 
@@ -91,11 +95,11 @@ def _spent_and_attempted(session, plan: RecoveryPlan) -> tuple[int, int]:
 def check_budget(session, plan: RecoveryPlan,
                  candidate: RecoveryCandidate | None = None) -> StopDecision:
     """MerchantOps §27. Called immediately before an action, never once."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     expires = plan.expires_at
     if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
+        expires = expires.replace(tzinfo=UTC)
     if now >= expires:
         return StopDecision(Disposition.STOP, "max_duration_exceeded",
                             f"Plan {plan.id} passed its {plan.max_duration_seconds}s "

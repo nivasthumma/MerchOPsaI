@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -25,7 +25,11 @@ from app.agent.approval import approve_and_execute
 from app.agent.runtime import Principal
 from app.db import get_engine
 from app.models import (
-    ActionStatus, AgentAction, AgentTask, Approval, TaskStatus,
+    ActionStatus,
+    AgentAction,
+    AgentTask,
+    Approval,
+    TaskStatus,
 )
 
 # A payment at MERCH_A that carries an external mapping, so a refund can
@@ -123,7 +127,7 @@ def _pending_refund_task(session, made, payment_id: str, amount_minor: int):
         action_payload={"synthetic_payment_id": payment_id,
                         "amount_minor": amount_minor},
         evidence=[], risk_level="HIGH", decision="PENDING", required_signatures=1,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
     ))
     session.commit()
     made["tasks"].append(tid)
@@ -282,7 +286,7 @@ def test_two_approvals_for_one_payment_produce_one_refund(committed_session, mon
             approve_and_execute(s, task_id, principal)
             s.commit()
             results[task_id] = "executed"
-        except Exception as exc:        # noqa: BLE001 - the refusal is the result
+        except Exception as exc:
             s.rollback()
             results[task_id] = f"{type(exc).__name__}: {exc}"
         finally:

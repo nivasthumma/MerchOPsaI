@@ -9,13 +9,16 @@ The webhook decides *when* to look. It never decides *what was found*.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from app.audit.trace import record_incident
 from app.integrations.razorpay.adapter import get_adapter
 from app.models import (
-    AgentAction, IncidentSeverity, IncidentType, VerificationState,
-    WebhookEvent, WebhookStatus,
+    AgentAction,
+    IncidentSeverity,
+    IncidentType,
+    VerificationState,
+    WebhookEvent,
+    WebhookStatus,
 )
 
 DETECTION_VERSION = "reconciliation-v1"
@@ -114,7 +117,7 @@ def process_event(session, event: WebhookEvent, adapter=None):
     actions = _actions_for_entity(session, event.entity_id) if event.entity_id else []
     if not actions:
         event.status = WebhookStatus.IGNORED
-        event.processed_at = datetime.now(timezone.utc)
+        event.processed_at = datetime.now(UTC)
         event.processing_note = (
             f"No action of ours touches {event.entity_id}. Recorded as provider "
             f"history; nothing to reconcile.")
@@ -126,7 +129,7 @@ def process_event(session, event: WebhookEvent, adapter=None):
         before = action.verification_state
         try:
             vr = reverify_action(session, adapter, action)
-        except Exception as exc:                                    # noqa: BLE001
+        except Exception as exc:
             # A failed read is not a settlement, and it is certainly not a
             # reason to believe the payload. Leave the action as it was; the
             # reconciliation sweep will try again.
@@ -155,7 +158,7 @@ def process_event(session, event: WebhookEvent, adapter=None):
                          f"-> {vr.state.value}")
 
     event.status = WebhookStatus.PROCESSED
-    event.processed_at = datetime.now(timezone.utc)
+    event.processed_at = datetime.now(UTC)
     plans = sorted(p for p in settled_plans if p)
     if plans:
         notes.append(f"settled plan(s): {', '.join(plans)}")

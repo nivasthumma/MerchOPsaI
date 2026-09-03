@@ -6,20 +6,27 @@ rather than acquiring a shortcut because no money moves.
 """
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from sqlalchemy import text
 
 from app.agent.approval import ApprovalError, approve_and_execute
-from app.agent.runtime import AgentRuntime
 from app.integrations.razorpay.adapter import get_adapter
-from app.integrations.razorpay.faults import Fault, FaultInjector, ProviderError
+from app.integrations.razorpay.faults import Fault, FaultInjector
 from app.models import (
-    ActionStatus, AgentAction, Approval, Notification, PaymentLink, TaskStatus,
+    ActionStatus,
+    Approval,
+    Notification,
+    PaymentLink,
+    TaskStatus,
     VerificationState,
 )
 from app.tools.recovery_actions import (
-    derive_action_key, execute_notification, execute_payment_link,
-    verify_notification, verify_payment_link,
+    execute_notification,
+    execute_payment_link,
+    verify_notification,
+    verify_payment_link,
 )
 
 
@@ -38,7 +45,7 @@ def _task_and_approval(db, owner, action_type: str, payload: dict):
     """A task with a pending approval for the given action, without going
     through the planner."""
     import uuid
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from app.models import AgentTask
     task = AgentTask(id=f"TASK_{uuid.uuid4().hex[:10].upper()}", merchant_id="MERCH_A",
@@ -50,7 +57,7 @@ def _task_and_approval(db, owner, action_type: str, payload: dict):
                   merchant_id="MERCH_A", action_type=action_type, action_payload=payload,
                   evidence=[], risk_level="MEDIUM", decision="PENDING",
                   required_signatures=1,
-                  expires_at=datetime.now(timezone.utc) + timedelta(seconds=900))
+                  expires_at=datetime.now(UTC) + timedelta(seconds=900))
     db.add(ap)
     db.flush()
     return task, ap

@@ -19,9 +19,10 @@ So the map is written out. It is longer, and it is checkable by reading.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from app.models import Incident, IncidentStatus as S
+from app.models import Incident
+from app.models import IncidentStatus as S
 
 # Exception states are reachable from any live state (MerchantOps §13).
 EXCEPTION = frozenset({S.FAILED, S.UNKNOWN, S.ESCALATED, S.CANCELLED})
@@ -101,7 +102,7 @@ def transition(session, incident: Incident, to: S, *, reason: str,
 
     incident.status = to
     if to is S.RESOLVED and incident.resolved_at is None:
-        incident.resolved_at = datetime.now(timezone.utc)
+        incident.resolved_at = datetime.now(UTC)
     session.flush()
 
     record_incident(session, incident, "incident_status_changed", {

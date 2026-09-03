@@ -7,22 +7,39 @@ from __future__ import annotations
 
 from app.failures import may_retry
 from app.tools.actions import (
-    SPEC_REFUND_STATUS, SPEC_REQUEST_REFUND, get_refund_status,
+    SPEC_REFUND_STATUS,
+    SPEC_REQUEST_REFUND,
+    get_refund_status,
 )
 from app.tools.contracts import ToolResult, ToolSpec
 from app.tools.investigation import (
-    SPEC_DUPLICATES, SPEC_FAILURE_BREAKDOWN, SPEC_GET_CUSTOMER, SPEC_GET_ORDER,
-    SPEC_GET_PAYMENT, SPEC_PAYMENT_METRICS, SPEC_REVENUE,
-    find_duplicate_payments, get_customer, get_failure_breakdown, get_order,
-    get_payment, get_payment_metrics, get_revenue_summary,
+    SPEC_DUPLICATES,
+    SPEC_FAILURE_BREAKDOWN,
+    SPEC_GET_CUSTOMER,
+    SPEC_GET_ORDER,
+    SPEC_GET_PAYMENT,
+    SPEC_PAYMENT_METRICS,
+    SPEC_REVENUE,
+    find_duplicate_payments,
+    get_customer,
+    get_failure_breakdown,
+    get_order,
+    get_payment,
+    get_payment_metrics,
+    get_revenue_summary,
 )
 from app.tools.recovery_actions import SPEC_NOTIFICATION, SPEC_PAYMENT_LINK
 from app.tools.recovery_tools import (
-    SPEC_RECOVERY_CANDIDATES, calculate_recovery_candidates,
+    SPEC_RECOVERY_CANDIDATES,
+    calculate_recovery_candidates,
 )
 from app.tools.verification_tools import (
-    SPEC_PROVIDER_EVENT, SPEC_PAYMENT_STATUS, SPEC_RECONCILE,
-    get_payment_status, get_provider_event, reconcile_transaction,
+    SPEC_PAYMENT_STATUS,
+    SPEC_PROVIDER_EVENT,
+    SPEC_RECONCILE,
+    get_payment_status,
+    get_provider_event,
+    reconcile_transaction,
 )
 
 # MerchantOps §18's fifteen tools. The registry is the ONLY set of operations
@@ -89,17 +106,7 @@ def validate_arguments(spec: ToolSpec, args: dict) -> tuple[bool, str | None]:
             continue
         ok = False
         for t in types:
-            if t == "string" and isinstance(v, str):
-                ok = True
-            elif t == "integer" and isinstance(v, int) and not isinstance(v, bool):
-                ok = True
-            elif t == "number" and isinstance(v, (int, float)) and not isinstance(v, bool):
-                ok = True
-            elif t == "boolean" and isinstance(v, bool):
-                ok = True
-            elif t == "null" and v is None:
-                ok = True
-            elif t in ("object", "array") and isinstance(v, (dict, list)):
+            if (t == "string" and isinstance(v, str)) or (t == "integer" and isinstance(v, int) and not isinstance(v, bool)) or (t == "number" and isinstance(v, (int, float)) and not isinstance(v, bool)) or (t == "boolean" and isinstance(v, bool)) or (t == "null" and v is None) or (t in ("object", "array") and isinstance(v, (dict, list))):
                 ok = True
         if not ok:
             return False, f"Argument '{k}' has invalid type: expected {types}, got {type(v).__name__}"

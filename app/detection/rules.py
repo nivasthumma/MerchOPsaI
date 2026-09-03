@@ -18,7 +18,7 @@ choice `app/tools/investigation.py` already makes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -222,7 +222,7 @@ def _degradation_onset(session, merchant_id: str, method: str,
     # server happens to be set to -- which is not the hour the bucket was keyed
     # on (that one is explicitly `AT TIME ZONE 'UTC'`). Reporting an onset in an
     # unstated zone is how a timeline becomes wrong by a whole-hours offset.
-    return min(onsets).astimezone(timezone.utc), worst
+    return min(onsets).astimezone(UTC), worst
 
 
 def detect_duplicate_payments(session, merchant_id: str, *,

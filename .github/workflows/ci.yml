@@ -83,6 +83,66 @@ jobs:
       - name: Run tests
         run: pytest tests -q
 
+  # ---------------------------------------------------------------- static analysis
+  static:
+    name: Lint · dependency audit · clean-room import
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -q -r requirements.txt ruff pip-audit
+
+      - name: Lint
+        # The rule set is curated in pyproject.toml rather than "everything
+        # ruff knows" -- a gate that fires on style nobody agreed to is a gate
+        # people learn to bypass. Its first run found two methods silently
+        # redefining each other in the live payments adapter.
+        run: ruff check .
+
+      - name: The application imports from a clean checkout
+        # The cheapest check in this file, and the one that would have caught
+        # the most expensive defect: twenty-four files that tracked code
+        # imported were never `git add`-ed, so the repository as committed did
+        # not import. Nothing noticed, because every test run happened in a
+        # working directory where the untracked files were present.
+        #
+        # `actions/checkout` gives exactly the tracked tree, so importing the
+        # app here is the clean-room test. It runs before the suite because it
+        # fails in seconds with one legible line, where the suite fails deep in
+        # a fixture.
+        env:
+          MERCHANTOPS_NO_CLI_AUTH_PROBE: "1"
+        run: |
+          python - <<'EOF'
+          import importlib, sys
+          # ui.streamlit_app is deliberately absent: importing it *runs* the
+          # Streamlit script, which is neither a useful import test nor quiet.
+          for module in ("app.api.main", "app.agent.runtime", "app.policy.engine",
+                         "app.tools.registry", "app.eval.runner", "api.index"):
+              try:
+                  importlib.import_module(module)
+              except Exception as exc:
+                  print(f"::error::{module} does not import from a clean "
+                        f"checkout: {type(exc).__name__}: {exc}")
+                  sys.exit(1)
+          print("Every entrypoint imports from the tracked tree alone.")
+          EOF
+
+      - name: Dependency vulnerabilities
+        # Advisory rather than blocking: a CVE published against a transitive
+        # dependency should reach whoever is on call, not fail an unrelated
+        # pull request at 3am. The nightly schedule is what makes it useful --
+        # it catches an advisory filed after the last commit.
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --progress-spinner off
+
   # ---------------------------------------------------------------- api contract
   contract:
     name: API contract (backend ↔ frontend)

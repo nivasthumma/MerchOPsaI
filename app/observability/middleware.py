@@ -32,7 +32,6 @@ import time
 import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
 from app.audit.trace import correlation_scope
 from app.observability import runtime_metrics as metrics
@@ -82,7 +81,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
                 # browser request can be joined to the trail it produced.
                 response.headers["X-Correlation-ID"] = correlation
                 return response
-            except BaseException as exc:                      # noqa: BLE001
+            except BaseException as exc:
                 # Re-raised untouched. This is here to make sure the failure is
                 # counted and logged, not to handle it.
                 failed = exc

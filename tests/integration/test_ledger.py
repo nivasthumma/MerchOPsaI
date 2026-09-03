@@ -6,13 +6,15 @@
 """
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute
 from app.detection import detect
 from app.models import (
-    CandidateStatus, Incident, IncidentType, Intervention, PaymentLink,
+    CandidateStatus,
+    Incident,
+    IncidentType,
+    Intervention,
     VerificationState,
 )
 from app.recovery import plan_recovery

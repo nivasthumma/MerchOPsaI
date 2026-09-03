@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +20,7 @@ from app.api.main import app
 from app.audit.trace import correlation_scope, current_correlation_id
 from app.llm.deterministic import DeterministicProvider
 from app.observability import runtime_metrics as metrics
-from app.observability.logs import JsonFormatter, configure_logging, get_logger
+from app.observability.logs import JsonFormatter
 
 
 @pytest.fixture
@@ -86,10 +87,11 @@ def test_an_exception_logs_its_type_and_message_but_not_its_frames():
 
 def test_a_value_json_cannot_encode_does_not_lose_the_line():
     """A logger that raises destroys the message it was trying to write."""
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from app.models import TaskStatus
 
-    body = _line(_record(at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    body = _line(_record(at=datetime(2026, 1, 1, tzinfo=UTC),
                          status=TaskStatus.COMPLETED))
     assert "2026-01-01" in body["at"]
     assert body["status"]

@@ -21,9 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.config import get_settings, set_runtime_llm_provider  # noqa: E402
-from app.eval.governance import compare, render  # noqa: E402
-from app.eval.runner import run_all  # noqa: E402
+from app.config import get_settings, set_runtime_llm_provider
+from app.eval.governance import compare, render
+from app.eval.runner import run_all
 
 OUT = ROOT / "data" / "model_comparison.json"
 

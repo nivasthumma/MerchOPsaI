@@ -322,7 +322,7 @@ def _reverify_refund(session, adapter, action) -> VerificationResult:
     if reference is None:
         try:
             found = adapter.find_refund_by_idempotency_key(action.idempotency_key)
-        except Exception:                                           # noqa: BLE001
+        except Exception:
             found = None
         if found is not None:
             reference = found.id
@@ -341,7 +341,7 @@ def _reverify_payment_link(session, adapter, action) -> VerificationResult:
     if reference is None:
         try:
             found = adapter.find_payment_link_by_idempotency_key(action.idempotency_key)
-        except Exception:                                           # noqa: BLE001
+        except Exception:
             found = None
         if found is not None:
             reference = found.id
@@ -363,7 +363,7 @@ def _reverify_notification(session, adapter, action) -> VerificationResult:
     if reference is None:
         try:
             found = adapter.find_notification_by_idempotency_key(action.idempotency_key)
-        except Exception:                                           # noqa: BLE001
+        except Exception:
             found = None
         if found is not None:
             reference = found.id

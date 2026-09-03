@@ -15,7 +15,7 @@ so each one reports its measured value and whether it holds.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import text
 
@@ -54,6 +54,13 @@ class Objective:
 
 
 def _percentile(session, sql: str, params: dict, pct: float = 0.5) -> tuple[float | None, int]:
+
+    # module passes a literal defined a few lines below -- none of them build it
+    # from a request. Values reach the query through `params` and are bound.
+    # Reviewed rather than rewritten: wrapping this in a query builder would add
+    # a layer without removing the property that makes it safe, which is that
+    # the argument is never caller-controlled. If that ever stops being true,
+    # this comment is the thing that should stop being true with it.
     row = session.execute(text(f"""
         SELECT percentile_disc(:p) WITHIN GROUP (ORDER BY v) AS v, COUNT(*) AS n
         FROM ({sql}) s

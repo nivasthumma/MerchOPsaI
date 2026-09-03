@@ -6,22 +6,27 @@ at execution time, and the payment's preconditions.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 
-from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
-import uuid
-
-from sqlalchemy.exc import IntegrityError
-
 from app.models import (
-    AgentAction, AgentTask, Approval, ApprovalSignature, TaskStatus, VerificationState,
+    AgentAction,
+    AgentTask,
+    Approval,
+    ApprovalSignature,
+    TaskStatus,
+    VerificationState,
 )
 from app.policy.engine import (
-    Decision, PolicyContext, approval_is_valid, evaluate,
+    Decision,
+    PolicyContext,
+    approval_is_valid,
+    evaluate,
 )
 from app.tools.actions import execute_refund, reverify_action
 from app.tools.recovery_actions import execute_notification, execute_payment_link
@@ -105,7 +110,7 @@ def reject(session, task_id: str, principal, reason: str = "") -> AgentTask:
     _sign(session, ap, principal.user_id, "REJECTED")
     ap.decision = "REJECTED"
     ap.decided_by = principal.user_id
-    ap.decided_at = datetime.now(timezone.utc)
+    ap.decided_at = datetime.now(UTC)
     task.status = TaskStatus.REJECTED
     task.failure_code = "APPROVAL_REJECTED"
     task.final_answer = (f"The action was rejected by {principal.user_id}. "
@@ -164,7 +169,7 @@ def approve_and_execute(session, task_id: str, principal,
 
     ap.decision = "APPROVED"
     ap.decided_by = principal.user_id
-    ap.decided_at = datetime.now(timezone.utc)
+    ap.decided_at = datetime.now(UTC)
     session.flush()
     record(session, task, "approval_granted", {
         "approval_id": ap.id, "signatures": [s.user_id for s in signatures],

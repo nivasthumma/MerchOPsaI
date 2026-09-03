@@ -5,7 +5,7 @@ import pytest
 
 from app.agent.approval import EXECUTORS
 from app.models import RISK_ORDER
-from app.tools.registry import REGISTRY, _READ_IMPL, execute_read_tool
+from app.tools.registry import _READ_IMPL, REGISTRY, execute_read_tool
 
 SPEC_TOOLS = {
     # investigation (§18)

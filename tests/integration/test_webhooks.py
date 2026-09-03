@@ -20,7 +20,11 @@ from app.api import security as sec
 from app.api.main import app
 from app.config import get_settings
 from app.models import (
-    AgentAction, Incident, IncidentType, VerificationState, WebhookEvent, WebhookStatus,
+    Incident,
+    IncidentType,
+    VerificationState,
+    WebhookEvent,
+    WebhookStatus,
 )
 
 SECRET = "whsec_test_only"

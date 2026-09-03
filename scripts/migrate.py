@@ -29,11 +29,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
+from alembic import command
 from app.config import get_settings
 from app.db import get_engine
 
@@ -96,8 +96,8 @@ def main() -> int:
 
     # The control this schema's central claim rests on, checked rather than
     # assumed. A migration that ran and a trigger that fires are different facts.
-    from scripts.harden_db import verify
     from app.db import session_scope
+    from scripts.harden_db import verify
     with session_scope() as s:
         results = verify(s)
     for name, ok, detail in results:

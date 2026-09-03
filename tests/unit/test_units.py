@@ -1,6 +1,8 @@
 """Unit tests for the deterministic components."""
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from app.integrations.razorpay.adapter import get_adapter
@@ -67,12 +69,12 @@ def test_amount_limit_denies(db):
 
 # ---------------------------------------------------------------- approvals
 def test_expired_approval_is_invalid():
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     class A:
         id = "APR_X"
         decision = "APPROVED"
-        expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        expires_at = datetime.now(UTC) - timedelta(minutes=1)
 
     ok, why = approval_is_valid(A())
     assert not ok and "expired" in why.lower()

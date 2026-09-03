@@ -38,7 +38,16 @@ migration:  ; PYTHONPATH=. .venv/bin/alembic revision --autogenerate -m "$(M)"
 openapi:    ; PYTHONPATH=. $(PY) scripts/export_openapi.py
 openapi-check: ; PYTHONPATH=. $(PY) scripts/export_openapi.py --check
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
-ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
+# The gates CI runs, in the order CI runs them. `lint` and `audit` need the
+# dev tooling: pip install ruff pip-audit.
+lint:       ; $(PY) -m ruff check .
+lint-fix:   ; $(PY) -m ruff check . --fix
+audit:      ; $(PY) -m pip_audit -r requirements.txt --progress-spinner off
+# The tracked tree, and nothing else, must import. This is the check that
+# catches a file somebody wrote and never `git add`-ed -- the working directory
+# hides it, a fresh clone does not.
+cleanroom:  ; @$(PY) scripts/check_cleanroom.py
+ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------
@@ -63,5 +72,6 @@ serve: web-build
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
 .PHONY: setup seed spike api ui test eval reconcile mutants compare harden token ci demo \
+        lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \
         web-setup web web-build web-test serve

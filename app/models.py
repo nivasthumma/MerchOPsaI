@@ -2,17 +2,29 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import (
-    BigInteger, func, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer,
-    JSON, String, Text, UniqueConstraint, text,
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # Money is BigInteger everywhere, never Integer.
@@ -457,7 +469,7 @@ class Incident(Base):
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    evidence: Mapped[list["IncidentEvidence"]] = relationship(
+    evidence: Mapped[list[IncidentEvidence]] = relationship(
         back_populates="incident", order_by="IncidentEvidence.id")
 
     __table_args__ = (Index("ix_incidents_merchant_status", "merchant_id", "status"),)
@@ -534,7 +546,7 @@ class RecoveryPlan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
-    candidates: Mapped[list["RecoveryCandidate"]] = relationship(
+    candidates: Mapped[list[RecoveryCandidate]] = relationship(
         back_populates="plan", order_by="RecoveryCandidate.rank")
 
 
@@ -629,7 +641,7 @@ class AgentTask(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    tool_calls: Mapped[list["ToolCall"]] = relationship(back_populates="task", order_by="ToolCall.seq")
+    tool_calls: Mapped[list[ToolCall]] = relationship(back_populates="task", order_by="ToolCall.seq")
 
 
 class AgentMessage(Base):
@@ -778,7 +790,7 @@ class Approval(Base):
     # not quietly reduce what an in-flight action needs.
     required_signatures: Mapped[int] = mapped_column(Integer, default=1)
 
-    signatures: Mapped[list["ApprovalSignature"]] = relationship(
+    signatures: Mapped[list[ApprovalSignature]] = relationship(
         back_populates="approval", order_by="ApprovalSignature.signed_at")
 
 

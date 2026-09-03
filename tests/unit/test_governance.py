@@ -6,8 +6,6 @@ here is a way of getting that wrong.
 """
 from __future__ import annotations
 
-import pytest
-
 from app.eval.governance import compare, render
 
 

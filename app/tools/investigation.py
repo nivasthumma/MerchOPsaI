@@ -363,6 +363,9 @@ SPEC_FAILURE_BREAKDOWN = ToolSpec(
 def get_failure_breakdown(session, merchant_id: str, method: str | None = None) -> ToolResult:
     cut = ANCHOR - timedelta(days=PERIOD_DAYS)
     params = {"m": merchant_id, "cut": cut}
+    # `clause` is one of two literals, chosen by a boolean. The method itself
+    # is bound as :meth and never interpolated, so the f-strings below carry no
+    # caller data -- only the presence or absence of a fixed fragment.
     clause = "AND method = :meth" if method else ""
     if method:
         params["meth"] = method

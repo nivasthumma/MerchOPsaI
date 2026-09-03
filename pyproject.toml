@@ -32,3 +32,98 @@ markers = [
   # the rolled-back majority. Deselect with: pytest -m "not slow"
   "slow: needs real connections and real commits (concurrency)",
 ]
+
+# --------------------------------------------------------------------------
+# Lint
+# --------------------------------------------------------------------------
+# The rule set is curated rather than "everything ruff knows", because a gate
+# that fires on style nobody agreed to is a gate people learn to bypass. What
+# is selected here either finds defects or finds the shapes that hide them --
+# the first run flagged two methods silently redefining each other in the live
+# payments adapter, and three dead locals in the recovery planner.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["alembic/versions", ".venv", "web", ".claude"]
+
+[tool.ruff.lint]
+select = [
+  "F",      # pyflakes -- undefined names, unused imports, redefinitions
+  "E", "W", # pycodestyle
+  "I",      # import order
+  "B",      # bugbear -- mutable defaults, shadowed loop vars, blind raises
+  "S",      # bandit -- the security rules, which nothing else here covers
+  "SIM",    # simplifications that change nesting, not taste
+  "RUF",    # ruff's own correctness rules
+  "PLE",    # pylint errors only. PLR/PLC are opinions about size and style.
+  "UP",     # pyupgrade -- keeps 3.12 idiom consistent
+]
+ignore = [
+  # FastAPI's entire dependency system is function calls in argument defaults:
+  # `Depends()`, `Header()`, `Query()`. B008 is right about the general case
+  # and wrong about every route in this repository.
+  "B008",
+  # Implicit string concatenation inside a collection. Used deliberately here
+  # for long SQL and prose; the missing-comma bug it protects against is worth
+  # catching, but ISC004 cannot tell the two apart and flags 29 intentional
+  # ones.
+  "ISC004",
+  # Line length is reported by E501 and formatted by hand throughout. The
+  # limit above documents intent without failing a build over a URL.
+  "E501",
+
+  # --- deferred, not dismissed -------------------------------------------
+  # These fire on real style drift and none of them indicates a defect. They
+  # are listed rather than fixed because the fixes are a wide mechanical diff
+  # across files that carry the safety controls, and mixing that into the same
+  # change as a concurrency fix makes both harder to review. Each is a
+  # standalone cleanup: delete the line, run `ruff check --fix`, read the diff.
+  "UP042",   # str+Enum -> StrEnum. Changes the type of every status value.
+  "RUF059",  # unpacked-but-unused loop variables
+  "RUF046",  # int() around something already an int
+  "RUF015",  # list(...)[0] where next(iter(...)) would do
+  "RUF007",  # zip(x, x[1:]) -> itertools.pairwise
+  "SIM105",  # try/except/pass -> contextlib.suppress
+  "SIM114",  # branches with identical bodies
+  "SIM117",  # nested with statements
+  "SIM222",  # `... or True`
+  "E741",    # `l` as a name
+  "E402",    # imports below module level -- deliberate in conftest and scripts
+  "B017",    # pytest.raises(Exception) in one migration test
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on hardcoded credentials, call subprocesses, and use `assert`
+# by definition. Bandit's rules for production code are noise here.
+"tests/**" = ["S101", "S105", "S106", "S108", "S311", "S603", "S607"]
+"scripts/**" = ["S603", "S607"]   # deliberate, argument-list subprocess calls
+
+# S608 (SQL built by interpolation), reviewed 2026-09-04 and safe in both:
+#   app/metrics.py           `_percentile` interpolates its `sql` argument, and
+#                            every caller passes a literal declared in the same
+#                            module. Values bind through `params`.
+#   app/tools/investigation  the interpolated fragment is one of two literals
+#                            chosen by a boolean; the method binds as :meth.
+# Neither takes caller data into the query text. Listed here rather than as
+# inline noqa because both sites are multi-line f-strings, where the comment
+# lands inside the SQL.
+"app/metrics.py" = ["S608"]
+"app/tools/investigation.py" = ["S608"]
+
+# S607 (partial executable path): `subprocess.run(["ant", "auth", "status"])`
+# resolves `ant` on PATH deliberately -- the CLI's install location is the
+# user's business, and the call is already guarded by `shutil.which` and a
+# timeout. An absolute path here would break the credential probe on every
+# machine that installs the CLI somewhere else.
+"app/config.py" = ["S607"]
+
+# S105 (hardcoded password): `_WEBHOOK_SECRET` is the signing key the
+# evaluation harness uses to sign its own synthetic webhook deliveries. It
+# authenticates nothing outside the suite.
+"app/eval/runner.py" = ["S105"]
+
+# S311 (non-cryptographic RNG): the seed generator uses `random` with a fixed
+# seed, and that is the requirement rather than an oversight -- the dataset has
+# to reproduce byte-identically or no published evaluation number means
+# anything. A cryptographic RNG would make it irreproducible.
+"scripts/seed_data.py" = ["S311"]

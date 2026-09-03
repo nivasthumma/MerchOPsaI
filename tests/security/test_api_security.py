@@ -1,6 +1,8 @@
 """API authentication and rate limiting — closes two threat-model residual risks."""
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -272,12 +274,12 @@ def test_the_approval_queue_is_a_resource_and_is_merchant_scoped(client, db, own
 def test_an_expired_approval_is_not_shown_as_actionable(client, db, owner):
     """It stays PENDING in the database until someone tries to use it. The
     queue must not present it as work an operator can still do."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from app.agent.runtime import AgentRuntime
 
     out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
-    out.approval.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    out.approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.commit()
 
     a = client.get("/approvals", headers=token("USR_A_OWNER")).json()["approvals"]

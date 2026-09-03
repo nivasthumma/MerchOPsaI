@@ -10,14 +10,13 @@ from __future__ import annotations
 import enum
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.policy.risk import RiskAssessment, assess
 from app.tools.registry import REGISTRY
-
 
 # MerchantOps §41. Bumped by hand, because a policy version is a statement
 # about the RULES rather than about the code that expresses them: a refactor
@@ -309,7 +308,7 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
 
 def approval_is_valid(approval, now: datetime | None = None) -> tuple[bool, str]:
     """CONTRACT §21 — approvals expire. Checked server-side at execution time."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if approval is None:
         return False, "No approval record exists for this action."
     if approval.decision == "REJECTED":
@@ -318,7 +317,7 @@ def approval_is_valid(approval, now: datetime | None = None) -> tuple[bool, str]
         return False, f"Approval is not granted (state={approval.decision})."
     exp = approval.expires_at
     if exp.tzinfo is None:
-        exp = exp.replace(tzinfo=timezone.utc)
+        exp = exp.replace(tzinfo=UTC)
     if exp < now:
         return False, f"Approval {approval.id} expired at {exp.isoformat()}."
     return True, "Approval valid."

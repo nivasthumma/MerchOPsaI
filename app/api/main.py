@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import hmac
 import os
+from datetime import timedelta
+from types import SimpleNamespace
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
-from types import SimpleNamespace
-
-from datetime import timedelta
-
 from sqlalchemy import case, func, select, text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
@@ -23,31 +21,46 @@ from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
 from app.api import schemas
 from app.api.security import DEV_SECRET_IN_USE, check_rate_limit, current_principal
 from app.audit.trace import (
-    record, trace_by_correlation, trace_for, trace_for_incident,
+    record,
+    trace_by_correlation,
+    trace_for,
+    trace_for_incident,
 )
 from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
-from app.failures import TAXONOMY, describe
-from app.metrics import objectives, operational_metrics
-from app.observability import runtime_metrics as runtime
-from app.observability.logs import configure_logging, get_logger
-from app.observability.middleware import ObservabilityMiddleware
 from app.detection import detect
 from app.detection.engine import open_incidents
+from app.eval.runner import load_scenarios, run_scenario
+from app.failures import TAXONOMY, describe
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
-from app.recovery import plan_recovery
-from app.recovery.ledger import build_ledger, dashboard
-from app.recovery.dispatch import (
-    RecoveryStopped, dispatch_candidate, executable_candidates, settle_plan,
-)
-from app.eval.runner import load_scenarios, run_scenario
-from app.verification.reconciler import escalated_actions, reconcile
+from app.metrics import objectives, operational_metrics
 from app.models import (
-    AgentAction, AgentMessage, AgentTask, Approval, Incident, IncidentEvidence,
-    RecoveryCandidate, RecoveryPlan, ToolCall, VerificationState, WebhookEvent,
-    WebhookStatus, utcnow,
+    AgentAction,
+    AgentMessage,
+    AgentTask,
+    Approval,
+    Incident,
+    IncidentEvidence,
+    RecoveryCandidate,
+    RecoveryPlan,
+    ToolCall,
+    VerificationState,
+    WebhookEvent,
+    WebhookStatus,
+    utcnow,
 )
+from app.observability import runtime_metrics as runtime
+from app.observability.logs import configure_logging
+from app.observability.middleware import ObservabilityMiddleware
+from app.recovery import plan_recovery
+from app.recovery.dispatch import (
+    RecoveryStopped,
+    dispatch_candidate,
+    settle_plan,
+)
+from app.recovery.ledger import build_ledger, dashboard
+from app.verification.reconciler import escalated_actions, reconcile
 from app.webhooks import ingest
 
 # Before the app, so anything logged during construction is already formatted
@@ -458,7 +471,10 @@ def approve(task_id: str, principal: Principal = Depends(current_principal)):
         try:
             r = approve_and_execute(s, task_id, principal)
         except ApprovalError as e:
-            raise HTTPException(409, {"error": str(e), "code": e.code})
+            # `from e` keeps the ApprovalError in the traceback. Without it the
+            # log shows only the 409 and the reason it was raised is gone --
+            # which for an approval refusal is the whole story.
+            raise HTTPException(409, {"error": str(e), "code": e.code}) from e
         view = _task_view(s, r["task"])
         if r.get("awaiting_signatures"):
             view["awaiting_signatures"] = r["awaiting_signatures"]
@@ -474,7 +490,10 @@ def reject_task(task_id: str, principal: Principal = Depends(current_principal))
         try:
             task = reject(s, task_id, principal)
         except ApprovalError as e:
-            raise HTTPException(409, {"error": str(e), "code": e.code})
+            # `from e` keeps the ApprovalError in the traceback. Without it the
+            # log shows only the 409 and the reason it was raised is gone --
+            # which for an approval refusal is the whole story.
+            raise HTTPException(409, {"error": str(e), "code": e.code}) from e
         return _task_view(s, task)
 
 
@@ -487,7 +506,10 @@ def reverify_task(task_id: str, principal: Principal = Depends(current_principal
         try:
             r = reverify(s, task_id, principal)
         except ApprovalError as e:
-            raise HTTPException(409, {"error": str(e), "code": e.code})
+            # `from e` keeps the ApprovalError in the traceback. Without it the
+            # log shows only the 409 and the reason it was raised is gone --
+            # which for an approval refusal is the whole story.
+            raise HTTPException(409, {"error": str(e), "code": e.code}) from e
         return {"task": _task_view(s, r["task"]),
                 "verification": r["verification"].as_dict()}
 
@@ -815,9 +837,13 @@ def investigate_incident(incident_id: str,
         try:
             r = investigate(s, inc, principal)
         except ValueError as e:
-            raise HTTPException(409, {"error": str(e), "code": "INCIDENT_NOT_OPEN"})
-        except PermissionError:
-            raise HTTPException(404, "Unknown incident.")
+            raise HTTPException(409, {"error": str(e),
+                                      "code": "INCIDENT_NOT_OPEN"}) from e
+        except PermissionError as e:
+            # `from e` on a 404 too: the 404 is deliberately indistinguishable
+            # to the caller (existence is not leaked), which makes the server
+            # side the only place the real reason can be read.
+            raise HTTPException(404, "Unknown incident.") from e
         return {"incident": _incident_view(s, r["incident"], detail=True),
                 "task": _task_view(s, r["task"])}
 

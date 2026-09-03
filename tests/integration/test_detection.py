@@ -8,10 +8,17 @@ from __future__ import annotations
 
 from app.detection import detect
 from app.detection.rules import (
-    DEGRADATION_THRESHOLD_PP, detect_payment_degradation, detect_duplicate_payments,
+    DEGRADATION_THRESHOLD_PP,
+    detect_duplicate_payments,
+    detect_payment_degradation,
 )
 from app.models import (
-    AuditLog, Incident, IncidentEvidence, IncidentSeverity, IncidentStatus, IncidentType,
+    AuditLog,
+    Incident,
+    IncidentEvidence,
+    IncidentSeverity,
+    IncidentStatus,
+    IncidentType,
 )
 
 

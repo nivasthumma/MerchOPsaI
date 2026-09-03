@@ -236,7 +236,6 @@ def test_the_tenant_comes_from_the_database_not_the_request(db):
     cannot assert one."""
     from app.api import security as sec
 
-    principal = None
     row = db.execute(text(
         "SELECT id, tenant_id, merchant_id, role, permissions FROM users "
         "WHERE id = 'USR_A_OWNER'")).mappings().one()

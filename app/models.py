@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     BigInteger, func, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer,
-    JSON, String, Text, UniqueConstraint,
+    JSON, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -706,6 +706,33 @@ class AgentAction(Base):
         String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        # At most one LIVE refund per payment, enforced by PostgreSQL.
+        #
+        # The policy engine already refuses a second refund while one is live,
+        # but that check is a SELECT followed by an INSERT with nothing holding
+        # the gap: two approvals for the same payment, decided in the same
+        # instant, both read an empty result and both proceed. The
+        # idempotency_key UNIQUE does not catch it either, because the key is
+        # derived partly from approval_id -- two approvals produce two distinct
+        # keys and two accepted rows. That is two refunds for one payment.
+        #
+        # This is the same argument `_sign` makes about approval signatures:
+        # under concurrency the constraint is the authority and the prior SELECT
+        # is only an optimisation. The predicate matches the policy rule exactly
+        # (app/policy/engine.py, duplicate-action check) so the two cannot drift
+        # into disagreeing about what "already refunding" means.
+        Index(
+            "uq_live_refund_per_payment",
+            "merchant_id", "target_payment_id",
+            unique=True,
+            postgresql_where=text(
+                "action_type = 'refund' "
+                "AND status IN ('PENDING', 'SUBMITTED', 'CONFIRMED')"
+            ),
+        ),
+    )
 
 
 class Approval(Base):

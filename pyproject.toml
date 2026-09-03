@@ -25,3 +25,10 @@ dependencies = [
 # `app` variables (including the ones in tests) and refuses to guess.
 [tool.vercel]
 entrypoint = "api.index:app"
+
+[tool.pytest.ini_options]
+markers = [
+  # Concurrency tests open real connections and commit, so they cost more than
+  # the rolled-back majority. Deselect with: pytest -m "not slow"
+  "slow: needs real connections and real commits (concurrency)",
+]

@@ -166,15 +166,45 @@ def execute_refund(
         sp.commit()
     except IntegrityError:
         sp.rollback()
+        # Two different constraints can refuse this row, and they mean different
+        # things to whoever is reading the result.
+        #
+        #   idempotency_key            this exact approval was already executed
+        #   uq_live_refund_per_payment a DIFFERENT approval is already refunding
+        #                              this payment, and beat us to the insert
+        #
+        # The second is the race the index exists to lose deliberately. Policy
+        # already refused it in the ordinary case; arriving here means two
+        # approvals cleared that check in the same instant and the database
+        # settled which one proceeds. Reporting them identically would tell an
+        # operator "already attempted" about a refund somebody else authorised.
         prior = session.execute(text("""
-            SELECT id, status, external_reference, verification_state
+            SELECT id, status, external_reference, verification_state, approval_id
             FROM agent_actions WHERE idempotency_key = :k
         """), {"k": key}).mappings().first()
+
+        if prior is not None:
+            return RefundOutcome(None, ToolResult(  # type: ignore[arg-type]
+                success=False, error_code="PARTIAL_EXECUTION",
+                data={"error": "duplicate_action",
+                      "detail": "This exact action was already attempted; not calling the provider again.",
+                      "existing_action": dict(prior)},
+                risk_level="HIGH"))
+
+        live = session.execute(text("""
+            SELECT id, status, external_reference, verification_state, approval_id
+            FROM agent_actions
+            WHERE merchant_id = :m AND target_payment_id = :p
+              AND action_type = 'refund'
+              AND status IN ('PENDING', 'SUBMITTED', 'CONFIRMED')
+        """), {"m": merchant_id, "p": synthetic_payment_id}).mappings().first()
         return RefundOutcome(None, ToolResult(  # type: ignore[arg-type]
             success=False, error_code="PARTIAL_EXECUTION",
-            data={"error": "duplicate_action",
-                  "detail": "This exact action was already attempted; not calling the provider again.",
-                  "existing_action": dict(prior) if prior else None},
+            data={"error": "concurrent_refund_refused",
+                  "detail": (f"Another refund for {synthetic_payment_id} was already in "
+                             "flight when this one tried to reserve. No provider call was "
+                             "made. Exactly one refund proceeds."),
+                  "existing_action": dict(live) if live else None},
             risk_level="HIGH"))
 
     # The reservation is worth nothing until it is durable. A flushed row is

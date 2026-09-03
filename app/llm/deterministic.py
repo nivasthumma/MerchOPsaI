@@ -52,8 +52,14 @@ class DeterministicProvider(LLMProvider):
     name = "deterministic"
     model = "deterministic-planner-v1"
 
-    def turn(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn:
-        """Plan the next step, and on the last one attach §37's output block."""
+    def turn(self, *, system: str, messages: list[dict], tools: list[dict],
+             timeout: float | None = None) -> LLMTurn:
+        """Plan the next step, and on the last one attach §37's output block.
+
+        `timeout` is accepted and ignored: this planner is local arithmetic, so
+        there is nothing for a deadline to interrupt. Dropping the parameter
+        would make the two providers differ in signature for no reason.
+        """
         turn = self._plan(system=system, messages=messages, tools=tools)
         if turn.wants_tools or not turn.text:
             return turn
@@ -147,7 +153,11 @@ class DeterministicProvider(LLMProvider):
         }, indent=2) + "\n```"
 
     # ------------------------------------------------------------------
-    def _plan(self, *, system: str, messages: list[dict], tools: list[dict]) -> LLMTurn:
+    def _plan(self, *, system: str, messages: list[dict], tools: list[dict],
+              timeout: float | None = None) -> LLMTurn:
+        # Mirrors `turn` because doubles extend the planner by forwarding
+        # `turn`'s keywords straight here. Named rather than swallowed with
+        # **kwargs so a misspelled argument is still an error.
         available = {t["name"] for t in tools}
         request = self._first_user_text(messages)
         called = self._tools_called(messages)

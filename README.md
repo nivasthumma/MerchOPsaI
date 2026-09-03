@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-347%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-462%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-71%2F71-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 347 tests · 167/167 scenarios · 71/71 mutations |
+| [📊 Measured results](#-measured-results) | 462 tests · 167/167 scenarios · 77/78 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -80,8 +80,11 @@ and what is architecture.
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
 | Audit | Append-only **enforced by PostgreSQL**, secrets redacted, correlation-id traces (§58) | Distributed tracing |
+| Observability | Structured JSON logs, runtime metrics, request + query timing (ADR-0031) | OpenTelemetry |
+| Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
+| API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 167 scenarios + 71-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 167 scenarios + 78-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -124,23 +127,31 @@ From `make eval` — actual execution, not targets:
 ```
 167/167 scenarios passed      (critical: 110/110)
 
-  adversarial_security  30/30    recovery              13/13
-  detection              9/9     refund_policy         27/27
-  duplicate_payment     16/16    revenue_investigation 18/18
+  adversarial_security  34/34    recovery              14/14
+  detection             10/10    refund_policy         28/28
+  duplicate_payment     16/16    revenue_investigation 19/19
   failure_unknown       20/20    risk_approval          7/7
   payment_failure       14/14    webhook                5/5
 
-median task latency 39 ms · mean grounding rate 1.0
+median task latency 52 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-71/71 mutations caught
+77/78 mutations caught      last complete run
+  └─ the one survivor now has a test, verified against it individually
 ```
 
-*Measured in one full run — 55 mutants, each re-running the whole scenario and test suite.*
+*Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
+complete run takes over an hour. The last complete run measured 77/78 on the tree as
+it stood after ADR-0029. Its survivor — "roll back the whole transaction on a duplicate
+action" — was caused by that ADR: committing the claim shrank the bug's blast radius
+and, in doing so, disarmed the row-count assertion that used to catch it.
+`test_refusing_a_duplicate_does_not_erase_the_first_attempt` replaces it and was
+verified by applying the mutant by hand (it fails) and removing it (it passes). A full
+re-run against the current tree has **not** been completed, so 78/78 is not claimed.*
 
 That run is what makes the 167/167 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
@@ -171,9 +182,9 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **347 passed** (`make test`) across unit, security and integration, in
-under 5 seconds — the suite seeds once and rolls each test back, rather than rebuilding the
-schema 200 times.
+Test suite: **462 passed** (`make test`) across unit, security and integration, in
+under 15 seconds — the suite seeds once and rolls each test back, rather than rebuilding
+the schema for every test.
 
 ---
 
@@ -334,11 +345,13 @@ Requires Python 3.12+ and PostgreSQL.
 createdb merchantops                     # or use the DATABASE_URL of your choice
 cp .env.example .env                     # optional; defaults work locally
 make setup                               # venv + dependencies
+make migrate                             # schema + the controls over it (ADR-0030)
+make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 81 tests
-make eval                                # 106 scenarios, measured
+make test                                # 462 tests
+make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
-make harden                              # enforce audit immutability, then verify it
+make harden                              # verify audit immutability on a live database
 make ci                                  # what CI runs: seed + harden + test + eval
 make demo                                # full end-to-end walkthrough
 ```
@@ -609,15 +622,17 @@ app/
   integrations/ razorpay adapter + fault-injection seam
   llm/          provider abstraction (anthropic | deterministic)
   eval/         scenario schema + runner
-  api/          FastAPI surface
+  observability/ structured logs, runtime metrics, request + query timing
+  api/          FastAPI surface + response contracts (ADR-0032)
+alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 168 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 181 tests
 data/           167 scenarios + the last evaluation report
-scripts/        seed, spike, scenarios, demo
-tests/          unit · security · integration  (347 tests)
+scripts/        migrate, seed, spike, scenarios, demo
+tests/          unit · security · integration  (462 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 28 ADRs
+                gap-closure plan, 32 ADRs
 ```
 
 ## 📄 License / disclaimer

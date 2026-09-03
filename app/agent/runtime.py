@@ -24,7 +24,10 @@ from sqlalchemy import text
 
 from app.agent.output import check_grounding, parse as parse_output, to_findings
 from app.agent.prompts.investigator_v1 import PROMPT_VERSION, SYSTEM_PROMPT
-from app.audit.trace import record, redact, set_correlation_id
+from app.audit.trace import (
+    correlation_scope, current_correlation_id, record, redact,
+)
+from app.observability.logs import get_logger
 from app.config import get_settings
 from app.failures import describe
 from app.integrations.razorpay.adapter import get_adapter
@@ -37,6 +40,9 @@ from app.policy.engine import POLICY_VERSION, Decision, PolicyContext, evaluate
 from app.tools.registry import (
     REGISTRY, execute_read_tool, registry_version, validate_arguments,
 )
+
+
+log = get_logger("merchantops.agent")
 
 
 @dataclass
@@ -54,6 +60,29 @@ class Principal:
     merchant_id: str
     role: str
     permissions: list[str]
+
+
+class AgentRuntimeError(Exception):
+    """An unhandled error ended a run, and the trace was preserved anyway.
+
+    The runtime classifies every failure it anticipates — a denied policy, an
+    expired approval, an exhausted budget — and each of those is an ordinary
+    return with a failure code. This is the other kind: a provider that raised,
+    a connection that dropped, a bug. Before it reaches the caller the task is
+    marked FAILED with INTERNAL_ERROR and the partial trace is committed, so an
+    operator can still open the run and see how far it got.
+
+    `task_id` is what makes that trace reachable, which is the only reason this
+    exists rather than letting the original error propagate. `persisted` is
+    False when even the crash record could not be written — the session was
+    already unusable — and saying so is better than implying a trace exists.
+    """
+
+    def __init__(self, task_id: str | None, detail: str, *, persisted: bool = True):
+        super().__init__(detail)
+        self.task_id = task_id
+        self.detail = detail
+        self.persisted = persisted
 
 
 @dataclass
@@ -134,12 +163,93 @@ class AgentRuntime:
         # Evidence labels run across the whole task, not per tool call.
         self._evidence_seq = 0
         self._message_seq = 0
+        # Set by `_run`; declared here so the failure boundary can read them
+        # even when the run died before either was assigned.
+        self._task: AgentTask | None = None
+        self._correlation_id: str | None = None
 
     # ------------------------------------------------------------------
-    def run(self, request: str, *, scenario_id: str | None = None,
-            is_replay: bool = False, replayed_from: str | None = None,
-            incident_id: str | None = None,
-            correlation_id: str | None = None) -> RunOutcome:
+    def run(self, request: str, **kwargs) -> RunOutcome:
+        """Run the loop, and never lose the trace if it breaks.
+
+        Everything below this method writes to a session the caller opened and
+        commits at the end of the request. That is right while the run is going
+        well and wrong the moment it is not: an exception here would roll the
+        whole request back, taking the task row, every tool call and every audit
+        event with it — a run that happened, cost money and left no evidence.
+
+        So an unhandled error is caught, recorded, committed, and re-raised as
+        an AgentRuntimeError carrying the task id. The failure still fails; it
+        just stops being invisible.
+        """
+        self._task = None
+        # Inherited before it is minted. The request middleware has already put
+        # an id on this context, so a run dispatched by an HTTP call joins that
+        # request's trace instead of starting a second one beside it -- and the
+        # log line for the response then carries the same id as the audit rows
+        # the run wrote. An explicit argument still wins: an incident-dispatched
+        # task belongs to the incident's trace.
+        correlation = (kwargs.get("correlation_id")
+                       or current_correlation_id()
+                       or f"COR_{uuid.uuid4().hex[:12].upper()}")
+        kwargs["correlation_id"] = correlation
+
+        # A scope, so whatever the caller had is put back. Clearing to None
+        # would leave the rest of the request logged as belonging to no trace.
+        with correlation_scope(correlation):
+            log.info("task_started", extra={"merchant_id": self.principal.merchant_id,
+                                            "user_id": self.principal.user_id,
+                                            "provider": self.provider.name,
+                                            "model": self.provider.model})
+            try:
+                return self._run(request, **kwargs)
+            except Exception as exc:
+                raise self._crash(exc) from exc
+
+    # ------------------------------------------------------------------
+    def _crash(self, exc: Exception) -> AgentRuntimeError:
+        """Preserve what the run produced, then hand back a raisable error."""
+        detail = f"{type(exc).__name__}: {exc}"
+        task = self._task
+        if task is None:
+            # Nothing had been written yet, so there is no trace to save.
+            self.session.rollback()
+            log.error("task_crashed_before_persist", exc_info=exc)
+            return AgentRuntimeError(None, detail, persisted=False)
+
+        try:
+            task.status = TaskStatus.FAILED
+            task.failure_code = "INTERNAL_ERROR"
+            task.final_answer = ("This run stopped on an unhandled error. The partial "
+                                 "trace up to that point is preserved.")
+            self.session.flush()
+            # `redact` because the message is whatever the raising library chose
+            # to put in it, and provider errors quote the request they failed on.
+            record(self.session, task, "task_crashed",
+                   {"error": redact(detail),
+                    "failure": describe("INTERNAL_ERROR",
+                                        correlation_id=self._correlation_id)})
+            self.session.commit()
+            # Also to stdout. The audit row is per-tenant and behind
+            # authentication; the operator who has to fix this reads logs, and
+            # until now an unhandled error reached them as nothing at all.
+            log.error("task_crashed", extra={"task_id": task.id}, exc_info=exc)
+            return AgentRuntimeError(task.id, detail)
+        except Exception:
+            # The session itself is unusable — a database error, most likely.
+            # Give up on the trace rather than mask the original failure, and
+            # tell the caller that is what happened. The log is now the only
+            # record this run existed, which is the reason it is written here.
+            self.session.rollback()
+            log.error("task_crashed_unrecorded",
+                      extra={"task_id": task.id, "detail": redact(detail)})
+            return AgentRuntimeError(task.id, detail, persisted=False)
+
+    # ------------------------------------------------------------------
+    def _run(self, request: str, *, scenario_id: str | None = None,
+             is_replay: bool = False, replayed_from: str | None = None,
+             incident_id: str | None = None,
+             correlation_id: str | None = None) -> RunOutcome:
         s = self.settings
         started = time.monotonic()
 
@@ -165,10 +275,13 @@ class AgentRuntime:
         )
         self.session.add(task)
         self.session.flush()
+        # Visible to `run`'s except clause from here on. Before this line there
+        # is no task to attach a failure to; after it, every failure has one.
+        self._task = task
         # §47/§58. One id ties every event of this run — and of the incident
         # that dispatched it — into a single trace.
-        self._correlation_id = correlation_id or f"COR_{uuid.uuid4().hex[:12].upper()}"
-        set_correlation_id(self._correlation_id)
+        # Always supplied by `run`, which resolves inheritance and scoping.
+        self._correlation_id = correlation_id or current_correlation_id() or ""
         record(self.session, task, "task_created",
                {"request": request, "provider": self.provider.name,
                 "model": self.provider.model, "replay": is_replay})
@@ -180,15 +293,26 @@ class AgentRuntime:
         answer = ""
         approval: Approval | None = None
 
+        # Not `max_wall_clock_seconds`: the host may allow less than we asked
+        # for, and a deadline it will not honour is not one. See
+        # Settings.effective_wall_clock_seconds.
+        deadline = s.effective_wall_clock_seconds
+
         for turn_no in range(s.max_llm_turns_per_task):
             # ---- budget (CONTRACT §10) -------------------------------
-            if time.monotonic() - started > s.max_wall_clock_seconds:
+            elapsed = time.monotonic() - started
+            if elapsed > deadline:
                 return self._abort(task, "wall clock", started)
             if seq >= s.max_tool_calls_per_task:
                 return self._abort(task, "tool call limit", started)
 
             task.llm_turn_count = turn_no + 1
-            turn = self.provider.turn(system=SYSTEM_PROMPT, messages=messages, tools=tools)
+            # The turn gets what is left, so the budget bounds the run rather
+            # than only the gaps between calls. Checking between turns alone let
+            # one hung request run for as long as the transport allowed, holding
+            # this request's transaction open behind it.
+            turn = self.provider.turn(system=SYSTEM_PROMPT, messages=messages, tools=tools,
+                                      timeout=deadline - elapsed)
             record(self.session, task, "llm_turn",
                    {"turn": turn_no + 1, "stop_reason": turn.stop_reason,
                     "requested_tools": [t.name for t in turn.tool_requests],
@@ -259,7 +383,10 @@ class AgentRuntime:
                 "failure_code": task.failure_code,
                 "failure": describe(task.failure_code,
                                     correlation_id=self._correlation_id)})
-        set_correlation_id(None)
+        log.info("task_finished", extra={"task_id": task.id, "status": task.status.value,
+                                         "failure_code": task.failure_code,
+                                         "tool_calls": seq, "llm_turns": task.llm_turn_count,
+                                         "duration_ms": task.duration_ms})
         return RunOutcome(task, task.status, answer, approval, task.findings)
 
     # ------------------------------------------------------------------

@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.db import checkpoint
 from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
@@ -139,6 +140,10 @@ def _reserve(session, *, task_id, merchant_id, action_type, target, amount_minor
         session.add(action)
         session.flush()
         sp.commit()
+        # Durable before we contact anyone. A notification cannot be unsent and
+        # a payment link, once delivered, has been delivered — so the row that
+        # says we did it must survive a failure on the way back.
+        checkpoint(session)
         return action, None
     except IntegrityError:
         sp.rollback()

@@ -1,10 +1,17 @@
 // Shapes returned by app/api/main.py. Kept narrow on purpose: every field here
 // exists in a response the backend actually sends.
 
+/** Every value `app/models.py::TaskStatus` can hold. `PENDING` (the column
+ *  default) and `DENIED` (set when policy refuses at approval time) were missing
+ *  here — a task in either state fell through every narrowing on this union.
+ *  Found by `contract.ts` comparing this file against the generated schema,
+ *  which is the reason that check exists. */
 export type TaskStatus =
+  | "PENDING"
   | "RUNNING"
   | "AWAITING_APPROVAL"
   | "COMPLETED"
+  | "DENIED"
   | "REJECTED"
   | "FAILED"
   | "ABORTED_BUDGET";
@@ -38,8 +45,10 @@ export interface Approval {
 export interface VerificationDetail {
   state: VerificationState;
   reason: string;
-  expected?: Record<string, unknown>;
-  actual?: Record<string, unknown>;
+  /** Absent, an object, or explicitly null — the server sends all three, and
+   *  omitting `null` here was the mirror narrowing what it does not control. */
+  expected?: Record<string, unknown> | null;
+  actual?: Record<string, unknown> | null;
   external_reference?: string | null;
 }
 
@@ -72,8 +81,11 @@ export interface FailureClass {
 export interface RunVersions {
   agent: string;
   model_provider: string | null;
-  model: string;
-  prompt: string;
+  /** Nullable on the server: the columns are nullable, and a task recorded
+   *  before a version was pinned has none. Asserting non-null here was the
+   *  mirror being more confident than the thing it mirrors. */
+  model: string | null;
+  prompt: string | null;
   tool_registry: string | null;
   policy: string | null;
   workflow: string | null;
@@ -92,9 +104,11 @@ export interface Task {
   tool_calls: number | null;
   llm_turns: number | null;
   duration_ms: number | null;
+  /** Nullable for the same reason as `RunVersions.model`: the columns are
+   *  nullable server-side. */
   agent_version: string;
-  model_version: string;
-  prompt_version: string;
+  model_version: string | null;
+  prompt_version: string | null;
   is_replay: boolean;
   replayed_from: string | null;
   approvals: Approval[];

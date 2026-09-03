@@ -6,7 +6,21 @@ import shutil
 import subprocess
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# `functions["api/index.py"].maxDuration` in vercel.json. Duplicated rather than
+# read from that file because the deployment config is not importable at
+# runtime, and a budget that silently exceeds it is the failure this pair
+# exists to prevent. Change one, change the other.
+VERCEL_MAX_DURATION_SECONDS = 60
+
+# Headroom between the agent's deadline and the host's. The loop still has to
+# validate its output, write a closing audit event, commit and serialise a
+# response after the last turn returns; if the host's axe falls during that, the
+# run is lost as completely as if the budget had never been checked.
+PLATFORM_MARGIN_SECONDS = 10
+
 
 # Credential sources the Anthropic SDK resolves, in the order it resolves them.
 # An unset ANTHROPIC_API_KEY does NOT mean "no credentials": a zero-argument
@@ -89,11 +103,26 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 8000
     llm_effort: str = "medium"
     anthropic_api_key: str | None = None
+    # A ceiling on any single model call. The loop passes its own remaining
+    # budget per turn; this bounds the case where that is still too generous.
+    # Both are deadlines for the whole call, divided across attempts by the
+    # provider -- see AnthropicProvider._attempt_timeout.
+    llm_timeout_seconds: int = 30
+    # Transient provider failures are worth absorbing (§57 grades a 5xx
+    # BOUNDED_BACKOFF). Kept as a setting because it and the timeout above are
+    # one budget between them, and tuning either alone gets that wrong.
+    llm_max_retries: int = 2
 
     # --- Agent execution budget (CONTRACT §10) ---
     max_tool_calls_per_task: int = 12
     max_llm_turns_per_task: int = 8
     max_wall_clock_seconds: int = 60
+    # What the host allows one invocation, which is not the same question.
+    # Defaults to Vercel's configured `maxDuration` when running there; None
+    # means nothing outside the process is holding a stopwatch.
+    # KEEP IN STEP WITH vercel.json.
+    platform_timeout_seconds: int | None = Field(
+        default_factory=lambda: VERCEL_MAX_DURATION_SECONDS if os.getenv("VERCEL") else None)
 
     # --- Razorpay (CONTRACT §7, §22) ---
     razorpay_key_id: str | None = None
@@ -127,6 +156,28 @@ class Settings(BaseSettings):
     # gate, approve, execute, verify. Bumped when that shape changes, not when
     # a step's implementation does.
     workflow_version: str = "workflow-v2"
+
+    @property
+    def effective_wall_clock_seconds(self) -> int:
+        """The budget actually enforced, which is not always the one configured.
+
+        A budget larger than the host's own timeout is not a budget. The
+        invocation is killed part-way, the request's transaction rolls back, and
+        the careful ABORTED_BUDGET path — partial trace preserved, failure code
+        recorded, operator told why — is the one path that never runs. The two
+        numbers lived in different files and disagreed: 60s here against
+        `maxDuration: 30` in vercel.json, so every task that used its documented
+        budget was killed at half of it.
+
+        The host's limit now caps ours, less a margin to finish the work that
+        happens after the loop: the §37 output check, the closing audit event,
+        and serialising a response. A configured budget already inside the limit
+        is left exactly as it is.
+        """
+        limit = self.platform_timeout_seconds
+        if limit is None:
+            return self.max_wall_clock_seconds
+        return max(5, min(self.max_wall_clock_seconds, limit - PLATFORM_MARGIN_SECONDS))
 
     @property
     def anthropic_credential_source(self) -> str | None:

@@ -5,8 +5,11 @@ frontend is never the authority (CONTRACT §20, §41).
 """
 from __future__ import annotations
 
+import hmac
+import os
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from types import SimpleNamespace
 
@@ -16,7 +19,8 @@ from sqlalchemy import case, func, select, text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
-from app.agent.runtime import AgentRuntime, Principal
+from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
+from app.api import schemas
 from app.api.security import DEV_SECRET_IN_USE, check_rate_limit, current_principal
 from app.audit.trace import (
     record, trace_by_correlation, trace_for, trace_for_incident,
@@ -25,6 +29,9 @@ from app.config import get_settings, set_runtime_llm_provider
 from app.db import session_scope
 from app.failures import TAXONOMY, describe
 from app.metrics import objectives, operational_metrics
+from app.observability import runtime_metrics as runtime
+from app.observability.logs import configure_logging, get_logger
+from app.observability.middleware import ObservabilityMiddleware
 from app.detection import detect
 from app.detection.engine import open_incidents
 from app.incidents.lifecycle import legal_from
@@ -43,7 +50,41 @@ from app.models import (
 )
 from app.webhooks import ingest
 
+# Before the app, so anything logged during construction is already formatted
+# and nothing has to remember to call it. Idempotent.
+configure_logging()
+
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
+
+# Outermost, so it sees the status an exception handler eventually produced and
+# times the handlers too. A metric that excludes error handling is a metric that
+# looks best exactly when the service is worst.
+app.add_middleware(ObservabilityMiddleware)
+
+
+@app.exception_handler(AgentRuntimeError)
+def agent_runtime_error(request: Request, exc: AgentRuntimeError):
+    """A run died on something nobody classified.
+
+    Registered once rather than caught per route: every endpoint that starts a
+    run — a task, an incident investigation, a dispatched candidate, a replay —
+    fails the same way, and a handler each would be four chances to forget one.
+
+    The response carries the task id and nothing else about the error. The
+    detail is already in the audit trail, where it is redacted and access is
+    controlled; putting it in an HTTP body would publish an internal stack
+    detail to whoever sent the request. 500 is honest: this is our defect, and
+    §56 classifies INTERNAL_ERROR as ESCALATE — not something to retry.
+    """
+    return JSONResponse(status_code=500, content={"detail": {
+        "error": "The run stopped on an internal error.",
+        "code": "INTERNAL_ERROR",
+        "task_id": exc.task_id,
+        # False means the trace could not be written either, so pointing an
+        # operator at the task id would send them to a page that is not there.
+        "trace_preserved": exc.persisted,
+        "failure": describe("INTERNAL_ERROR"),
+    }})
 
 
 # Authentication and rate limiting live in app/api/security.py. The caller
@@ -133,7 +174,8 @@ def _owned(s, task_id: str, principal: Principal) -> AgentTask:
     return task
 
 
-@app.get("/health")
+@app.get("/health", response_model=schemas.Health,
+          response_model_exclude_unset=True)
 def health():
     s = get_settings()
     return {
@@ -157,10 +199,23 @@ def health():
         # act on them. Published so "nothing happened" is never ambiguous
         # between "no events" and "events arrived unverified".
         "webhook_signature_verification": s.webhook_verification_enabled,
+        # Both numbers, because they disagreed once and nothing said so. A
+        # budget above the host's own timeout is not enforced by us — the
+        # invocation is killed part-way and the ABORTED_BUDGET path never runs —
+        # so what is actually enforced belongs where the posture is read.
+        "agent_budget": {
+            "configured_wall_clock_seconds": s.max_wall_clock_seconds,
+            "platform_timeout_seconds": s.platform_timeout_seconds,
+            "enforced_wall_clock_seconds": s.effective_wall_clock_seconds,
+            "capped_by_platform": s.effective_wall_clock_seconds < s.max_wall_clock_seconds,
+            "max_tool_calls": s.max_tool_calls_per_task,
+            "max_llm_turns": s.max_llm_turns_per_task,
+        },
     }
 
 
-@app.get("/me")
+@app.get("/me", response_model=schemas.Me,
+          response_model_exclude_unset=True)
 def whoami(principal: Principal = Depends(current_principal)):
     """Who the caller is, as the server understands it.
 
@@ -173,7 +228,8 @@ def whoami(principal: Principal = Depends(current_principal)):
             "role": principal.role, "permissions": principal.permissions}
 
 
-@app.post("/config/llm-provider")
+@app.post("/config/llm-provider", response_model=schemas.ProviderChange,
+          response_model_exclude_unset=True)
 def set_llm_provider(body: ProviderRequest,
                      principal: Principal = Depends(current_principal)):
     """Switch between providers that are already configured.
@@ -221,27 +277,31 @@ def set_llm_provider(body: ProviderRequest,
             "changed_from": before}
 
 
-@app.post("/tasks")
+@app.post("/tasks", response_model=schemas.TaskView,
+          response_model_exclude_unset=True)
 def create_task(body: TaskRequest, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         out = AgentRuntime(s, principal).run(body.request)
         return _task_view(s, out.task)
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", response_model=schemas.TaskView,
+          response_model_exclude_unset=True)
 def get_task(task_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         return _task_view(s, _owned(s, task_id, principal))
 
 
-@app.get("/tasks/{task_id}/trace")
+@app.get("/tasks/{task_id}/trace", response_model=schemas.TaskTrace,
+          response_model_exclude_unset=True)
 def get_trace(task_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         _owned(s, task_id, principal)
         return {"task_id": task_id, "trace": trace_for(s, task_id)}
 
 
-@app.get("/tasks/{task_id}/evidence")
+@app.get("/tasks/{task_id}/evidence", response_model=schemas.TaskEvidence,
+          response_model_exclude_unset=True)
 def get_evidence(task_id: str, principal: Principal = Depends(current_principal)):
     """The evidence behind a task's findings and its pending action.
 
@@ -272,7 +332,8 @@ def get_evidence(task_id: str, principal: Principal = Depends(current_principal)
         }
 
 
-@app.get("/approvals")
+@app.get("/approvals", response_model=schemas.ApprovalQueue,
+          response_model_exclude_unset=True)
 def list_approvals(pending_only: bool = True,
                    principal: Principal = Depends(current_principal)):
     """The approval queue — MerchantOps §65.
@@ -306,7 +367,8 @@ def list_approvals(pending_only: bool = True,
 # Declared before /actions/{action_id}: Starlette matches in declaration order,
 # so with the parametrised route first "escalated" is captured as an action_id
 # and the endpoint 404s as "Unknown action."
-@app.get("/actions/escalated")
+@app.get("/actions/escalated", response_model=list[schemas.EscalatedAction],
+          response_model_exclude_unset=True)
 def list_escalated(max_attempts: int = 5,
                    principal: Principal = Depends(current_principal)):
     """Actions automatic reconciliation could not settle — the operator queue."""
@@ -316,7 +378,8 @@ def list_escalated(max_attempts: int = 5,
     return [r for r in rows if r["merchant_id"] == principal.merchant_id]
 
 
-@app.get("/actions/{action_id}")
+@app.get("/actions/{action_id}", response_model=schemas.ActionDetail,
+          response_model_exclude_unset=True)
 def get_action(action_id: str, principal: Principal = Depends(current_principal)):
     """One external action — MerchantOps §65.
 
@@ -350,7 +413,8 @@ def get_action(action_id: str, principal: Principal = Depends(current_principal)
         }
 
 
-@app.get("/tasks/{task_id}/messages")
+@app.get("/tasks/{task_id}/messages", response_model=schemas.TaskMessages,
+          response_model_exclude_unset=True)
 def get_messages(task_id: str, principal: Principal = Depends(current_principal)):
     """The conversation the model actually saw — MerchantOps §66, §38.
 
@@ -379,7 +443,8 @@ def get_messages(task_id: str, principal: Principal = Depends(current_principal)
         }
 
 
-@app.post("/tasks/{task_id}/approve")
+@app.post("/tasks/{task_id}/approve", response_model=schemas.TaskView,
+          response_model_exclude_unset=True)
 def approve(task_id: str, principal: Principal = Depends(current_principal)):
     """Record this caller's approval, and execute once enough people have signed.
 
@@ -401,7 +466,8 @@ def approve(task_id: str, principal: Principal = Depends(current_principal)):
         return view
 
 
-@app.post("/tasks/{task_id}/reject")
+@app.post("/tasks/{task_id}/reject", response_model=schemas.TaskView,
+          response_model_exclude_unset=True)
 def reject_task(task_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         _owned(s, task_id, principal)
@@ -412,7 +478,8 @@ def reject_task(task_id: str, principal: Principal = Depends(current_principal))
         return _task_view(s, task)
 
 
-@app.post("/tasks/{task_id}/reverify")
+@app.post("/tasks/{task_id}/reverify", response_model=schemas.ReverifyResult,
+          response_model_exclude_unset=True)
 def reverify_task(task_id: str, principal: Principal = Depends(current_principal)):
     """CONTRACT §26 (amended) — the UNKNOWN exit path."""
     with session_scope() as s:
@@ -425,7 +492,8 @@ def reverify_task(task_id: str, principal: Principal = Depends(current_principal
                 "verification": r["verification"].as_dict()}
 
 
-@app.post("/tasks/{task_id}/replay")
+@app.post("/tasks/{task_id}/replay", response_model=schemas.ReplayResult,
+          response_model_exclude_unset=True)
 def replay_task(task_id: str, mode: str = "PLAYBACK",
                 principal: Principal = Depends(current_principal)):
     with session_scope() as s:
@@ -435,7 +503,8 @@ def replay_task(task_id: str, mode: str = "PLAYBACK",
         return playback(s, task_id)
 
 
-@app.post("/actions/reconcile")
+@app.post("/actions/reconcile", response_model=schemas.ReconcileReport,
+          response_model_exclude_unset=True)
 def run_reconcile(min_age_seconds: int = 30, max_attempts: int = 5,
                   principal: Principal = Depends(current_principal)):
     """Settle actions left UNKNOWN/PARTIAL. Re-reads state only; never retries
@@ -493,7 +562,8 @@ def _owned_plan(s, plan_id: str, principal: Principal) -> RecoveryPlan:
     return plan
 
 
-@app.post("/incidents/{incident_id}/recovery")
+@app.post("/incidents/{incident_id}/recovery", response_model=schemas.PlanView,
+          response_model_exclude_unset=True)
 def create_recovery_plan(incident_id: str,
                          principal: Principal = Depends(current_principal)):
     """Plan recovery for an incident — MerchantOps §23.
@@ -510,13 +580,15 @@ def create_recovery_plan(incident_id: str,
         return view
 
 
-@app.get("/recovery/plans/{plan_id}")
+@app.get("/recovery/plans/{plan_id}", response_model=schemas.PlanView,
+          response_model_exclude_unset=True)
 def get_recovery_plan(plan_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         return _plan_view(s, _owned_plan(s, plan_id, principal), detail=True)
 
 
-@app.post("/recovery/plans/{plan_id}/settle")
+@app.post("/recovery/plans/{plan_id}/settle", response_model=schemas.SettleReport,
+          response_model_exclude_unset=True)
 def settle_recovery_plan(plan_id: str,
                          principal: Principal = Depends(current_principal)):
     """Read each dispatched candidate's outcome back from its verified action."""
@@ -524,7 +596,8 @@ def settle_recovery_plan(plan_id: str,
         return settle_plan(s, _owned_plan(s, plan_id, principal))
 
 
-@app.post("/recovery/candidates/{candidate_id}/dispatch")
+@app.post("/recovery/candidates/{candidate_id}/dispatch", response_model=schemas.DispatchResult,
+          response_model_exclude_unset=True)
 def dispatch_recovery_candidate(candidate_id: str,
                                 principal: Principal = Depends(current_principal)):
     """Hand one candidate to the ordinary agent path, bounds permitting.
@@ -559,7 +632,8 @@ def dispatch_recovery_candidate(candidate_id: str,
 # --------------------------------------------------------------------------
 # Provider webhooks — MerchantOps §34, §65
 # --------------------------------------------------------------------------
-@app.post("/webhooks/razorpay")
+@app.post("/webhooks/razorpay", response_model=schemas.WebhookAck,
+          response_model_exclude_unset=True)
 async def razorpay_webhook(
     request: Request,
     x_razorpay_signature: str | None = Header(default=None),
@@ -589,7 +663,8 @@ async def razorpay_webhook(
         return ingest(s, raw, x_razorpay_signature, x_razorpay_event_id).as_dict()
 
 
-@app.get("/webhooks/events")
+@app.get("/webhooks/events", response_model=schemas.WebhookEventList,
+          response_model_exclude_unset=True)
 def list_webhook_events(limit: int = 50, status: str | None = None,
                         principal: Principal = Depends(current_principal)):
     """The event store, scoped to the caller's merchant.
@@ -678,7 +753,8 @@ def _owned_incident(s, incident_id: str, principal: Principal) -> Incident:
     return inc
 
 
-@app.get("/incidents")
+@app.get("/incidents", response_model=schemas.IncidentList,
+          response_model_exclude_unset=True)
 def list_incidents(include_closed: bool = False,
                    principal: Principal = Depends(current_principal)):
     """The operations console. Scoped to the caller's merchant, ordered by
@@ -695,13 +771,15 @@ def list_incidents(include_closed: bool = False,
                 "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows)}
 
 
-@app.get("/incidents/{incident_id}")
+@app.get("/incidents/{incident_id}", response_model=schemas.IncidentSummary,
+          response_model_exclude_unset=True)
 def get_incident(incident_id: str, principal: Principal = Depends(current_principal)):
     with session_scope() as s:
         return _incident_view(s, _owned_incident(s, incident_id, principal), detail=True)
 
 
-@app.get("/incidents/{incident_id}/trace")
+@app.get("/incidents/{incident_id}/trace", response_model=schemas.IncidentTrace,
+          response_model_exclude_unset=True)
 def get_incident_trace(incident_id: str,
                        principal: Principal = Depends(current_principal)):
     """MerchantOps §58 — detection, every lifecycle move, and every event of
@@ -711,7 +789,8 @@ def get_incident_trace(incident_id: str,
         return {"incident_id": incident_id, "trace": trace_for_incident(s, incident_id)}
 
 
-@app.post("/incidents/detect")
+@app.post("/incidents/detect", response_model=schemas.DetectResult,
+          response_model_exclude_unset=True)
 def run_detection(principal: Principal = Depends(current_principal)):
     """Run the detection sweep for the caller's merchant.
 
@@ -722,7 +801,8 @@ def run_detection(principal: Principal = Depends(current_principal)):
         return detect(s, principal.merchant_id).as_dict()
 
 
-@app.post("/incidents/{incident_id}/investigate")
+@app.post("/incidents/{incident_id}/investigate", response_model=schemas.InvestigateResult,
+          response_model_exclude_unset=True)
 def investigate_incident(incident_id: str,
                          principal: Principal = Depends(current_principal)):
     """Dispatch the bounded agent against an incident.
@@ -742,7 +822,8 @@ def investigate_incident(incident_id: str,
                 "task": _task_view(s, r["task"])}
 
 
-@app.get("/recovery/ledger")
+@app.get("/recovery/ledger", response_model=schemas.LedgerView,
+          response_model_exclude_unset=True)
 def recovery_ledger(principal: Principal = Depends(current_principal)):
     """MerchantOps §49. Six figures that nest, in one unit.
 
@@ -754,7 +835,8 @@ def recovery_ledger(principal: Principal = Depends(current_principal)):
         return build_ledger(s, principal.merchant_id).as_dict()
 
 
-@app.get("/dashboard")
+@app.get("/dashboard", response_model=schemas.DashboardView,
+          response_model_exclude_unset=True)
 def merchant_dashboard(principal: Principal = Depends(current_principal)):
     """MerchantOps §50. Revenue at risk, recovery, incidents and agent activity.
 
@@ -766,7 +848,8 @@ def merchant_dashboard(principal: Principal = Depends(current_principal)):
         return dashboard(s, principal.merchant_id)
 
 
-@app.get("/trace/{correlation_id}")
+@app.get("/trace/{correlation_id}", response_model=schemas.CorrelationTrace,
+          response_model_exclude_unset=True)
 def get_correlation_trace(correlation_id: str,
                           principal: Principal = Depends(current_principal)):
     """MerchantOps §58. Everything one operation touched, in one ordering.
@@ -782,7 +865,8 @@ def get_correlation_trace(correlation_id: str,
                 "span_count": len(events)}
 
 
-@app.get("/failures/taxonomy")
+@app.get("/failures/taxonomy", response_model=schemas.FailureTaxonomy,
+          response_model_exclude_unset=True)
 def failure_taxonomy(principal: Principal = Depends(current_principal)):
     """MerchantOps §56/§57. What every failure this system raises means, who
     owns it, and whether retrying it is sensible.
@@ -794,7 +878,49 @@ def failure_taxonomy(principal: Principal = Depends(current_principal)):
     return {"failures": [cls.as_dict(code) for code, cls in sorted(TAXONOMY.items())]}
 
 
-@app.get("/metrics/operational")
+@app.get("/metrics/prometheus")
+def prometheus(request: Request,
+               authorization: str | None = Header(default=None)):
+    """Runtime metrics for a scraper — ADR-0031.
+
+    Deliberately not `/metrics`, which is this merchant's business counts and
+    stays that way. These are process health: no tenant scoping, because a
+    latency histogram does not belong to a merchant, and therefore no principal
+    to scope it to.
+
+    **Authenticated, and not by a user.** A scraper has no merchant and should
+    not be given one, so `METRICS_SCRAPE_TOKEN` is a shared secret compared in
+    constant time — Prometheus sends it as `authorization: Bearer <token>`.
+    Falling back to an ordinary principal would mean minting a user for a robot
+    and giving it a merchant it has no business having.
+
+    Unset, the route returns 404 rather than serving to anyone. An
+    unauthenticated metrics endpoint publishes route names, traffic shape and
+    error rates to whoever asks — a smaller leak than data and still a leak,
+    and this project already has one route open that should not be.
+    """
+    expected = os.environ.get("METRICS_SCRAPE_TOKEN")
+    if not expected:
+        # 404 rather than 403: an unconfigured endpoint should be
+        # indistinguishable from one that was never built.
+        raise HTTPException(404, "Not found.")
+
+    presented = (authorization or "")[7:].strip() \
+        if (authorization or "").lower().startswith("bearer ") else ""
+    if not hmac.compare_digest(presented, expected):
+        raise HTTPException(401, "Invalid scrape token.",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+    body = runtime.render()
+    if not runtime.counters_are_meaningful():
+        body = ("# NOTE: this instance is serverless. Counters reset on every cold\n"
+                "# start and no single instance sees the whole picture. Use the\n"
+                "# structured logs on stdout as the operational channel here.\n") + body
+    return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+@app.get("/metrics/operational", response_model=schemas.OperationalMetrics,
+          response_model_exclude_unset=True)
 def operational(principal: Principal = Depends(current_principal)):
     """MerchantOps §59. Measured metrics, and the ones that are not.
 
@@ -805,7 +931,8 @@ def operational(principal: Principal = Depends(current_principal)):
         return operational_metrics(s, principal.merchant_id)
 
 
-@app.get("/metrics/objectives")
+@app.get("/metrics/objectives", response_model=schemas.Objectives,
+          response_model_exclude_unset=True)
 def slos(principal: Principal = Depends(current_principal)):
     """MerchantOps §60. Each objective with what was measured against it —
     an SLO nobody is timing is a wish."""
@@ -813,7 +940,8 @@ def slos(principal: Principal = Depends(current_principal)):
         return {"objectives": objectives(s, principal.merchant_id)}
 
 
-@app.get("/metrics")
+@app.get("/metrics", response_model=schemas.MetricsStrip,
+          response_model_exclude_unset=True)
 def metrics(window_hours: int = 24,
             principal: Principal = Depends(current_principal)):
     """Counts for the operations strip, scoped to the caller's merchant.
@@ -887,7 +1015,8 @@ def metrics(window_hours: int = 24,
     }
 
 
-@app.get("/scenarios")
+@app.get("/scenarios", response_model=list[schemas.ScenarioView],
+          response_model_exclude_unset=True)
 def list_scenarios():
     """The suite, including what each scenario actually asserts.
 
@@ -922,7 +1051,8 @@ def list_scenarios():
     } for s in load_scenarios()]
 
 
-@app.post("/scenarios/{scenario_id}/run")
+@app.post("/scenarios/{scenario_id}/run", response_model=schemas.ScenarioRunResult,
+          response_model_exclude_unset=True)
 def run_one(scenario_id: str):
     scen = {s.id: s for s in load_scenarios()}
     if scenario_id not in scen:

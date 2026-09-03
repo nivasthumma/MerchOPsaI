@@ -24,6 +24,19 @@ reconcile:  ; $(PY) scripts/reconcile.py
 mutants:    ; $(PY) scripts/mutation_test.py
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
+# Bring a real database to the current schema. Handles the three states a
+# database can be in -- empty, existing-but-unstamped, already stamped -- which
+# a bare `alembic upgrade head` does not. See ADR-0030.
+migrate:    ; PYTHONPATH=. $(PY) scripts/migrate.py
+migrate-status: ; PYTHONPATH=. $(PY) scripts/migrate.py --status
+# The SQL, printed rather than run, for review before a production change.
+migrate-sql: ; PYTHONPATH=. $(PY) scripts/migrate.py --sql
+# After changing app/models.py. The drift test fails until this exists.
+migration:  ; PYTHONPATH=. .venv/bin/alembic revision --autogenerate -m "$(M)"
+# The API contract consumers read. Regenerate when a response shape changes on
+# purpose; the test fails until you do, so the change lands as a reviewable diff.
+openapi:    ; PYTHONPATH=. $(PY) scripts/export_openapi.py
+openapi-check: ; PYTHONPATH=. $(PY) scripts/export_openapi.py --check
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
 ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
@@ -50,4 +63,5 @@ serve: web-build
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
 .PHONY: setup seed spike api ui test eval reconcile mutants compare harden token ci demo \
+        migrate migrate-status migrate-sql migration openapi openapi-check \
         web-setup web web-build web-test serve

@@ -34,9 +34,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 
 from app.audit.trace import record
+from app.config import PLATFORM_MARGIN_SECONDS, get_settings
 from app.integrations.razorpay.adapter import get_adapter
 from app.models import ActionStatus, AgentAction, AgentTask, TaskStatus, VerificationState
 from app.failures import unsettled_states
@@ -68,19 +69,54 @@ class ReconcileReport:
         }
 
 
+def abandoned_claim_age_seconds() -> int:
+    """How long a claim must sit untouched before the sweep may assume nobody
+    is coming back for it.
+
+    Longer than a request can possibly live, and derived from the budget rather
+    than guessed, because the thing being waited out is not the provider — it is
+    us. A claim is committed before the provider is called, so a row still
+    PENDING may belong to a request that is mid-call right now and about to
+    write the outcome. Reading its state early and recording FAILED would settle
+    an action that then succeeds.
+    """
+    s = get_settings()
+    return s.effective_wall_clock_seconds + PLATFORM_MARGIN_SECONDS
+
+
 def find_unsettled(session, *, min_age_seconds: int = 30, max_attempts: int = 5,
                    limit: int = 100) -> list[AgentAction]:
     """Actions that need another look.
 
-    `min_age_seconds` avoids racing the request that created the action: a
-    refund submitted two seconds ago may simply not have propagated yet, and
-    re-reading it immediately would burn an attempt for nothing.
+    Two populations, with different clocks.
+
+    **Unsettled verifications** — UNKNOWN or PARTIAL. `min_age_seconds` avoids
+    racing the *provider*: a refund submitted two seconds ago may simply not
+    have propagated, and re-reading it immediately burns an attempt for nothing.
+
+    **Abandoned claims** — PENDING with no verification at all. The request that
+    reserved the action died between committing the claim and recording what
+    happened, so we hold an idempotency key and no outcome. That is UNKNOWN in
+    everything but the column, and it is the state reconciliation exists for: an
+    action that may have moved money with nothing on our side that says so.
+
+    Before the claim was made durable this row could not exist — a dying request
+    took it down with everything else. Making it survive is only an improvement
+    if something then looks at it, which is what this branch is.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=min_age_seconds)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=min_age_seconds)
+    abandoned_cutoff = now - timedelta(
+        seconds=max(min_age_seconds, abandoned_claim_age_seconds()))
     return (session.query(AgentAction)
-            .filter(AgentAction.verification_state.in_(list(UNSETTLED)),
-                    AgentAction.verify_attempts < max_attempts,
-                    AgentAction.updated_at <= cutoff)
+            .filter(AgentAction.verify_attempts < max_attempts,
+                    or_(
+                        and_(AgentAction.verification_state.in_(list(UNSETTLED)),
+                             AgentAction.updated_at <= cutoff),
+                        and_(AgentAction.verification_state.is_(None),
+                             AgentAction.status == ActionStatus.PENDING,
+                             AgentAction.updated_at <= abandoned_cutoff),
+                    ))
             .order_by(AgentAction.updated_at)
             .limit(limit)
             .all())
@@ -181,8 +217,14 @@ def escalated_actions(session, *, max_attempts: int = 5) -> list[dict]:
                -- an operator has to open every task to learn what happened.
                verification_detail
         FROM agent_actions
-        WHERE verification_state IN ('UNKNOWN', 'PARTIAL')
-          AND verify_attempts >= :n
+        WHERE verify_attempts >= :n
+          AND (verification_state IN ('UNKNOWN', 'PARTIAL')
+               -- An abandoned claim whose every re-read has failed. It keeps a
+               -- NULL verification_state, so listing only the two named states
+               -- would drop the one action nobody has ever established an
+               -- outcome for -- out of the sweep at max_attempts and out of
+               -- this queue at the same moment.
+               OR (verification_state IS NULL AND status = 'PENDING'))
         ORDER BY updated_at
     """), {"n": max_attempts}).mappings().all()
     return [dict(r) for r in rows]

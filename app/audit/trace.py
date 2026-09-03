@@ -2,24 +2,49 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from app.models import AuditLog
 
 # MerchantOps §47/§58. Set for the duration of a run so every event it writes
-# carries the same id without every call site having to pass one. Process-local
-# and deliberately not thread-shared: this application is single-threaded per
-# request, and a correlation id that leaked between concurrent runs would tie
-# together traces that have nothing to do with each other.
-_CURRENT_CORRELATION: str | None = None
+# carries the same id without every call site having to pass one.
+#
+# A ContextVar rather than a module global, because the premise a global rests
+# on is false here: FastAPI runs every `def` endpoint in a threadpool, so two
+# tasks genuinely execute at once and a global would have them overwrite each
+# other's id — tying together traces that have nothing to do with each other,
+# which is the one thing a correlation id must never do. Starlette copies the
+# request's context into the worker thread, so each run reads and writes its
+# own value under both threads and async.
+_CURRENT_CORRELATION: ContextVar[str | None] = ContextVar(
+    "merchantops_correlation_id", default=None)
 
 
 def set_correlation_id(value: str | None) -> None:
-    global _CURRENT_CORRELATION
-    _CURRENT_CORRELATION = value
+    _CURRENT_CORRELATION.set(value)
 
 
 def current_correlation_id() -> str | None:
-    return _CURRENT_CORRELATION
+    return _CURRENT_CORRELATION.get()
+
+
+@contextmanager
+def correlation_scope(value: str) -> Iterator[str]:
+    """Hold a correlation id for a block, then put back whatever was there.
+
+    Restoring rather than clearing, because these nest. The request middleware
+    sets one at the HTTP boundary and an agent run sets its own inside it; a run
+    that finished by clearing the value to None would leave the rest of the
+    request — the response, its status, its duration — logged as belonging to no
+    trace at all, which is worse than the leak that clearing was meant to avoid.
+    """
+    token = _CURRENT_CORRELATION.set(value)
+    try:
+        yield value
+    finally:
+        _CURRENT_CORRELATION.reset(token)
 
 
 _SECRET_KEYS = re.compile(r"(secret|password|api_key|token|authorization|key_secret)", re.I)
@@ -47,7 +72,7 @@ def record(session, task, event_type: str, payload: dict | None = None) -> Audit
         merchant_id=getattr(task, "merchant_id", None),
         user_id=getattr(task, "user_id", None),
         event_type=event_type,
-        correlation_id=_CURRENT_CORRELATION,
+        correlation_id=_CURRENT_CORRELATION.get(),
         payload=redact(payload or {}),
     )
     session.add(entry)
@@ -73,7 +98,7 @@ def record_incident(session, incident, event_type: str,
         # An incident's own id is its correlation id when nothing else is set,
         # so detection and lifecycle events join the same trace as the tasks
         # they dispatch.
-        correlation_id=_CURRENT_CORRELATION or getattr(incident, "correlation_id", None),
+        correlation_id=_CURRENT_CORRELATION.get() or getattr(incident, "correlation_id", None),
         payload=redact(payload or {}),
     )
     session.add(entry)

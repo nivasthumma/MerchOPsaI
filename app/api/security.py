@@ -40,18 +40,80 @@ from sqlalchemy import text
 from app.agent.runtime import Principal
 from app.db import session_scope
 
-
 # --------------------------------------------------------------------------
 # Tokens
 # --------------------------------------------------------------------------
+DEV_SECRET = "dev-only-insecure-secret"  # noqa: S105 - the placeholder itself
+
+
 def _secret() -> bytes:
     """Signing secret. Falls back to a fixed development value so the project
-    runs out of the box; the API refuses to start in strict mode without a real
-    one (see require_configured_secret)."""
-    return (os.environ.get("API_TOKEN_SECRET") or "dev-only-insecure-secret").encode()
+    runs out of the box; `require_configured_secret` refuses that fallback
+    anywhere that is not a developer's machine."""
+    return (os.environ.get("API_TOKEN_SECRET") or DEV_SECRET).encode()
 
 
 DEV_SECRET_IN_USE = os.environ.get("API_TOKEN_SECRET") is None
+
+
+class InsecureConfiguration(RuntimeError):
+    """The process is configured in a way that cannot be allowed to serve."""
+
+
+# Environment variables set by the platform, not by us. Their presence means
+# this process is not a laptop, whatever anyone intended.
+_DEPLOYMENT_MARKERS = ("VERCEL", "AWS_EXECUTION_ENV", "KUBERNETES_SERVICE_HOST",
+                       "DYNO", "RENDER", "FLY_APP_NAME", "WEBSITE_INSTANCE_ID")
+
+
+def deployment_context() -> str | None:
+    """Which marker says this is a deployment, or None if nothing does."""
+    if os.environ.get("MERCHANTOPS_ENV", "").lower() in ("production", "staging", "prod"):
+        return "MERCHANTOPS_ENV"
+    return next((m for m in _DEPLOYMENT_MARKERS if os.environ.get(m)), None)
+
+
+def require_configured_secret() -> None:
+    """Refuse to serve on a deployment that is signing tokens with the default.
+
+    The fallback in `_secret` is a real convenience -- `make api` works on a
+    fresh clone with no configuration -- and a real hazard, because the value is
+    in this file. Anyone who can read the repository can mint a token for any
+    user, and permissions are then read from the database exactly as they would
+    be for a genuine one. The checks behind the token are sound; the identity in
+    front of them is a formality.
+
+    `/health` has reported this since the token scheme was introduced, and
+    reporting is not a control: nothing consults the report before serving. The
+    Vercel environment file is the case in point -- seventeen database variables
+    and no API_TOKEN_SECRET.
+
+    So the default is refused where a platform marker says this is a deployment,
+    and permitted where nothing does. That keeps local development frictionless,
+    which is the only reason the fallback exists. Set
+    MERCHANTOPS_ALLOW_DEV_SECRET=1 to override deliberately -- for a throwaway
+    preview, say -- so that running with it is a decision somebody made rather
+    than one nobody noticed.
+    """
+    if not DEV_SECRET_IN_USE:
+        return
+    if os.environ.get("MERCHANTOPS_ALLOW_DEV_SECRET"):
+        return
+    marker = deployment_context()
+    if marker is None:
+        return
+
+    raise InsecureConfiguration(
+        f"Refusing to start: API_TOKEN_SECRET is unset, so bearer tokens would "
+        f"be signed with the development default that is published in this "
+        f"repository's source. {marker} is set, so this is a deployment rather "
+        f"than a development machine.\n\n"
+        f"Anyone who can read the repository could mint a token for any user.\n\n"
+        f"Set a real one:\n"
+        f"    API_TOKEN_SECRET=$(python -c \"import secrets; "
+        f"print(secrets.token_urlsafe(48))\")\n\n"
+        f"Or set MERCHANTOPS_ALLOW_DEV_SECRET=1 to accept the risk explicitly."
+    )
 
 
 def issue_token(user_id: str) -> str:

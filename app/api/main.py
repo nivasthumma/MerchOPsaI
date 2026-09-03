@@ -19,7 +19,12 @@ from app.agent.approval import ApprovalError, approve_and_execute, reject, rever
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
 from app.api import schemas
-from app.api.security import DEV_SECRET_IN_USE, check_rate_limit, current_principal
+from app.api.security import (
+    DEV_SECRET_IN_USE,
+    check_rate_limit,
+    current_principal,
+    require_configured_secret,
+)
 from app.audit.trace import (
     record,
     trace_by_correlation,
@@ -66,6 +71,13 @@ from app.webhooks import ingest
 # Before the app, so anything logged during construction is already formatted
 # and nothing has to remember to call it. Idempotent.
 configure_logging()
+
+# At import, before a single route is registered, and deliberately not inside a
+# startup hook: a deployment that cannot sign tokens safely should fail to build
+# the application at all rather than come up and serve one request with a
+# forgeable identity. Raises only where a platform marker says this is a
+# deployment, so a fresh clone still runs `make api` with no configuration.
+require_configured_secret()
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 

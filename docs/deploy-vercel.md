@@ -24,7 +24,7 @@ Set these in **Project → Settings → Environment Variables**.
 | Variable | Value | Why |
 |---|---|---|
 | `DATABASE_URL` | `postgresql+psycopg2://…` (pooled) | Note the `+psycopg2` driver prefix — a bare `postgres://` URL from a provider's dashboard will not work as-is. |
-| `API_TOKEN_SECRET` | a long random string | **Required.** Without it the app falls back to a development default, and tokens minted with that default are forgeable by anyone who can read this repository. `/health` reports the fallback and the UI says so in words. |
+| `API_TOKEN_SECRET` | a long random string | **Required, and now enforced.** Without it the function fails to start: Vercel sets `VERCEL`, which `require_configured_secret` treats as proof this is not a laptop. Previously the app started anyway and only *reported* the fallback on `/health` — a report nothing consulted. Tokens signed with the default are forgeable by anyone who can read this repository. Set `MERCHANTOPS_ALLOW_DEV_SECRET=1` only for a throwaway preview. |
 | `LLM_PROVIDER` | `deterministic` | Explicit, so the deployment cannot silently become a model deployment if a credential ever appears in the environment. |
 | `RAZORPAY_MODE` | `mock` | No outbound financial call. Set to `live_test_mode` with keys only if you mean it. |
 | `LOG_FORMAT` | `json` | Default. Vercel ingests stdout, so structured logs are searchable with no further setup. |

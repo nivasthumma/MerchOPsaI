@@ -158,6 +158,33 @@ def insert_all(session, data: dict, keys: tuple[str, ...] = INSERT_ORDER) -> Non
         session.flush()
 
 
+def truncate_all(session=None) -> None:
+    """Empty every table, keeping the schema and its controls.
+
+    The fast path between scenarios. `reset_schema` drops and recreates
+    everything and then re-applies the audit triggers and 31 row-level
+    policies -- 1134 ms, against 179 ms for this -- and it does that to arrive
+    at a schema identical to the one it just destroyed.
+
+    TRUNCATE is the right tool precisely because it is not a DELETE: the
+    audit-log immutability triggers are `BEFORE UPDATE OR DELETE FOR EACH ROW`
+    and do not fire on it, so the append-only control does not have to be
+    suspended to empty the table. Policies and triggers both survive, which is
+    asserted in `tests/integration/test_flows.py` rather than assumed -- a
+    faster reset that quietly dropped a control would be worse than a slow one.
+
+    CASCADE because the tables reference each other; RESTART IDENTITY so a
+    rerun is byte-identical to a first run, which the evaluation suite's
+    reproducibility check depends on.
+    """
+    tables = ", ".join(sorted(Base.metadata.tables))
+    if session is not None:
+        session.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        return
+    with get_engine().begin() as c:
+        c.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+
+
 def build() -> dict:
     rng = random.Random(SEED)
     stats: dict[str, int] = {}

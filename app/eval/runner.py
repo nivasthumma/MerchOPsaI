@@ -1331,8 +1331,15 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
     run_id = f"RUN_{uuid.uuid4().hex[:10].upper()}"
     results = []
 
+    # The schema is built ONCE and emptied between scenarios. Rebuilding it per
+    # scenario cost 1134 ms against 179 ms for a TRUNCATE, and it did that to
+    # arrive at a schema identical to the one it had just destroyed -- 187
+    # times per run, and the mutation harness runs the whole suite once per
+    # mutant, so the waste was multiplied by 126.
+    seeder.reset_schema()
+
     for sc in scenarios:
-        seeder.reset_schema()
+        seeder.truncate_all()
         data = seeder.build()
         with session_scope() as s:
             # `seeder.insert_all`, not a loop of its own. This was the THIRD

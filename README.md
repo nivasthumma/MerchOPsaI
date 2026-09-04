@@ -648,12 +648,23 @@ are different claims.
     crash rather than a graded result, and the rest by unit tests alone — the metrics and
     taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-19. **The mutant run is slow, and got slower.** Each mutant re-runs the full scenario
-    and test suites. The test half is fast (one seed, per-test rollback); the scenario
-    half still rebuilds the schema per scenario. At 78 mutants against 167 scenarios a
-    complete run was around fifty minutes; at 113 against 187 it is longer, which is why
-    it no longer runs on every push (ADR-0041) — pull requests, the trunk, and nightly.
+19. **The mutant run takes about five hours.** Measured, not estimated: 126 mutants
+    against 187 scenarios and 919 tests, roughly 135 seconds each. It does not run on
+    every push (ADR-0041) — pull requests, the trunk, and nightly — and
     `scripts/mutation_test.py <substring>` runs a subset during development.
+
+    The CI job's `timeout-minutes` was **50**, which meant it could not have passed: it
+    would have been cancelled a third of the way through and reported as a failure of
+    the code rather than of the budget. Now 360.
+
+    One source of the growth was waste rather than coverage. The scenario runner
+    rebuilt the schema for every scenario — drop, create, re-apply the audit triggers
+    and 31 row-level policies, 1134 ms — to arrive at a schema identical to the one it
+    had just destroyed. It now builds once and `TRUNCATE`s between scenarios, 179 ms,
+    which took the scenario suite from about 270 seconds to 95. TRUNCATE keeps the
+    policies and the audit triggers, and does not fire the row triggers that make
+    `audit_logs` append-only, so the control does not have to be suspended to empty the
+    table.
 
 ---
 

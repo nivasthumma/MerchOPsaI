@@ -421,11 +421,21 @@ jobs:
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Each mutant re-runs the whole scenario suite AND the test suite, so the
-    # cost is (mutants x suites). Both grew with the incident spine — 20 mutants
-    # against 115 scenarios — and the run no longer fits in 30 minutes. Raised
-    # rather than trimmed: dropping mutants to fit a timeout would be optimising
-    # the number this job exists to produce.
-    timeout-minutes: 50
+    # cost is (mutants x suites) and both keep growing: 126 mutants against 187
+    # scenarios and 919 tests is about 135 seconds each, so roughly five hours.
+    #
+    # Measured, not guessed, and the measurement is why this number moved. At
+    # `timeout-minutes: 50` this job could not have passed — it would have been
+    # cancelled a third of the way through and reported as a failure of the
+    # code rather than of the budget. It runs nightly and on pull requests, and
+    # a nightly job is allowed to take a night.
+    #
+    # Raised rather than trimmed, for the same reason as last time: dropping
+    # mutants to fit a timeout would be optimising the number this job exists to
+    # produce. What DID change is the waste — the scenario runner used to
+    # rebuild the schema per scenario, 1134 ms against 179 ms for a TRUNCATE,
+    # 187 times per mutant and 126 mutants per run.
+    timeout-minutes: 360
     services:
       postgres:
         image: postgres:16

@@ -310,6 +310,64 @@ class Merchant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Permission(Base):
+    """One thing a role may authorise — MerchantOps §66.
+
+    A catalogue, not a free-text field. The names here are the ones
+    `app.policy.engine.required_permissions` gates on, and
+    `tests/integration/test_authz.py` asserts that every permission a registered
+    tool requires exists as a row: a tool demanding `action:refund` where the
+    catalogue has `action:refunds` would otherwise be a tool nobody can ever
+    invoke, discovered the first time somebody tried.
+    """
+    __tablename__ = "permissions"
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    description: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Role(Base):
+    """A named set of permissions, owned by a tenant — MerchantOps §66.
+
+    Permissions were a JSON list on `users`. That works, and it cannot answer
+    "who can approve a CRITICAL refund?" without reading every row, cannot be
+    versioned, cannot be defined per tenant, and cannot produce the access-review
+    evidence an auditor asks for quarterly.
+
+    Tenant-scoped rather than global, with no built-in rows: an enterprise
+    customer defining `treasury-approver` should not be editing a definition
+    shared with every other tenant. `ensure_default_roles` gives a new tenant the
+    standard three.
+    """
+    __tablename__ = "roles"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    description: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    permissions: Mapped[list[RolePermission]] = relationship(
+        back_populates="role", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_role_name_per_tenant"),
+    )
+
+
+class RolePermission(Base):
+    """Which permissions a role grants. The join that makes the question a query."""
+    __tablename__ = "role_permissions"
+    role_id: Mapped[str] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    permission_name: Mapped[str] = mapped_column(
+        ForeignKey("permissions.name"), primary_key=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    role: Mapped[Role] = relationship(back_populates="permissions")
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -319,8 +377,19 @@ class User(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
     email: Mapped[str] = mapped_column(String(200))
-    role: Mapped[str] = mapped_column(String(64))          # owner | analyst | support
-    permissions: Mapped[list] = mapped_column(JSON, default=list)
+    # ONE role per user, which is what this system has always had -- `role` was
+    # a single string. Modelled as a foreign key rather than a join table
+    # because `principal.role` is read in a dozen places and "the role" has to
+    # keep meaning something. Several roles per user is a real enterprise need
+    # and is not this change.
+    # The constraint is NAMED, and that matters. `create_all` invents
+    # `users_role_id_fkey`; the migration created `fk_users_role`; and the
+    # downgrade then failed to drop a constraint that did not exist under that
+    # name on a seeded database. Naming it here makes both paths agree.
+    role_id: Mapped[str] = mapped_column(
+        ForeignKey("roles.id", name="fk_users_role"), index=True)
+
+    role_ref: Mapped[Role] = relationship()
 
 
 class Customer(Base):

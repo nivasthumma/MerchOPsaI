@@ -4,6 +4,34 @@
  */
 
 export interface paths {
+    "/access-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Access Review
+         * @description Who holds what, for this tenant — MerchantOps §66.
+         *
+         *     The artefact a SOC 2 access review asks for quarterly. It was previously
+         *     produced by reading `users.permissions` out of the database by hand, which is
+         *     why it was never produced.
+         *
+         *     Owner only, and scoped to the caller's tenant by the query and by row-level
+         *     security both. A list of who can move money is exactly the reconnaissance an
+         *     attacker with a read-only token would want.
+         */
+        get: operations["get_access_review_access_review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/escalated": {
         parameters: {
             query?: never;
@@ -1203,6 +1231,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccessReview
+         * @description §66's answer to "who can do what", as something a person can sign off.
+         */
+        AccessReview: {
+            /** Generated At */
+            generated_at: string;
+            /** Roles */
+            roles: components["schemas"]["RoleView"][];
+            /** Tenant Id */
+            tenant_id: string;
+            /** Users */
+            users: components["schemas"]["AccessReviewEntry"][];
+        };
+        /** AccessReviewEntry */
+        AccessReviewEntry: {
+            /** Email */
+            email: string;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Permissions */
+            permissions: string[];
+            /** Role */
+            role: string;
+            /** User Id */
+            user_id: string;
+        };
         /** ActionDetail */
         ActionDetail: {
             /** Action Type */
@@ -2320,6 +2375,13 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RoleView */
+        RoleView: {
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
+        };
         /**
          * RunVersions
          * @description MerchantOps §41 — everything needed to reproduce a run.
@@ -2665,6 +2727,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_access_review_access_review_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_escalated_actions_escalated_get: {
         parameters: {
             query?: {

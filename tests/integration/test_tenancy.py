@@ -255,5 +255,9 @@ def test_the_migration_and_the_live_ddl_agree():
 
     assert set(module.MERCHANT_SCOPED) == set(MERCHANT_SCOPED)
     assert module.VIA_PARENT == VIA_PARENT
-    assert set(module.ALL_TABLES) == set(covered_tables())
+    # A subset, not equality: this migration froze the tables that existed when
+    # it was written, and later migrations add their own policies for the tables
+    # they create (ADR-0047 added `roles` and `role_permissions`). What must
+    # hold is that everything this migration claimed is still claimed.
+    assert set(module.ALL_TABLES) <= set(covered_tables())
     assert policy_statements(), "the live DDL generator produced nothing"

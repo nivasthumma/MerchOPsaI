@@ -288,8 +288,10 @@ def test_a_queued_task_runs_with_authority_read_at_run_time(db, owner, monkeypat
     import app.worker as worker
 
     _queued(db, owner)
-    db.execute(text("UPDATE users SET permissions = :p WHERE id = :u"),
-               {"p": '[]', "u": owner.user_id})
+    db.execute(text("""
+        DELETE FROM role_permissions rp USING roles r, users u
+        WHERE rp.role_id = r.id AND r.id = u.role_id AND u.id = :u
+    """), {"u": owner.user_id})
     db.commit()
 
     captured = {}

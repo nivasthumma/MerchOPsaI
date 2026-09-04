@@ -361,6 +361,44 @@ def ready(response: Response):
     return {"ready": ok, "checks": checks}
 
 
+@app.get("/access-review", response_model=schemas.AccessReview,
+         response_model_exclude_unset=True)
+def get_access_review(principal: Principal = Depends(current_principal)):
+    """Who holds what, for this tenant — MerchantOps §66.
+
+    The artefact a SOC 2 access review asks for quarterly. It was previously
+    produced by reading `users.permissions` out of the database by hand, which is
+    why it was never produced.
+
+    Owner only, and scoped to the caller's tenant by the query and by row-level
+    security both. A list of who can move money is exactly the reconnaissance an
+    attacker with a read-only token would want.
+    """
+    from app import authz
+
+    if principal.role != "owner":
+        raise HTTPException(403, {"error": "Reviewing access requires the owner role.",
+                                  "code": "role_required"})
+    with session_scope() as s:
+        rows = authz.access_review(s, tenant_id=principal.tenant_id)
+        roles = s.execute(text("""
+            SELECT r.name,
+                   coalesce(array_agg(rp.permission_name ORDER BY rp.permission_name)
+                       FILTER (WHERE rp.permission_name IS NOT NULL), '{}'::text[])
+            FROM roles r
+            LEFT JOIN role_permissions rp ON rp.role_id = r.id
+            WHERE r.tenant_id = :t GROUP BY r.name ORDER BY r.name
+        """), {"t": principal.tenant_id}).all()
+        return {
+            "tenant_id": principal.tenant_id,
+            "generated_at": utcnow().isoformat(),
+            "roles": [{"name": n, "permissions": list(p)} for n, p in roles],
+            "users": [{"user_id": r["user_id"], "email": r["email"],
+                       "merchant_id": r["merchant_id"], "role": r["role"],
+                       "permissions": r["permissions"]} for r in rows],
+        }
+
+
 @app.get("/me", response_model=schemas.Me,
           response_model_exclude_unset=True)
 def whoami(principal: Principal = Depends(current_principal)):

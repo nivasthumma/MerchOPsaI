@@ -88,8 +88,14 @@ def test_routing_follows_the_permission_model_rather_than_a_second_list(db):
     """Take the permission away and the person stops being notified, without
     anything in app/notify changing. That is the whole reason routing derives
     from `required_permissions` instead of keeping its own list."""
-    db.execute(text("UPDATE users SET permissions = :p WHERE id = 'USR_A_OWNER'"),
-               {"p": '["read:metrics", "read:orders"]'})
+    # Revoked from the ROLE, which is where permissions live since ADR-0047.
+    # This is the shape a real revocation takes, and it applies to everybody
+    # holding that role rather than to one row somebody remembered to edit.
+    db.execute(text("""
+        DELETE FROM role_permissions rp USING roles r, users u
+        WHERE rp.role_id = r.id AND r.id = u.role_id
+          AND u.id = 'USR_A_OWNER' AND rp.permission_name = 'action:refund'
+    """))
     db.flush()
     who = who_can_perform(db, tenant_id="TEN_KETTLE", merchant_id="MERCH_A",
                           action_type="request_refund")

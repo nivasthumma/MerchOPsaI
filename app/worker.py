@@ -61,7 +61,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import text
 
-from app import tenancy
+from app import authz, tenancy
 from app.audit.trace import correlation_scope
 from app.config import get_settings
 from app.db import session_scope
@@ -153,10 +153,7 @@ def job_tasks() -> dict:
             # authority is used, exactly as `current_principal` does per
             # request -- a task queued an hour ago must not run with permissions
             # its submitter has since lost.
-            row = s.execute(text("""
-                SELECT id, tenant_id, merchant_id, role, permissions
-                FROM users WHERE id = :u
-            """), {"u": task.user_id}).mappings().first()
+            row = authz.resolve(s, task.user_id)
             if row is None:
                 task.status = TaskStatus.FAILED
                 task.failure_code = "PRINCIPAL_GONE"
@@ -166,8 +163,8 @@ def job_tasks() -> dict:
                 failed += 1
                 continue
 
-            principal = Principal(row["tenant_id"], row["id"], row["merchant_id"],
-                                  row["role"], list(row["permissions"]))
+            principal = Principal(row.tenant_id, row.user_id, row.merchant_id,
+                                  row.role, list(row.permissions))
             try:
                 # Bound for the run, the same way an HTTP request is, so the
                 # database filters this task's queries to its own merchant

@@ -63,15 +63,15 @@ Not a defect today. A modelling gap that gets more expensive the longer it is le
 
 | table | status |
 |---|---|
-| `roles`, `permissions` | permissions are a JSON list on `users`. Works; not a table, so not queryable or auditable as a set. |
+| `roles`, `permissions` | **CLOSED** (ADR-0047). Three tables — a catalogue derived from the tool registry, tenant-owned roles, and the join. `users.role_id` replaces the JSON list. `GET /access-review` is the artefact SOC 2 asks for quarterly. |
 | `agent_messages` | **CLOSED.** One row per message as it is appended, including the final answer, with untrusted content flagged and secrets redacted. `GET /tasks/{id}/messages`. |
 | `policies`, `policy_decisions` | policy is code, decisions live in `audit_logs`. Deliberate — per-merchant configurable policy is explicitly future work. |
 | `provider_mappings` | columns on `payments`. Deliberate, documented in ADR-0002. |
 | `evaluation_scenarios`, `evaluation_runs` | a YAML file and a run id on `evaluation_results`. Deliberate. |
 
-The remaining six are deliberate and documented. `roles`/`permissions` as tables is the only
-one that would change behaviour rather than shape, and per-merchant configurable policy is
-explicitly future work.
+`roles`/`permissions` was the only one of these that would have changed behaviour rather
+than shape, and it is now closed. The remaining five are deliberate and documented, and
+per-merchant configurable policy is still explicitly future work.
 
 ### 3. ~~Most of §59's operational metrics are not produced~~ — CLOSED
 

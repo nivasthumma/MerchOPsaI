@@ -43,10 +43,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, Request
-from sqlalchemy import text
 from starlette.concurrency import run_in_threadpool
 
-from app import shared_state, tenancy
+from app import authz, shared_state, tenancy
 from app.agent.runtime import Principal
 from app.db import session_scope
 from app.observability.logs import get_logger
@@ -293,16 +292,16 @@ def _authenticate(request: Request, authorization: str | None) -> Principal:
                             headers={"WWW-Authenticate": "Bearer"})
 
     with session_scope() as s:
-        row = s.execute(text("""
-            SELECT id, tenant_id, merchant_id, role, permissions FROM users WHERE id = :u
-        """), {"u": user_id}).mappings().first()
+        row = authz.resolve(s, user_id)
     if row is None:
         # The token is authentic but the subject no longer exists.
         raise HTTPException(401, "Unknown principal.")
 
-    check_rate_limit(row["id"], request.url.path, request.method)
+    check_rate_limit(row.user_id, request.url.path, request.method)
 
     # Permissions are read from the database on every request, never from the
-    # token. A token therefore cannot carry stale or elevated authority.
-    return Principal(row["tenant_id"], row["id"], row["merchant_id"],
-                     row["role"], list(row["permissions"]))
+    # token, and now through the role rather than a JSON column. A token cannot
+    # carry stale or elevated authority, and revoking a permission from a role
+    # takes effect on that role's next request rather than on its next login.
+    return Principal(row.tenant_id, row.user_id, row.merchant_id,
+                     row.role, list(row.permissions))

@@ -100,9 +100,11 @@ def _seeded_schema():
     seeder.reset_schema()
     data = seeder.build()
     with session_scope() as s:
-        for key in SEEDED_TABLES:
-            s.add_all(data[key])
-            s.flush()
+        # `seeder.insert_all`, not a loop of its own. This fixture used to
+        # duplicate the seeder's insert order, and the day roles became rows the
+        # copy fell behind: it inserted users with no role and 443 tests errored
+        # on a NOT NULL constraint that had never existed before.
+        seeder.insert_all(s, data, SEEDED_TABLES)
 
 
 @pytest.fixture(scope="function")

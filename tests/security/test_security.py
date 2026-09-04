@@ -234,12 +234,11 @@ def test_a_principal_cannot_be_built_without_a_tenant():
 def test_the_tenant_comes_from_the_database_not_the_request(db):
     """§54: tenant is resolved server-side before the agent runs. A caller
     cannot assert one."""
+    from app import authz
     from app.api import security as sec
 
-    row = db.execute(text(
-        "SELECT id, tenant_id, merchant_id, role, permissions FROM users "
-        "WHERE id = 'USR_A_OWNER'")).mappings().one()
-    assert row["tenant_id"] == "TEN_KETTLE"
+    row = authz.resolve(db, "USR_A_OWNER")
+    assert row.tenant_id == "TEN_KETTLE"
     # The token carries identity only — the same rule permissions already follow.
     token = sec.issue_token("USR_A_OWNER")
     assert "TEN_KETTLE" not in token

@@ -164,11 +164,22 @@ VIA_PARENT: dict[str, tuple[str, str]] = {
     "incident_evidence": ("incidents", "incident_id"),
 }
 
-#: Deliberately uncovered. `evaluation_results` is a scenario run and
-#: `worker_heartbeats` is a process saying it is alive: platform data with no
-#: merchant to scope it to. Inventing one would be inventing a relationship that
+#: Tables owned by a tenant rather than a merchant. A role belongs to the tenant
+#: that defined it and is used by every merchant under it.
+TENANT_SCOPED: tuple[str, ...] = ("roles",)
+
+#: Tenant-owned children, filtered through their tenant-owned parent.
+TENANT_VIA_PARENT: dict[str, tuple[str, str]] = {
+    "role_permissions": ("roles", "role_id"),
+}
+
+#: Deliberately uncovered. `evaluation_results` is a scenario run,
+#: `worker_heartbeats` is a process saying it is alive, and `permissions` is a
+#: catalogue of names every tenant draws from: platform data with no merchant or
+#: tenant to scope it to. Inventing one would be inventing a relationship that
 #: does not exist. Listed rather than omitted so the gap is a decision.
-UNSCOPED_TABLES: tuple[str, ...] = ("evaluation_results", "worker_heartbeats")
+UNSCOPED_TABLES: tuple[str, ...] = (
+    "evaluation_results", "worker_heartbeats", "permissions")
 
 _UNRESTRICTED = "coalesce(current_setting('app.merchant_id', true), '') = ''"
 _TENANT_UNRESTRICTED = "coalesce(current_setting('app.tenant_id', true), '') = ''"
@@ -212,6 +223,12 @@ def policy_statements() -> list[str]:
     # By TENANT, not merchant: a tenant owns one or more merchants (§11), and a
     # principal scoped to one of them must still be able to read the merchant
     # row it is attached to.
+    for table in TENANT_SCOPED:
+        policy(table, f"{_TENANT_UNRESTRICTED} OR tenant_id = "
+                      f"current_setting('app.tenant_id', true)")
+    for table, (parent, fk) in TENANT_VIA_PARENT.items():
+        policy(table, f"{_TENANT_UNRESTRICTED} OR EXISTS (SELECT 1 FROM {parent} p "
+                      f"WHERE p.id = {table}.{fk})")
     policy("merchants", f"{_TENANT_UNRESTRICTED} OR tenant_id = "
                         f"current_setting('app.tenant_id', true)")
     policy("tenants", f"{_TENANT_UNRESTRICTED} OR id = "
@@ -220,4 +237,5 @@ def policy_statements() -> list[str]:
 
 
 def covered_tables() -> tuple[str, ...]:
-    return (*MERCHANT_SCOPED, *VIA_PARENT, "merchants", "tenants")
+    return (*MERCHANT_SCOPED, *VIA_PARENT, *TENANT_SCOPED, *TENANT_VIA_PARENT,
+            "merchants", "tenants")

@@ -960,3 +960,27 @@ class Readiness(Contract):
     #: Shaped as a dict rather than modelled per check so a new check does not
     #: need a schema change and a frontend regeneration to be reportable.
     checks: dict
+
+
+# ------------------------------------------------------ access review
+class RoleView(Contract):
+    name: str
+    permissions: list[str]
+
+
+class AccessReviewEntry(Contract):
+    user_id: str
+    email: str
+    merchant_id: str
+    role: str
+    permissions: list[str]
+
+
+class AccessReview(Contract):
+    """§66's answer to "who can do what", as something a person can sign off."""
+    tenant_id: str
+    #: Computed per read. An access review quoted without an as-of is one
+    #: somebody attests to a week after it stopped being true.
+    generated_at: str
+    roles: list[RoleView]
+    users: list[AccessReviewEntry]

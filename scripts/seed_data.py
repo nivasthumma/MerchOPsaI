@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import text
 
+from app.authz import ensure_default_roles
 from app.db import get_engine, session_scope
 from app.models import (
     Base,
@@ -128,6 +129,35 @@ def reset_schema() -> None:
         harden(s)
 
 
+#: The order rows must land in: a foreign key's parent before its child.
+INSERT_ORDER = ("tenants", "merchants", "users", "customers", "products",
+                "orders", "payments", "refunds")
+
+
+def insert_all(session, data: dict, keys: tuple[str, ...] = INSERT_ORDER) -> None:
+    """Persist a built dataset.
+
+    Shared by `main` and by the test suite's session fixture. It used to be a
+    loop written out in both places, and the day roles became rows the two
+    disagreed: the suite inserted users with no role and 443 tests errored on a
+    NOT NULL. One loop, so there is one thing to change.
+    """
+    for key in keys:
+        if key == "users":
+            # Roles are rows and need their tenant to exist first (ADR-0047).
+            # Done here rather than in `build`, which constructs objects and
+            # holds no session.
+            by_tenant = {
+                tenant: ensure_default_roles(session, tenant)
+                for tenant in {t.id for t in data["tenants"]}
+            }
+            for user in data["users"]:
+                tenant, role_name = data["user_roles"][user.id]
+                user.role_id = by_tenant[tenant][role_name]
+        session.add_all(data[key])
+        session.flush()
+
+
 def build() -> dict:
     rng = random.Random(SEED)
     stats: dict[str, int] = {}
@@ -147,27 +177,38 @@ def build() -> dict:
                  policy_config={"refund_limit_minor": 200000, "auto_approve_below_minor": 0}),
     ]
 
+    # CONTRACT §20 — permissions live in the backend, never in the model. They
+    # are rows now rather than a JSON list (ADR-0047): `ensure_default_roles`
+    # writes the catalogue and the three standard roles for each tenant, and a
+    # user points at one of them.
+    #
+    # `action:recover` stays separate from `action:refund` on purpose: sending a
+    # customer a payment link or a message is a different authority from moving
+    # money back to them, and §55 says permissions are per action.
+    # Which role each user gets, by name. Resolved to a role id in `main`, after
+    # the tenants exist -- `ensure_default_roles` writes rows, and `build` has no
+    # session because it only constructs objects.
+    user_roles = {
+        "USR_A_OWNER": (TENANT_A, "owner"),
+        "USR_A_ANALYST": (TENANT_A, "analyst"),
+        "USR_A_APPROVER": (TENANT_A, "approver"),
+        "USR_B_OWNER": (TENANT_B, "owner"),
+    }
+
     users = [
-        # CONTRACT §20 — permissions live in the backend, never in the model.
-        # `action:recover` is separate from `action:refund` on purpose: sending a
-        # customer a payment link or a message is a different authority from
-        # moving money back to them, and §55 says permissions are per action.
-        User(id="USR_A_OWNER", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="owner@kettle.example",
-             role="owner", permissions=["read:metrics", "read:orders",
-                                        "action:refund", "action:recover"]),
-        User(id="USR_A_ANALYST", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="analyst@kettle.example",
-             role="analyst", permissions=["read:metrics", "read:orders"]),
+        User(id="USR_A_OWNER", tenant_id=TENANT_A, merchant_id=MERCHANT_A,
+             email="owner@kettle.example"),
+        User(id="USR_A_ANALYST", tenant_id=TENANT_A, merchant_id=MERCHANT_A,
+             email="analyst@kettle.example"),
         # MerchantOps §25 REQUIRE_DUAL_APPROVAL needs two people who can each
         # approve. With one approver per merchant, dual approval could only ever
         # be demonstrated by the same person signing twice -- which is the exact
         # thing the control forbids. Added to the literal user list, so it
         # consumes no RNG and the rest of the dataset is unchanged.
-        User(id="USR_A_APPROVER", tenant_id=TENANT_A, merchant_id=MERCHANT_A, email="approver@kettle.example",
-             role="approver", permissions=["read:metrics", "read:orders",
-                                           "action:refund", "action:recover"]),
-        User(id="USR_B_OWNER", tenant_id=TENANT_B, merchant_id=MERCHANT_B, email="owner@northwind.example",
-             role="owner", permissions=["read:metrics", "read:orders",
-                                        "action:refund", "action:recover"]),
+        User(id="USR_A_APPROVER", tenant_id=TENANT_A, merchant_id=MERCHANT_A,
+             email="approver@kettle.example"),
+        User(id="USR_B_OWNER", tenant_id=TENANT_B, merchant_id=MERCHANT_B,
+             email="owner@northwind.example"),
     ]
 
     customers: list[Customer] = []
@@ -536,7 +577,8 @@ def build() -> dict:
 
     return {
         "tenants": tenants,
-        "merchants": merchants, "users": users, "customers": customers,
+        "merchants": merchants, "users": users, "user_roles": user_roles,
+        "customers": customers,
         "products": products, "orders": orders, "payments": payments,
         "refunds": refunds, "stats": stats,
     }
@@ -579,10 +621,7 @@ def main() -> None:
     reset_schema()
     data = build()
     with session_scope() as s:
-        # Flush per group: FK parents must land before their children.
-        for key in ("tenants", "merchants", "users", "customers", "products", "orders", "payments", "refunds"):
-            s.add_all(data[key])
-            s.flush()
+        insert_all(s, data)
     st = data["stats"]
     print("\nSeeded:")
     for k in ("tenants", "merchants", "users", "customers", "products", "orders", "payments",

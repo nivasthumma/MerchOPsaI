@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import text
-
 from app.models import NotificationKind
 from app.policy.engine import required_permissions
 
@@ -31,14 +29,16 @@ class Recipient:
     role: str
 
 
-def _users(session, *, tenant_id: str, merchant_id: str) -> list[dict]:
-    rows = session.execute(text("""
-        SELECT id, email, role, permissions
-        FROM users
-        WHERE tenant_id = :t AND merchant_id = :m
-        ORDER BY id
-    """), {"t": tenant_id, "m": merchant_id}).mappings().all()
-    return [dict(r) for r in rows]
+def _users(session, *, tenant_id: str, merchant_id: str):
+    """Everyone attached to this merchant, with what their role grants.
+
+    Through `app.authz` rather than a query of its own: permissions live in
+    tables now, and a second query that joins them its own way is a second
+    answer to "what may this user do".
+    """
+    from app import authz
+
+    return authz.holders(session, tenant_id=tenant_id, merchant_id=merchant_id)
 
 
 def who_can_perform(session, *, tenant_id: str, merchant_id: str,
@@ -54,12 +54,10 @@ def who_can_perform(session, *, tenant_id: str, merchant_id: str,
     required = required_permissions(action_type)
     if not required:
         return []
-    out = []
-    for u in _users(session, tenant_id=tenant_id, merchant_id=merchant_id):
-        held = set(u["permissions"] or [])
-        if held.issuperset(required):
-            out.append(Recipient(u["id"], u["email"], u["role"]))
-    return out
+    from app import authz
+
+    return [Recipient(p.user_id, p.email, p.role) for p in authz.holders(
+        session, tenant_id=tenant_id, merchant_id=merchant_id, required=required)]
 
 
 def who_watches(session, *, tenant_id: str, merchant_id: str) -> list[Recipient]:
@@ -70,8 +68,8 @@ def who_watches(session, *, tenant_id: str, merchant_id: str) -> list[Recipient]
     "should hear about this", and inventing one would be inventing a
     requirement the policy engine does not have.
     """
-    return [Recipient(u["id"], u["email"], u["role"])
-            for u in _users(session, tenant_id=tenant_id, merchant_id=merchant_id)]
+    return [Recipient(p.user_id, p.email, p.role)
+            for p in _users(session, tenant_id=tenant_id, merchant_id=merchant_id)]
 
 
 def recipients_for(session, kind: NotificationKind, *, tenant_id: str,

@@ -1,6 +1,79 @@
 {
   "components": {
     "schemas": {
+      "AccessReview": {
+        "additionalProperties": false,
+        "description": "\u00a766's answer to \"who can do what\", as something a person can sign off.",
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleView"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AccessReviewEntry"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "generated_at",
+          "roles",
+          "users"
+        ],
+        "title": "AccessReview",
+        "type": "object"
+      },
+      "AccessReviewEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "merchant_id",
+          "role",
+          "permissions"
+        ],
+        "title": "AccessReviewEntry",
+        "type": "object"
+      },
       "ActionDetail": {
         "additionalProperties": false,
         "properties": {
@@ -3249,6 +3322,28 @@
         "title": "ReverifyResult",
         "type": "object"
       },
+      "RoleView": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "title": "RoleView",
+        "type": "object"
+      },
       "RunVersions": {
         "additionalProperties": false,
         "description": "MerchantOps \u00a741 \u2014 everything needed to reproduce a run.",
@@ -4354,6 +4449,53 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/access-review": {
+      "get": {
+        "description": "Who holds what, for this tenant \u2014 MerchantOps \u00a766.\n\nThe artefact a SOC 2 access review asks for quarterly. It was previously\nproduced by reading `users.permissions` out of the database by hand, which is\nwhy it was never produced.\n\nOwner only, and scoped to the caller's tenant by the query and by row-level\nsecurity both. A list of who can move money is exactly the reconnaissance an\nattacker with a read-only token would want.",
+        "operationId": "get_access_review_access_review_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Access Review"
+      }
+    },
     "/actions/escalated": {
       "get": {
         "description": "Actions automatic reconciliation could not settle \u2014 the operator queue.",

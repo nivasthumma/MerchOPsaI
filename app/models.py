@@ -90,6 +90,10 @@ class VerificationState(str, enum.Enum):
 
 class TaskStatus(str, enum.Enum):
     PENDING = "PENDING"
+    #: Accepted and not yet started. Only reachable when a task is submitted
+    #: asynchronously (ADR-0045); an inline run goes straight to RUNNING, which
+    #: is why this is not simply the default.
+    QUEUED = "QUEUED"
     RUNNING = "RUNNING"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     COMPLETED = "COMPLETED"
@@ -697,8 +701,15 @@ class AgentTask(Base):
     # MerchantOps §41 — everything needed to reproduce and investigate a run.
     agent_version: Mapped[str] = mapped_column(String(64))
     model_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    model_version: Mapped[str] = mapped_column(String(64))
-    prompt_version: Mapped[str] = mapped_column(String(64))
+    # Nullable since ADR-0045, and null exactly while a task is QUEUED.
+    #
+    # §41 records what actually ran. A queued task has not run, and the provider
+    # can change between the moment it was accepted and the moment it starts --
+    # `POST /config/llm-provider` exists to do precisely that. Writing a model
+    # version at enqueue time would record a prediction and leave it looking
+    # like a measurement, which is the one thing §41 exists to prevent.
+    model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tool_registry_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     workflow_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -721,7 +732,69 @@ class AgentTask(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # --- asynchronous execution (ADR-0045) ---
+    #: Set when the task was accepted for later execution. Null for an inline
+    #: run, which is how the two are told apart after the fact.
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    #: When a worker actually began. `queued_at` to `started_at` is queue
+    #: latency, which is the number that says whether there are enough workers,
+    #: and it is not derivable from anything else.
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    #: Which worker holds it, and since when. The pair is the lease: a task
+    #: RUNNING with a `claimed_at` older than the lease belongs to a worker that
+    #: is not coming back.
+    claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    #: How many times a worker has picked this up. Never more than one in
+    #: practice -- an abandoned run is failed rather than retried, because it
+    #: may already have moved money -- but recorded, because "this was claimed
+    #: twice" is a fact worth being able to see.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
     tool_calls: Mapped[list[ToolCall]] = relationship(back_populates="task", order_by="ToolCall.seq")
+
+    __table_args__ = (
+        # The claim query orders queued tasks by age and takes one, every couple
+        # of seconds, forever. Without this it is a sequential scan of every task
+        # ever run. Partial, because only QUEUED rows are ever selected this way
+        # and the index should not carry the ones that are not.
+        #
+        # Declared here and not only in the migration: the drift guard in
+        # tests/integration/test_migrations.py compares the schema at head
+        # against `Base.metadata`, and an index that exists in one and not the
+        # other is exactly the disagreement it exists to catch. It caught these.
+        Index("ix_agent_tasks_queued", "queued_at", "id",
+              postgresql_where=text("status = 'QUEUED'")),
+        # Abandoned-claim recovery scans RUNNING rows by lease age.
+        Index("ix_agent_tasks_claimed", "claimed_at",
+              postgresql_where=text("status = 'RUNNING'")),
+    )
+
+
+class WorkerHeartbeat(Base):
+    """A worker saying it is alive — the dead-man's switch the README asked for.
+
+    Everything cadence-driven runs in `app/worker.py`. If that process is not
+    running, nothing sweeps, nothing drains, and no queued task ever starts --
+    and until this table existed, nothing anywhere noticed. The absence of work
+    looks exactly like there being no work to do.
+
+    One row per worker, upserted each pass. `/health` reads the newest and
+    reports whether a worker has been seen recently, which is also what lets
+    `POST /tasks` refuse an asynchronous submission that would otherwise queue
+    into a void.
+    """
+    __tablename__ = "worker_heartbeats"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True)
+    #: What this worker believes it is responsible for, so a fleet running two
+    #: different builds is visible rather than puzzling.
+    jobs: Mapped[list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AgentMessage(Base):

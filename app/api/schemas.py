@@ -628,6 +628,20 @@ class AgentBudget(Contract):
     max_llm_turns: int
 
 
+class QueueView(Contract):
+    """The task queue, and whether anything is draining it."""
+    queued: int
+    running: int
+    #: How long the oldest queued task has waited. Depth alone cannot say a
+    #: queue is stuck -- a deep queue that is moving is healthy, and one task
+    #: that has waited an hour is not.
+    oldest_queued_seconds: int | None = None
+    worker_seen_seconds_ago: int | None = None
+    #: False means nothing is running the sweeps or the queue. Until this
+    #: existed the absence of work looked exactly like there being no work.
+    worker_is_live: bool
+
+
 class SharedState(Contract):
     """Whether state that must agree across replicas actually does."""
     #: `shared` | `degraded` | `process`. `degraded` means Redis is configured
@@ -656,6 +670,9 @@ class Health(Contract):
     #: serving three times its configured rate limit, and nothing else in this
     #: response would say so.
     shared_state: SharedState
+    #: How tasks run here, and whether a worker is alive to run the queued ones.
+    agent_execution_mode: str
+    queue: QueueView
 
 
 class Me(Contract):

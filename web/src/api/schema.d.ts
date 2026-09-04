@@ -918,7 +918,30 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Task */
+        /**
+         * Create Task
+         * @description Start a task, inline or queued.
+         *
+         *     `inline` runs the loop inside this request and returns the finished task,
+         *     which is what this route has always done. It is the only thing possible
+         *     where there is no worker -- Vercel, or a bare `make api` -- and it is what
+         *     the evaluation suite exercises (through `AgentRuntime` directly, so none of
+         *     this affects the scenario numbers).
+         *
+         *     `async` writes the task, returns **202** with its id, and lets a worker run
+         *     it. That is what removes the request timeout from the design: an
+         *     investigation can take as long as its budget allows without a proxy giving
+         *     up, and the API process is free while it does.
+         *
+         *     The mode comes from `AGENT_EXECUTION_MODE` and `?mode=` overrides it. Either
+         *     way the response is a `TaskView`; a queued one is simply `QUEUED` with no
+         *     answer yet, and `GET /tasks/{id}` is the poll.
+         *
+         *     **An asynchronous submission is refused when no worker has been seen
+         *     recently.** Accepting it would return 202 for a task that will never start,
+         *     and a queue nobody is draining looks exactly like a queue with nothing in
+         *     it. 503 says which of those it is.
+         */
         post: operations["create_task_tasks_post"];
         delete?: never;
         options?: never;
@@ -1656,6 +1679,8 @@ export interface components {
         /** Health */
         Health: {
             agent_budget: components["schemas"]["AgentBudget"];
+            /** Agent Execution Mode */
+            agent_execution_mode: string;
             /** Auth */
             auth: string;
             /** Auth Secret Is Development Default */
@@ -1672,6 +1697,7 @@ export interface components {
             llm_provider_source: string;
             /** Payment Adapter */
             payment_adapter: string;
+            queue: components["schemas"]["QueueView"];
             /** Razorpay Execution Is Real */
             razorpay_execution_is_real: boolean;
             shared_state: components["schemas"]["SharedState"];
@@ -2187,6 +2213,22 @@ export interface components {
             provider: string;
         };
         /**
+         * QueueView
+         * @description The task queue, and whether anything is draining it.
+         */
+        QueueView: {
+            /** Oldest Queued Seconds */
+            oldest_queued_seconds?: number | null;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Worker Is Live */
+            worker_is_live: boolean;
+            /** Worker Seen Seconds Ago */
+            worker_seen_seconds_ago?: number | null;
+        };
+        /**
          * Readiness
          * @description `/ready` — whether this instance can do work, not whether it is alive.
          */
@@ -2454,7 +2496,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "PENDING" | "RUNNING" | "AWAITING_APPROVAL" | "COMPLETED" | "DENIED" | "REJECTED" | "FAILED" | "ABORTED_BUDGET";
+            status: "PENDING" | "QUEUED" | "RUNNING" | "AWAITING_APPROVAL" | "COMPLETED" | "DENIED" | "REJECTED" | "FAILED" | "ABORTED_BUDGET";
             /** Tenant Id */
             tenant_id: string | null;
             /** Tool Calls */
@@ -3755,7 +3797,9 @@ export interface operations {
     };
     create_task_tasks_post: {
         parameters: {
-            query?: never;
+            query?: {
+                mode?: string | null;
+            };
             header?: {
                 authorization?: string | null;
             };

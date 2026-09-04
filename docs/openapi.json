@@ -1391,6 +1391,10 @@
           "agent_budget": {
             "$ref": "#/components/schemas/AgentBudget"
           },
+          "agent_execution_mode": {
+            "title": "Agent Execution Mode",
+            "type": "string"
+          },
           "auth": {
             "title": "Auth",
             "type": "string"
@@ -1430,6 +1434,9 @@
             "title": "Payment Adapter",
             "type": "string"
           },
+          "queue": {
+            "$ref": "#/components/schemas/QueueView"
+          },
           "razorpay_execution_is_real": {
             "title": "Razorpay Execution Is Real",
             "type": "boolean"
@@ -1458,7 +1465,9 @@
           "auth_secret_is_development_default",
           "webhook_signature_verification",
           "agent_budget",
-          "shared_state"
+          "shared_state",
+          "agent_execution_mode",
+          "queue"
         ],
         "title": "Health",
         "type": "object"
@@ -2909,6 +2918,53 @@
         "title": "ProviderRequest",
         "type": "object"
       },
+      "QueueView": {
+        "additionalProperties": false,
+        "description": "The task queue, and whether anything is draining it.",
+        "properties": {
+          "oldest_queued_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Queued Seconds"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "worker_is_live": {
+            "title": "Worker Is Live",
+            "type": "boolean"
+          },
+          "worker_seen_seconds_ago": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Seen Seconds Ago"
+          }
+        },
+        "required": [
+          "queued",
+          "running",
+          "worker_is_live"
+        ],
+        "title": "QueueView",
+        "type": "object"
+      },
       "Readiness": {
         "additionalProperties": false,
         "description": "`/ready` \u2014 whether this instance can do work, not whether it is alive.",
@@ -3764,6 +3820,7 @@
           "status": {
             "enum": [
               "PENDING",
+              "QUEUED",
               "RUNNING",
               "AWAITING_APPROVAL",
               "COMPLETED",
@@ -6141,8 +6198,25 @@
     },
     "/tasks": {
       "post": {
+        "description": "Start a task, inline or queued.\n\n`inline` runs the loop inside this request and returns the finished task,\nwhich is what this route has always done. It is the only thing possible\nwhere there is no worker -- Vercel, or a bare `make api` -- and it is what\nthe evaluation suite exercises (through `AgentRuntime` directly, so none of\nthis affects the scenario numbers).\n\n`async` writes the task, returns **202** with its id, and lets a worker run\nit. That is what removes the request timeout from the design: an\ninvestigation can take as long as its budget allows without a proxy giving\nup, and the API process is free while it does.\n\nThe mode comes from `AGENT_EXECUTION_MODE` and `?mode=` overrides it. Either\nway the response is a `TaskView`; a queued one is simply `QUEUED` with no\nanswer yet, and `GET /tasks/{id}` is the poll.\n\n**An asynchronous submission is refused when no worker has been seen\nrecently.** Accepting it would return 202 for a task that will never start,\nand a queue nobody is draining looks exactly like a queue with nothing in\nit. 503 says which of those it is.",
         "operationId": "create_task_tasks_post",
         "parameters": [
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mode"
+            }
+          },
           {
             "in": "header",
             "name": "authorization",

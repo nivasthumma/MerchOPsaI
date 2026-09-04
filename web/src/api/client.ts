@@ -222,6 +222,34 @@ export const api = {
 
   getTask: (id: string) => request<Task>(`/tasks/${encodeURIComponent(id)}`),
 
+  /** Poll a task until it stops moving.
+   *
+   *  The server may run a task inline and hand it back finished, or accept it
+   *  with 202 and let a worker run it (ADR-0045). The client cannot know which,
+   *  and should not have to: this resolves either way. A task that comes back
+   *  already terminal never issues a request.
+   *
+   *  Terminal is "not QUEUED and not RUNNING" rather than a list of finished
+   *  states, so a status added later stops the poll instead of hanging on it.
+   *  AWAITING_APPROVAL is terminal here on purpose -- it is waiting for a
+   *  person, which can be a long time, and the page has something to show. */
+  awaitTask: async (task: Task, opts?: { timeoutMs?: number; intervalMs?: number;
+                                         signal?: AbortSignal }): Promise<Task> => {
+    const interval = opts?.intervalMs ?? 800;
+    // Bounded, because an unbounded poll against a queue nobody is draining is
+    // a spinner that never stops and never says why. The caller surfaces the
+    // task in whatever state it reached.
+    const deadline = Date.now() + (opts?.timeoutMs ?? 120_000);
+    let current = task;
+    while (current.status === "QUEUED" || current.status === "RUNNING") {
+      if (opts?.signal?.aborted || Date.now() > deadline) return current;
+      await new Promise((r) => setTimeout(r, interval));
+      if (opts?.signal?.aborted) return current;
+      current = await request<Task>(`/tasks/${encodeURIComponent(current.id)}`);
+    }
+    return current;
+  },
+
   /** CONTRACT §21: the evidence the human reviews before approving. */
   getEvidence: (id: string) =>
     request<TaskEvidence>(`/tasks/${encodeURIComponent(id)}/evidence`),

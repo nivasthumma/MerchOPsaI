@@ -286,31 +286,54 @@ class AgentRuntime:
     def _run(self, request: str, *, scenario_id: str | None = None,
              is_replay: bool = False, replayed_from: str | None = None,
              incident_id: str | None = None,
-             correlation_id: str | None = None) -> RunOutcome:
+             correlation_id: str | None = None,
+             existing_task: AgentTask | None = None) -> RunOutcome:
         s = self.settings
         started = time.monotonic()
 
-        task = AgentTask(
-            id=f"TASK_{uuid.uuid4().hex[:10].upper()}",
-            merchant_id=self.principal.merchant_id, user_id=self.principal.user_id,
-            request=request, status=TaskStatus.RUNNING,
-            agent_version=s.agent_version, model_version=self.provider.model,
+        # `existing_task` is a row a worker has already claimed (ADR-0045). The
+        # §41 provenance is written HERE either way, not at enqueue: it records
+        # what actually ran, and the provider can change between a task being
+        # accepted and it starting -- `POST /config/llm-provider` exists to do
+        # exactly that. A model version written at enqueue would be a prediction
+        # stored where a measurement belongs.
+        provenance = dict(
+            status=TaskStatus.RUNNING,
+            agent_version=s.agent_version,
+            model_version=self.provider.model,
             model_provider=self.provider.name,
             prompt_version=PROMPT_VERSION,
             # §41. Derived, so it cannot drift from what actually ran.
             tool_registry_version=registry_version(),
             policy_version=POLICY_VERSION,
             workflow_version=s.workflow_version,
-            scenario_id=scenario_id,
-            is_replay=is_replay, replayed_from=replayed_from,
-            # Set at creation, not afterwards. `app.audit.trace.record` reads
-            # incident_id off the task as each event is written, and audit rows
-            # are immutable by database trigger -- a task bound to its incident
-            # after the run leaves every event of that run off the incident's
-            # trace, permanently (MerchantOps §58).
-            incident_id=incident_id,
         )
-        self.session.add(task)
+
+        if existing_task is not None:
+            task = existing_task
+            for field, value in provenance.items():
+                setattr(task, field, value)
+            # Not re-derived from the argument: the row is the authority on what
+            # was asked, and a worker passing a different string would silently
+            # run something other than what was accepted.
+            request = task.request
+        else:
+            task = AgentTask(
+                id=f"TASK_{uuid.uuid4().hex[:10].upper()}",
+                merchant_id=self.principal.merchant_id,
+                user_id=self.principal.user_id,
+                request=request,
+                scenario_id=scenario_id,
+                is_replay=is_replay, replayed_from=replayed_from,
+                # Set at creation, not afterwards. `app.audit.trace.record` reads
+                # incident_id off the task as each event is written, and audit rows
+                # are immutable by database trigger -- a task bound to its incident
+                # after the run leaves every event of that run off the incident's
+                # trace, permanently (MerchantOps §58).
+                incident_id=incident_id,
+                **provenance,
+            )
+            self.session.add(task)
         self.session.flush()
         # Visible to `run`'s except clause from here on. Before this line there
         # is no task to attach a failure to; after it, every failure has one.

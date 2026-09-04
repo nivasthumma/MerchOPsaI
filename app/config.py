@@ -231,6 +231,27 @@ class Settings(BaseSettings):
     # detect: incidents appear at this cadence and no faster. The README states
     # that trade-off; this is the number behind it.
     worker_detect_interval_seconds: int = 300
+    # tasks: how long a queued task waits before a worker picks it up. This is
+    # the latency a person feels after pressing the button, so it is the
+    # tightest of these -- and claiming is one indexed UPDATE, so a pass that
+    # finds nothing is nearly free.
+    worker_tasks_interval_seconds: int = 2
+    # How many tasks one pass will run before returning to the other jobs. A
+    # task is expensive; without a bound a busy queue would starve the sweeps.
+    worker_max_tasks_per_pass: int = 5
+    # Must stay well under queue.WORKER_LIVENESS_SECONDS (90), or a live worker
+    # reads as dead between beats and `POST /tasks` starts refusing.
+    worker_heartbeat_interval_seconds: int = 15
+
+    # --- Agent execution (ADR-0045) ------------------------------------
+    # `inline` runs a task inside the request that created it, which is the
+    # only thing possible where there is no worker -- Vercel, or a bare
+    # `make api`. `async` accepts it and returns 202 with an id to poll.
+    #
+    # Default `inline` so nothing that works today stops working. The compose
+    # stack sets `async`, because it has a worker. `POST /tasks?mode=` overrides
+    # per request either way.
+    agent_execution_mode: str = "inline"
 
     agent_version: str = "merchantops-agent/0.1.0"
     prompt_version: str = "investigator-v1"

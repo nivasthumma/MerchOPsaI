@@ -8,6 +8,10 @@
  *  which is the reason that check exists. */
 export type TaskStatus =
   | "PENDING"
+  // Accepted and not yet started, when the server queued it for a worker rather
+  // than running it inline (ADR-0045). Added here after `contract.ts` caught its
+  // absence — the same check that caught PENDING and DENIED.
+  | "QUEUED"
   | "RUNNING"
   | "AWAITING_APPROVAL"
   | "COMPLETED"

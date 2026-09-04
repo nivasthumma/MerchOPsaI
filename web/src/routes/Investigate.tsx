@@ -58,7 +58,13 @@ export default function Investigate() {
     setDecisions([]);
     setEvidence([]);
     try {
-      const t = await api.createTask(request.trim());
+      // The server decides whether it runs the task inline or queues it for a
+      // worker; either way this resolves when the task has stopped moving.
+      // Showing the QUEUED task first means the page reacts immediately rather
+      // than sitting blank for however long the queue is.
+      const accepted = await api.createTask(request.trim());
+      setTask(accepted);
+      const t = await api.awaitTask(accepted);
       setTask(t);
       remember(t);
       // What policy decided is the most important thing that happened, and the

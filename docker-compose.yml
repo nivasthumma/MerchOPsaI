@@ -60,6 +60,11 @@ x-app: &app
     # greppable, with no SMTP to configure. Set NOTIFY_CHANNELS=log,email and
     # the SMTP_* variables to send real mail. Naming a channel that is not
     # configured fails at startup rather than falling back silently.
+    # The stack has a worker, so tasks are accepted and run out of band --
+    # `POST /tasks` returns 202 with an id to poll. Set `inline` to get the old
+    # behaviour, which is what a deployment with no worker must use.
+    AGENT_EXECUTION_MODE: ${AGENT_EXECUTION_MODE:-async}
+
     NOTIFY_CHANNELS: ${NOTIFY_CHANNELS:-log}
     NOTIFY_BASE_URL: ${NOTIFY_BASE_URL:-http://localhost:8000}
     SMTP_HOST: ${SMTP_HOST:-}

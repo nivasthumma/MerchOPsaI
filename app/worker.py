@@ -50,7 +50,9 @@ The enumeration is the worker's business; the read stays scoped.
 from __future__ import annotations
 
 import argparse
+import os
 import signal
+import socket
 import sys
 import time
 import uuid
@@ -62,9 +64,15 @@ from sqlalchemy import text
 from app.audit.trace import correlation_scope
 from app.config import get_settings
 from app.db import session_scope
+from app.models import TaskStatus
 from app.observability.logs import configure_logging, get_logger
 
 log = get_logger("merchantops.worker")
+
+#: Identifies this worker in `worker_heartbeats` and on the tasks it claims.
+#: Host plus pid, so two workers in one container are distinguishable and a
+#: restart is visibly a restart rather than a second worker.
+WORKER_ID = f"{socket.gethostname()}:{os.getpid()}"
 
 
 # --------------------------------------------------------------------------
@@ -117,6 +125,80 @@ def job_detect() -> dict:
             "already_known": already}
 
 
+def job_tasks() -> dict:
+    """Run whatever has been queued, then fail whatever was abandoned.
+
+    Claims one at a time and runs it to completion before claiming the next.
+    A task is the expensive unit in this system -- a model loop, a dozen
+    database round trips, possibly an outbound payment call -- so the useful
+    concurrency is more workers, not more threads inside one. Two workers claim
+    different rows (`FOR UPDATE SKIP LOCKED`) with nothing else required.
+
+    Bounded per pass so one busy queue cannot starve the sweeps behind it. What
+    is left stays queued and is picked up on the next pass, a few seconds later.
+    """
+    from app.agent.queue import claim, reclaim_abandoned
+    from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
+
+    ran = failed = 0
+    for _ in range(get_settings().worker_max_tasks_per_pass):
+        with session_scope() as s:
+            task = claim(s, worker_id=WORKER_ID)
+            if task is None:
+                break
+
+            # The principal is rebuilt from the row's user, never carried from
+            # the request that submitted it. Authority is read at the moment
+            # authority is used, exactly as `current_principal` does per
+            # request -- a task queued an hour ago must not run with permissions
+            # its submitter has since lost.
+            row = s.execute(text("""
+                SELECT id, tenant_id, merchant_id, role, permissions
+                FROM users WHERE id = :u
+            """), {"u": task.user_id}).mappings().first()
+            if row is None:
+                task.status = TaskStatus.FAILED
+                task.failure_code = "PRINCIPAL_GONE"
+                task.final_answer = (
+                    "The user who submitted this task no longer exists, so it "
+                    "cannot be run with their authority.")
+                failed += 1
+                continue
+
+            principal = Principal(row["tenant_id"], row["id"], row["merchant_id"],
+                                  row["role"], list(row["permissions"]))
+            try:
+                AgentRuntime(s, principal).run(task.request, existing_task=task)
+                ran += 1
+            except AgentRuntimeError:
+                # Already recorded on the task, with its partial trace committed
+                # -- that is what AgentRuntime._crash exists for. Counted here
+                # and not re-raised: one task failing must not stop the queue.
+                failed += 1
+
+    abandoned = []
+    with session_scope() as s:
+        abandoned = reclaim_abandoned(s)
+
+    return {"ran": ran, "failed": failed, "abandoned": len(abandoned)}
+
+
+def job_heartbeat() -> dict:
+    """Say this worker is alive, so its absence is visible.
+
+    Everything cadence-driven runs here. If this process is not running, nothing
+    sweeps and no queued task starts -- and the absence of work looks exactly
+    like there being no work to do. `/health` reads this, and `POST /tasks`
+    refuses an asynchronous submission when no worker has been seen recently,
+    rather than queueing into a void.
+    """
+    from app.agent.queue import heartbeat
+
+    with session_scope() as s:
+        heartbeat(s, worker_id=WORKER_ID, jobs=[j.name for j in build_jobs()])
+    return {}
+
+
 @dataclass
 class Job:
     name: str
@@ -136,6 +218,10 @@ class Job:
 def build_jobs() -> list[Job]:
     s = get_settings()
     return [
+        # First in the list, so a pass that is about to do work says so before
+        # doing it rather than after.
+        Job("heartbeat", s.worker_heartbeat_interval_seconds, job_heartbeat),
+        Job("tasks", s.worker_tasks_interval_seconds, job_tasks),
         Job("drain", s.worker_drain_interval_seconds, job_drain),
         Job("notify", s.worker_notify_interval_seconds, job_notify),
         Job("reconcile", s.worker_reconcile_interval_seconds, job_reconcile),

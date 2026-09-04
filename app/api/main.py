@@ -261,7 +261,27 @@ def health():
             "rate_limit_scope": _scope_word(),
             "provider_override_scope": _scope_word(),
         },
+        "agent_execution_mode": s.agent_execution_mode,
+        # Reported here rather than only on /ready, because a dead worker is not
+        # a reason to take this instance out of rotation -- the API serves reads
+        # and inline runs perfectly well without one. It is a reason to page
+        # somebody, and this is where somebody looks.
+        "queue": _queue_state(),
     }
+
+
+def _queue_state() -> dict:
+    from app.agent.queue import queue_state
+
+    try:
+        with session_scope() as s:
+            return queue_state(s).as_dict()
+    except Exception:
+        # /health answers without touching anything by design, and adding a
+        # query must not change that contract. An unreachable database is
+        # /ready's question, not this one.
+        return {"queued": 0, "running": 0, "oldest_queued_seconds": None,
+                "worker_seen_seconds_ago": None, "worker_is_live": False}
 
 
 def _scope_word() -> str:
@@ -417,11 +437,58 @@ def set_llm_provider(body: ProviderRequest,
 
 
 @app.post("/tasks", response_model=schemas.TaskView,
-          response_model_exclude_unset=True)
-def create_task(body: TaskRequest, principal: Principal = Depends(current_principal)):
+          response_model_exclude_unset=True, status_code=200)
+def create_task(body: TaskRequest, response: Response, mode: str | None = None,
+                principal: Principal = Depends(current_principal)):
+    """Start a task, inline or queued.
+
+    `inline` runs the loop inside this request and returns the finished task,
+    which is what this route has always done. It is the only thing possible
+    where there is no worker -- Vercel, or a bare `make api` -- and it is what
+    the evaluation suite exercises (through `AgentRuntime` directly, so none of
+    this affects the scenario numbers).
+
+    `async` writes the task, returns **202** with its id, and lets a worker run
+    it. That is what removes the request timeout from the design: an
+    investigation can take as long as its budget allows without a proxy giving
+    up, and the API process is free while it does.
+
+    The mode comes from `AGENT_EXECUTION_MODE` and `?mode=` overrides it. Either
+    way the response is a `TaskView`; a queued one is simply `QUEUED` with no
+    answer yet, and `GET /tasks/{id}` is the poll.
+
+    **An asynchronous submission is refused when no worker has been seen
+    recently.** Accepting it would return 202 for a task that will never start,
+    and a queue nobody is draining looks exactly like a queue with nothing in
+    it. 503 says which of those it is.
+    """
+    choice = (mode or get_settings().agent_execution_mode).lower()
+    if choice not in {"inline", "async"}:
+        raise HTTPException(422, {
+            "error": f"Unknown execution mode '{choice}'. Use 'inline' or 'async'.",
+            "code": "unknown_mode"})
+
+    if choice == "inline":
+        with session_scope() as s:
+            out = AgentRuntime(s, principal).run(body.request)
+            return _task_view(s, out.task)
+
+    from app.agent.queue import enqueue, queue_state
+
     with session_scope() as s:
-        out = AgentRuntime(s, principal).run(body.request)
-        return _task_view(s, out.task)
+        state = queue_state(s)
+        if not state.worker_is_live:
+            raise HTTPException(503, {
+                "error": "No worker has reported in recently, so a queued task "
+                         "would not start. Run `make worker` (or the worker "
+                         "container), or submit with ?mode=inline.",
+                "code": "no_worker",
+                "worker_seen_seconds_ago": state.worker_seen_seconds_ago,
+                "queued": state.queued})
+
+        task = enqueue(s, principal, body.request)
+        response.status_code = 202
+        return _task_view(s, task)
 
 
 @app.get("/tasks/{task_id}", response_model=schemas.TaskView,

@@ -13,7 +13,19 @@ import taskFixture from "../test-fixtures/investigate.json";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, api: { createTask: vi.fn(), getTrace: vi.fn(), getEvidence: vi.fn() } };
+  return {
+    ...actual,
+    api: {
+      createTask: vi.fn(),
+      getTrace: vi.fn(),
+      getEvidence: vi.fn(),
+      // The page submits, then waits for the task to stop moving (ADR-0045).
+      // The default here is what the real one does for a task that is already
+      // terminal: hand it straight back without a request. A test that wants
+      // the queued path overrides it.
+      awaitTask: vi.fn(async (task: unknown) => task),
+    },
+  };
 });
 
 const { api } = await import("../api/client");

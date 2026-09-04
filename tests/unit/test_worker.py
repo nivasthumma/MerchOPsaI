@@ -141,13 +141,17 @@ def test_the_loop_exits_on_a_stop_signal(monkeypatch):
 def test_every_scheduled_job_has_a_configured_interval():
     """The four things that were built to run repeatedly and had nothing to run
     them. A job added here without a setting would be uncadenced."""
+    from app.agent.queue import WORKER_LIVENESS_SECONDS
     from app.config import get_settings
 
     s = get_settings()
     names = {j.name for j in worker.build_jobs()}
-    assert names == {"drain", "notify", "reconcile", "detect"}
+    assert names == {"heartbeat", "tasks", "drain", "notify", "reconcile", "detect"}
     for j in worker.build_jobs():
         assert j.interval_seconds > 0, j.name
     assert s.worker_notify_interval_seconds < s.notify_approval_warning_seconds, (
         "the notification sweep must run several times inside the warning "
         "window, or a chase is delivered after the window it warned about")
+    assert s.worker_heartbeat_interval_seconds * 3 <= WORKER_LIVENESS_SECONDS, (
+        "a live worker must survive two missed beats, or POST /tasks starts "
+        "refusing submissions while a worker is running perfectly well")

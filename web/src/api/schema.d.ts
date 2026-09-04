@@ -181,6 +181,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/sso/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sso Callback
+         * @description Where the provider sends the browser back.
+         *
+         *     On success the browser is redirected to the SPA carrying a one-time handoff
+         *     code -- never a token. A token in a fragment or query lands in browser
+         *     history, in the referrer of whatever loads next, and in every proxy log on
+         *     the way.
+         */
+        get: operations["sso_callback_auth_sso_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sso/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sso Exchange
+         * @description Turn a handoff code into a MerchantOps token pair. Single use.
+         */
+        post: operations["sso_exchange_auth_sso_exchange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sso/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sso Start
+         * @description Begin a sign-in. Answers with the provider's URL, or 302s to it.
+         *
+         *     `redirect=false` returns the URL instead of following it, which is what the
+         *     SPA wants: it can decide whether to navigate or open a popup, and a fetch
+         *     that follows a cross-origin redirect tells it nothing useful.
+         */
+        get: operations["sso_start_auth_sso_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns": {
         parameters: {
             query?: never;
@@ -1006,6 +1075,33 @@ export interface paths {
         put?: never;
         /** Run One */
         post: operations["run_one_scenarios__scenario_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sso": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sso Config
+         * @description This tenant's provider. The client secret is never returned.
+         */
+        get: operations["get_sso_config_sso_get"];
+        /**
+         * Put Sso Config
+         * @description Configure this tenant's identity provider.
+         *
+         *     Discovery runs before anything is stored, so a typo in the issuer fails here
+         *     rather than on the first person who tries to sign in.
+         */
+        put: operations["put_sso_config_sso_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2736,6 +2832,70 @@ export interface components {
             /** Signed Out */
             signed_out: string;
         };
+        /** SsoCallback */
+        SsoCallback: {
+            /** Handoff Code */
+            handoff_code: string;
+            /** Provisioned */
+            provisioned: boolean;
+            /** Redirect To */
+            redirect_to: string;
+        };
+        /** SsoConfig */
+        SsoConfig: {
+            /** Client Id */
+            client_id?: string | null;
+            /** Configured */
+            configured: boolean;
+            /** Default Merchant Id */
+            default_merchant_id?: string | null;
+            /** Default Role */
+            default_role?: string | null;
+            /**
+             * Email Domains
+             * @default []
+             */
+            email_domains: string[];
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Issuer */
+            issuer?: string | null;
+        };
+        /** SsoConfigRequest */
+        SsoConfigRequest: {
+            /** Client Id */
+            client_id: string;
+            /** Client Secret */
+            client_secret: string;
+            /** Default Merchant Id */
+            default_merchant_id?: string | null;
+            /**
+             * Default Role
+             * @default analyst
+             */
+            default_role: string;
+            /** Email Domains */
+            email_domains: string[];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Issuer */
+            issuer: string;
+        };
+        /** SsoExchangeRequest */
+        SsoExchangeRequest: {
+            /** Handoff Code */
+            handoff_code: string;
+        };
+        /** SsoStart */
+        SsoStart: {
+            /** Authorization Url */
+            authorization_url: string;
+            /** State */
+            state: string;
+        };
         /** TaskEvidence */
         TaskEvidence: {
             /** Task Id */
@@ -3261,6 +3421,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignOutResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sso_callback_auth_sso_callback_get: {
+        parameters: {
+            query: {
+                state: string;
+                code?: string | null;
+                error?: string | null;
+                redirect?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoCallback"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sso_exchange_auth_sso_exchange_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sso_start_auth_sso_start_get: {
+        parameters: {
+            query: {
+                email: string;
+                redirect_to?: string | null;
+                redirect?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoStart"];
                 };
             };
             /** @description Validation Error */
@@ -4330,6 +4590,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScenarioRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sso_config_sso_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_sso_config_sso_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SsoConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SsoConfig"];
                 };
             };
             /** @description Validation Error */

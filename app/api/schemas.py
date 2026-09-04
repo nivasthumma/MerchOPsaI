@@ -1094,3 +1094,46 @@ class TokenPair(Contract):
 class SignOutResult(Contract):
     #: `this_session` or `all_sessions`.
     signed_out: str
+
+
+# ------------------------------------------------------ SSO (ADR-0050)
+class SsoStart(Contract):
+    authorization_url: str
+    state: str
+
+
+class SsoCallback(Contract):
+    #: Exchanged for a token pair at `/auth/sso/exchange`. Single use, and
+    #: short-lived: it exists so no credential ever travels in a URL.
+    handoff_code: str
+    redirect_to: str
+    #: True when this sign-in created the account rather than matching one.
+    provisioned: bool
+
+
+class SsoExchangeRequest(Contract):
+    handoff_code: str
+
+
+class SsoConfigRequest(Contract):
+    issuer: str
+    client_id: str
+    client_secret: str
+    #: Which email domains route a sign-in to this tenant. The only fact a
+    #: sign-in box has before anybody is authenticated.
+    email_domains: list[str]
+    #: The role a first-time user gets. Never `owner`.
+    default_role: str = "analyst"
+    default_merchant_id: str | None = None
+    enabled: bool = True
+
+
+class SsoConfig(Contract):
+    configured: bool
+    issuer: str | None = None
+    client_id: str | None = None
+    #: The client secret is never returned. It goes in and does not come out.
+    email_domains: list[str] = []
+    default_role: str | None = None
+    default_merchant_id: str | None = None
+    enabled: bool | None = None

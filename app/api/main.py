@@ -6,12 +6,14 @@ frontend is never the authority (CONTRACT §20, §41).
 from __future__ import annotations
 
 import hmac
+import json
 import os
+import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select, text
 
@@ -365,6 +367,204 @@ def ready(response: Response):
     if not ok:
         response.status_code = 503
     return {"ready": ok, "checks": checks}
+
+
+# --------------------------------------------------------------------------
+# Single sign-on — ADR-0050
+#
+# The three unauthenticated routes are unauthenticated by necessity: the whole
+# point is that the caller has no credential yet. What stands in for one is the
+# `state`/`nonce`/PKCE triple, checked in `app/sso.py`.
+# --------------------------------------------------------------------------
+def _sso_redirect_uri(request: Request) -> str:
+    """Where the provider sends the browser back.
+
+    Derived from the request rather than configured, so a deployment behind a
+    different hostname does not need a second setting to keep in step -- and it
+    must match byte for byte what was sent in the authorization request, which
+    is easiest to guarantee when both come from here.
+    """
+    return str(request.url_for("sso_callback"))
+
+
+@app.get("/auth/sso/start", response_model=schemas.SsoStart)
+def sso_start(request: Request, email: str, redirect_to: str | None = None,
+              redirect: bool = True):
+    """Begin a sign-in. Answers with the provider's URL, or 302s to it.
+
+    `redirect=false` returns the URL instead of following it, which is what the
+    SPA wants: it can decide whether to navigate or open a popup, and a fetch
+    that follows a cross-origin redirect tells it nothing useful.
+    """
+    from app import sso
+
+    with session_scope() as s:
+        try:
+            started = sso.start(s, email=email,
+                                redirect_uri=_sso_redirect_uri(request),
+                                redirect_to=redirect_to)
+        except sso.SsoError as exc:
+            raise HTTPException(404 if exc.code == "no_provider" else 502,
+                                {"error": str(exc), "code": exc.code}) from exc
+
+    if redirect:
+        return RedirectResponse(started.authorization_url, status_code=302)
+    return {"authorization_url": started.authorization_url, "state": started.state}
+
+
+@app.get("/auth/sso/callback", name="sso_callback", response_model=schemas.SsoCallback)
+def sso_callback(request: Request, state: str, code: str | None = None,
+                 error: str | None = None, redirect: bool = True):
+    """Where the provider sends the browser back.
+
+    On success the browser is redirected to the SPA carrying a one-time handoff
+    code -- never a token. A token in a fragment or query lands in browser
+    history, in the referrer of whatever loads next, and in every proxy log on
+    the way.
+    """
+    from app import sso
+
+    if error:
+        # The provider's own refusal: the user cancelled, or consent was denied.
+        raise HTTPException(401, {"error": f"The identity provider returned "
+                                           f"{error!r}.", "code": "provider_error"})
+    if not code:
+        raise HTTPException(400, {"error": "No authorization code.",
+                                  "code": "missing_code"})
+
+    with session_scope() as s:
+        try:
+            done = sso.complete(s, state=state, code=code,
+                                redirect_uri=_sso_redirect_uri(request))
+        except sso.SsoError as exc:
+            raise HTTPException(401, {"error": str(exc), "code": exc.code}) from exc
+
+        record(s, SimpleNamespace(id=None, merchant_id=None, user_id=done.user_id),
+               "sso_sign_in", {"user_id": done.user_id, "email": done.email,
+                               "provisioned": done.created})
+
+    if redirect:
+        joiner = "&" if "?" in done.redirect_to else "?"
+        return RedirectResponse(f"{done.redirect_to}{joiner}sso={done.handoff_code}",
+                                status_code=302)
+    return {"handoff_code": done.handoff_code, "redirect_to": done.redirect_to,
+            "provisioned": done.created}
+
+
+@app.post("/auth/sso/exchange", response_model=schemas.TokenPair)
+def sso_exchange(body: schemas.SsoExchangeRequest):
+    """Turn a handoff code into a MerchantOps token pair. Single use."""
+    from app import auth, sso
+
+    with session_scope() as s:
+        try:
+            user_id = sso.redeem(s, body.handoff_code)
+        except sso.SsoError as exc:
+            raise HTTPException(401, {"error": str(exc), "code": exc.code}) from exc
+        issued = auth.issue_pair(user_id)
+        return {"access_token": issued.access_token,
+                "refresh_token": issued.refresh_token,
+                "expires_in": issued.expires_in, "token_type": "Bearer"}
+
+
+@app.get("/sso", response_model=schemas.SsoConfig, response_model_exclude_unset=True)
+def get_sso_config(principal: Principal = Depends(current_principal)):
+    """This tenant's provider. The client secret is never returned."""
+    _owner_only(principal, "Reading the SSO configuration")
+    with session_scope() as s:
+        row = s.execute(text("""
+            SELECT issuer, client_id, email_domains, default_role,
+                   default_merchant_id, enabled
+            FROM identity_providers WHERE tenant_id = :t
+        """), {"t": principal.tenant_id}).mappings().first()
+        if row is None:
+            return {"configured": False}
+        return {"configured": True, **dict(row),
+                "email_domains": list(row["email_domains"])}
+
+
+@app.put("/sso", response_model=schemas.SsoConfig)
+def put_sso_config(body: schemas.SsoConfigRequest,
+                   principal: Principal = Depends(current_principal)):
+    """Configure this tenant's identity provider.
+
+    Discovery runs before anything is stored, so a typo in the issuer fails here
+    rather than on the first person who tries to sign in.
+    """
+    from app import sso
+
+    _owner_only(principal, "Configuring SSO")
+
+    if body.default_role == "owner":
+        # An identity provider deciding who administers the tenant means anybody
+        # who can create an account at the customer's IdP can administer their
+        # MerchantOps. Refused here and again at provisioning time.
+        raise HTTPException(422, {
+            "error": "An identity provider may not provision owners. Promote "
+                     "somebody deliberately instead.", "code": "owner_not_allowed"})
+
+    domains = sorted({d.strip().lower().lstrip("@") for d in body.email_domains if d.strip()})
+    if not domains:
+        raise HTTPException(422, {"error": "At least one email domain is needed "
+                                           "to route a sign-in to this tenant.",
+                                  "code": "no_domains"})
+
+    with session_scope() as s:
+        try:
+            sso.forget_discovery()
+            sso.discover(body.issuer)
+        except sso.SsoError as exc:
+            raise HTTPException(422, {"error": str(exc), "code": exc.code}) from exc
+
+        role = s.execute(text(
+            "SELECT name FROM roles WHERE tenant_id = :t AND name = :n"),
+            {"t": principal.tenant_id, "n": body.default_role}).scalar()
+        if role is None:
+            raise HTTPException(404, {"error": f"No role named "
+                                               f"{body.default_role!r} here.",
+                                      "code": "unknown_role"})
+
+        taken = s.execute(text("""
+            SELECT tenant_id FROM identity_providers
+            WHERE tenant_id <> :t AND email_domains::jsonb ?| :d
+        """), {"t": principal.tenant_id, "d": domains}).scalar()
+        if taken:
+            # Two tenants claiming one domain makes routing a coin toss, and the
+            # coin decides which company an employee signs in to.
+            raise HTTPException(409, {
+                "error": "One of those email domains is already claimed by "
+                         "another tenant.", "code": "domain_taken"})
+
+        s.execute(text("""
+            INSERT INTO identity_providers (id, tenant_id, issuer, client_id,
+                client_secret, email_domains, default_role, default_merchant_id,
+                enabled, created_at, updated_at)
+            VALUES (:i, :t, :iss, :cid, :sec, CAST(:dom AS json), :role, :m,
+                    :en, now(), now())
+            ON CONFLICT (tenant_id) DO UPDATE SET
+                issuer = EXCLUDED.issuer, client_id = EXCLUDED.client_id,
+                client_secret = EXCLUDED.client_secret,
+                email_domains = EXCLUDED.email_domains,
+                default_role = EXCLUDED.default_role,
+                default_merchant_id = EXCLUDED.default_merchant_id,
+                enabled = EXCLUDED.enabled, updated_at = now()
+        """), {"i": f"IDP_{uuid.uuid4().hex[:12].upper()}", "t": principal.tenant_id,
+               "iss": body.issuer, "cid": body.client_id, "sec": body.client_secret,
+               "dom": json.dumps(domains), "role": body.default_role,
+               "m": body.default_merchant_id or principal.merchant_id,
+               "en": body.enabled})
+
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "sso_configured",
+               {"issuer": body.issuer, "domains": domains,
+                "default_role": body.default_role, "enabled": body.enabled,
+                "by": principal.user_id})
+        return {"configured": True, "issuer": body.issuer,
+                "client_id": body.client_id, "email_domains": domains,
+                "default_role": body.default_role,
+                "default_merchant_id": body.default_merchant_id or principal.merchant_id,
+                "enabled": body.enabled}
 
 
 # --------------------------------------------------------------------------

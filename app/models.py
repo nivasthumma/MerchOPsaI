@@ -310,6 +310,91 @@ class Merchant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class IdentityProvider(Base):
+    """A tenant's OIDC provider — ADR-0050.
+
+    One per tenant. A tenant with two identity providers is a real thing and it
+    is not this: it needs a way to choose between them at login, and "whichever
+    matches the email domain" stops working the moment both cover the same
+    domain.
+
+    `email_domains` is how a login knows which tenant it belongs to before
+    anybody is authenticated. Somebody typing an address at a sign-in box has
+    given us exactly one fact, and it has to be enough to route on.
+    """
+    __tablename__ = "identity_providers"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        ForeignKey("tenants.id"), unique=True, index=True)
+
+    #: The issuer, exactly as it appears in the ID token's `iss`. Discovery
+    #: hangs off it and the comparison is exact -- a trailing slash difference
+    #: is a different issuer, and treating them as the same is how a token from
+    #: one provider gets accepted for another.
+    issuer: Mapped[str] = mapped_column(String(500))
+    client_id: Mapped[str] = mapped_column(String(300))
+    #: Stored in plaintext today, and that is a known gap: it is a credential
+    #: sitting in a column, and Phase 3 of the readiness review is where
+    #: column-level encryption arrives. Named here so it is a scheduled debt
+    #: rather than an oversight.
+    client_secret: Mapped[str] = mapped_column(String(500))
+
+    #: Which email domains belong to this tenant. Lowercase, no `@`.
+    email_domains: Mapped[list] = mapped_column(JSON, default=list)
+
+    #: The role a user gets the first time they arrive through this provider.
+    #: Never `owner`: an identity provider deciding who administers the tenant
+    #: means anybody who can create an account at the customer's IdP can
+    #: administer their MerchantOps. Enforced in `app/sso.py`, not just here.
+    default_role: Mapped[str] = mapped_column(String(64), default="analyst")
+    #: Which merchant a JIT-provisioned user is attached to. A tenant with
+    #: several merchants has to say; there is no correct guess.
+    default_merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"))
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class SsoFlow(Base):
+    """One sign-in attempt, from redirect to handoff — ADR-0050.
+
+    Exists because the browser leaves and comes back, and what it comes back
+    with has to be checkable against what we sent. `state` defeats CSRF on the
+    callback, `nonce` binds the ID token to this attempt, and `code_verifier` is
+    PKCE -- an intercepted authorization code is useless without it.
+
+    In the database rather than a cookie or a process, for two reasons: the
+    callback may land on a different replica than the redirect, and a signed
+    cookie cannot be marked consumed. This can.
+    """
+    __tablename__ = "sso_flows"
+    #: The `state` parameter. Primary key, so a replayed callback collides.
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    nonce: Mapped[str] = mapped_column(String(64))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    #: Where to send the browser afterwards. Validated against an allowlist
+    #: before it is stored -- an open redirect on a login endpoint is how a
+    #: phishing page borrows somebody else's domain.
+    redirect_to: Mapped[str] = mapped_column(String(500), default="/")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    #: Set once the callback succeeds. The SPA exchanges it for a token pair.
+    #:
+    #: A one-time code rather than tokens in the redirect URL: a fragment or
+    #: query carrying a credential lands in browser history, in the referrer of
+    #: whatever the page loads next, and in any proxy log along the way.
+    handoff_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class RevokedToken(Base):
     """One token that will not be honoured again — ADR-0049.
 

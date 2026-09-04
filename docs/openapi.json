@@ -3859,6 +3859,193 @@
         "title": "SignOutResult",
         "type": "object"
       },
+      "SsoCallback": {
+        "additionalProperties": false,
+        "properties": {
+          "handoff_code": {
+            "title": "Handoff Code",
+            "type": "string"
+          },
+          "provisioned": {
+            "title": "Provisioned",
+            "type": "boolean"
+          },
+          "redirect_to": {
+            "title": "Redirect To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoff_code",
+          "redirect_to",
+          "provisioned"
+        ],
+        "title": "SsoCallback",
+        "type": "object"
+      },
+      "SsoConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "default_merchant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Merchant Id"
+          },
+          "default_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Role"
+          },
+          "email_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Email Domains",
+            "type": "array"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "issuer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issuer"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "SsoConfig",
+        "type": "object"
+      },
+      "SsoConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_secret": {
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "default_merchant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Merchant Id"
+          },
+          "default_role": {
+            "default": "analyst",
+            "title": "Default Role",
+            "type": "string"
+          },
+          "email_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Email Domains",
+            "type": "array"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "issuer": {
+            "title": "Issuer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issuer",
+          "client_id",
+          "client_secret",
+          "email_domains"
+        ],
+        "title": "SsoConfigRequest",
+        "type": "object"
+      },
+      "SsoExchangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "handoff_code": {
+            "title": "Handoff Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoff_code"
+        ],
+        "title": "SsoExchangeRequest",
+        "type": "object"
+      },
+      "SsoStart": {
+        "additionalProperties": false,
+        "properties": {
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_url",
+          "state"
+        ],
+        "title": "SsoStart",
+        "type": "object"
+      },
       "TaskEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -5256,6 +5443,193 @@
           }
         },
         "summary": "Sign Out"
+      }
+    },
+    "/auth/sso/callback": {
+      "get": {
+        "description": "Where the provider sends the browser back.\n\nOn success the browser is redirected to the SPA carrying a one-time handoff\ncode -- never a token. A token in a fragment or query lands in browser\nhistory, in the referrer of whatever loads next, and in every proxy log on\nthe way.",
+        "operationId": "sso_callback_auth_sso_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": true,
+            "schema": {
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirect",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Redirect",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoCallback"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sso Callback"
+      }
+    },
+    "/auth/sso/exchange": {
+      "post": {
+        "description": "Turn a handoff code into a MerchantOps token pair. Single use.",
+        "operationId": "sso_exchange_auth_sso_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sso Exchange"
+      }
+    },
+    "/auth/sso/start": {
+      "get": {
+        "description": "Begin a sign-in. Answers with the provider's URL, or 302s to it.\n\n`redirect=false` returns the URL instead of following it, which is what the\nSPA wants: it can decide whether to navigate or open a popup, and a fetch\nthat follows a cross-origin redirect tells it nothing useful.",
+        "operationId": "sso_start_auth_sso_start_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "email",
+            "required": true,
+            "schema": {
+              "title": "Email",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirect_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Redirect To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "redirect",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Redirect",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sso Start"
       }
     },
     "/campaigns": {
@@ -6977,6 +7351,108 @@
           }
         },
         "summary": "Run One"
+      }
+    },
+    "/sso": {
+      "get": {
+        "description": "This tenant's provider. The client secret is never returned.",
+        "operationId": "get_sso_config_sso_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Sso Config"
+      },
+      "put": {
+        "description": "Configure this tenant's identity provider.\n\nDiscovery runs before anything is stored, so a typo in the issuer fails here\nrather than on the first person who tries to sign in.",
+        "operationId": "put_sso_config_sso_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Sso Config"
       }
     },
     "/state": {

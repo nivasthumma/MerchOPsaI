@@ -197,9 +197,12 @@ def job_prune_tokens() -> dict:
     consulting the table at all, so the row buys nothing after that.
     """
     from app.auth import prune_revoked
+    from app.sso import prune_flows
 
     with session_scope() as s:
-        return {"pruned": prune_revoked(s)}
+        # Sign-in attempts nobody completed, alongside the token denylist.
+        # Both are rows that stop mattering at a known moment.
+        return {"pruned": prune_revoked(s), "abandoned_sign_ins": prune_flows(s)}
 
 
 def job_heartbeat() -> dict:

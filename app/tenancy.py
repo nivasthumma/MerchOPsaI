@@ -166,7 +166,7 @@ VIA_PARENT: dict[str, tuple[str, str]] = {
 
 #: Tables owned by a tenant rather than a merchant. A role belongs to the tenant
 #: that defined it and is used by every merchant under it.
-TENANT_SCOPED: tuple[str, ...] = ("roles",)
+TENANT_SCOPED: tuple[str, ...] = ("roles", "identity_providers", "sso_flows")
 
 #: Tenant-owned children, filtered through their tenant-owned parent.
 TENANT_VIA_PARENT: dict[str, tuple[str, str]] = {

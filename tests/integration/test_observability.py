@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute
 from app.agent.runtime import AgentRuntime
 from app.audit.trace import CANONICAL_EVENT, canonical, trace_by_correlation
 from app.detection import detect
 from app.failures import (
-    TAXONOMY, Retryability, Subsystem, classify, describe, may_retry,
+    TAXONOMY,
+    Retryability,
+    Subsystem,
+    classify,
+    describe,
+    may_retry,
 )
 from app.incidents.manager import investigate
 from app.integrations.razorpay.faults import Fault, FaultInjector

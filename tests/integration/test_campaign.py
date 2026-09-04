@@ -12,7 +12,11 @@ import pytest
 
 from app.detection import detect
 from app.models import (
-    CandidateStatus, Incident, IncidentType, PlanStatus, RecoveryCandidate,
+    CandidateStatus,
+    Incident,
+    IncidentType,
+    PlanStatus,
+    RecoveryCandidate,
 )
 from app.recovery import plan_recovery
 from app.recovery.campaign import active_campaigns, summary

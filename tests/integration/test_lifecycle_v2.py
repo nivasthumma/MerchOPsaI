@@ -14,9 +14,10 @@ import pytest
 from app.agent.approval import approve_and_execute
 from app.audit.trace import trace_for_incident
 from app.detection import detect
-from app.incidents.lifecycle import advance, transition, IllegalTransition
+from app.incidents.lifecycle import IllegalTransition, advance, transition
 from app.incidents.manager import investigate
-from app.models import Incident, IncidentStatus as S, IncidentType
+from app.models import Incident, IncidentType
+from app.models import IncidentStatus as S
 from app.recovery import plan_recovery
 from app.recovery.dispatch import dispatch_candidate, executable_candidates
 

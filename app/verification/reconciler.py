@@ -32,15 +32,15 @@ idempotency key and can never issue a second refund.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, or_, text
 
 from app.audit.trace import record
 from app.config import PLATFORM_MARGIN_SECONDS, get_settings
+from app.failures import unsettled_states
 from app.integrations.razorpay.adapter import get_adapter
 from app.models import ActionStatus, AgentAction, AgentTask, TaskStatus, VerificationState
-from app.failures import unsettled_states
 from app.tools.actions import reverify_action
 
 # States that are not yet settled — derived from the failure taxonomy rather
@@ -104,7 +104,7 @@ def find_unsettled(session, *, min_age_seconds: int = 30, max_attempts: int = 5,
     took it down with everything else. Making it survive is only an improvement
     if something then looks at it, which is what this branch is.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cutoff = now - timedelta(seconds=min_age_seconds)
     abandoned_cutoff = now - timedelta(
         seconds=max(min_age_seconds, abandoned_claim_age_seconds()))
@@ -154,7 +154,7 @@ def reconcile(session, *, min_age_seconds: int = 30, max_attempts: int = 5,
 
         try:
             vr = reverify_action(session, adapter, action)
-        except Exception as exc:                                  # noqa: BLE001
+        except Exception as exc:
             # A failed lookup is not a settlement. Leave the action unsettled
             # and let the next sweep try again.
             action.verify_attempts += 1

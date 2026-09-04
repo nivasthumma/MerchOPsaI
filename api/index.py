@@ -17,7 +17,6 @@ So this module is the router:
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from starlette.responses import FileResponse, JSONResponse

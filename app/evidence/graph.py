@@ -43,7 +43,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.models import (
-    EvidenceEdge, Incident, IncidentEvidence, Predicate, RecoveryCandidate,
+    EvidenceEdge,
+    Incident,
+    IncidentEvidence,
+    Predicate,
+    RecoveryCandidate,
 )
 
 
@@ -124,25 +128,25 @@ def build(session, incident: Incident, *, findings: list | None = None) -> int:
 
     # creates → the exposure. The figure the calculation engine produced, not a
     # restatement of it: the edge points at the incident's own column.
-    if incident.revenue_at_risk_minor:
-        if draw(session, incident, predicate=Predicate.CREATES,
-                object_type="revenue_at_risk",
-                object_value={"amount_minor": incident.revenue_at_risk_minor,
-                              "currency": "INR"},
-                drawn_by="calculation_engine"):
-            drawn += 1
+    if incident.revenue_at_risk_minor and draw(
+            session, incident, predicate=Predicate.CREATES,
+            object_type="revenue_at_risk",
+            object_value={"amount_minor": incident.revenue_at_risk_minor,
+                          "currency": "INR"},
+            drawn_by="calculation_engine"):
+        drawn += 1
 
     # caused_by → what the detection rule observed, plus what any other rule
     # saw of the same episode (v2 §18). Both are observations rather than
     # explanations, which is why they are separate from the model's root cause
     # below and attributed to the rule that made them.
     signals = incident.signals or {}
-    if signals.get("method"):
-        if draw(session, incident, predicate=Predicate.CAUSED_BY,
-                object_type="payment_method", object_id=str(signals["method"]),
-                object_value={"detection_rule": incident.detection_rule},
-                drawn_by=incident.detection_rule):
-            drawn += 1
+    if signals.get("method") and draw(
+            session, incident, predicate=Predicate.CAUSED_BY,
+            object_type="payment_method", object_id=str(signals["method"]),
+            object_value={"detection_rule": incident.detection_rule},
+            drawn_by=incident.detection_rule):
+        drawn += 1
     for rule in (signals.get("correlation") or {}).get("corroborating_rules", []):
         if draw(session, incident, predicate=Predicate.SUPPORTED_BY,
                 object_type="detection_rule", object_id=rule,

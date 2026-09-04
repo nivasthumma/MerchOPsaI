@@ -320,7 +320,7 @@ def verify_payment_link(adapter, *, link_id: str,
     expected = {"payment_link_id": link_id, "amount_minor": expected_amount_minor}
     try:
         link = adapter.get_payment_link(link_id)
-    except Exception as e:                                          # noqa: BLE001
+    except Exception as e:
         return VerificationResult(VerificationState.UNKNOWN,
                                   f"Could not read the payment link back: {e}.",
                                   expected, {}, link_id)
@@ -349,7 +349,7 @@ def verify_notification(adapter, *, notification_id: str) -> VerificationResult:
     expected = {"notification_id": notification_id, "status": "sent"}
     try:
         n = adapter.get_notification(notification_id)
-    except Exception as e:                                          # noqa: BLE001
+    except Exception as e:
         return VerificationResult(VerificationState.UNKNOWN,
                                   f"Could not read the notification back: {e}.",
                                   expected, {}, notification_id)

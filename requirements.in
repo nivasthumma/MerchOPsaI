@@ -1,0 +1,27 @@
+# Direct dependencies, pinned to the versions this tree is tested against.
+#
+# `requirements.txt` beside this file is generated from it and is what anything
+# installing this project should use -- it pins every transitive dependency too
+# and carries hashes, so a build resolves to the same bytes today and in six
+# months. Regenerate after editing here:
+#
+#     uv pip compile requirements.in --generate-hashes --python-version 3.12 \
+#         -o requirements.txt
+#
+# Exact pins rather than floors: with `>=` a green CI run said nothing about the
+# next one, because the next one resolved against whatever PyPI served that
+# morning, and a nightly failure could not be told apart from a supply-chain
+# event.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+sqlalchemy==2.0.52
+alembic==1.19.1
+psycopg2-binary==2.9.12
+pydantic==2.13.4
+pydantic-settings==2.15.0
+streamlit==1.62.0
+pytest==9.1.1
+pyyaml==6.0.3
+python-dotenv==1.2.3
+anthropic==1.0.0
+httpx==0.28.1

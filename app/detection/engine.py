@@ -23,12 +23,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record_incident
 from app.detection.correlation import annotate
-from app.detection.rules import RULES, DETECTION_VERSION, Anomaly
+from app.detection.rules import DETECTION_VERSION, RULES, Anomaly
 from app.models import Incident, IncidentEvidence, IncidentStatus
 
 

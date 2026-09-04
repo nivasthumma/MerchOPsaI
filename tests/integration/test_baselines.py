@@ -15,14 +15,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import pytest
 from sqlalchemy import text
 
 from app.detection.baselines import (
-    MIN_COVERAGE, MIN_SLOT_SAMPLES, explains_drop, seasonal_baseline,
+    MIN_COVERAGE,
+    MIN_SLOT_SAMPLES,
+    explains_drop,
+    seasonal_baseline,
 )
 from app.detection.rules import (
-    DEGRADATION_THRESHOLD_PP, MIN_VOLUME, PERIOD_DAYS,
+    DEGRADATION_THRESHOLD_PP,
+    PERIOD_DAYS,
     detect_payment_degradation,
 )
 from scripts.seed_data import ANCHOR

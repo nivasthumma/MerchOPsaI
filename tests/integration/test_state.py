@@ -86,11 +86,12 @@ def test_gmv_is_attempted_value_and_revenue_is_captured(db, state):
     `gmv = revenue` SURVIVED it — both hold when the two are equal. A bound is
     not a test of a quantity that is supposed to differ.
     """
+    from datetime import timedelta
+
     from sqlalchemy import text
 
     from app.state import PERIOD_DAYS
     from scripts.seed_data import ANCHOR
-    from datetime import timedelta
 
     fin = state.financial.values
     expected = db.execute(text("""

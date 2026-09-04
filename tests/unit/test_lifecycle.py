@@ -1,10 +1,15 @@
 """Incident lifecycle legality — MerchantOps §13."""
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 
 from app.incidents.lifecycle import (
-    EXCEPTION, IllegalTransition, is_legal, legal_from,
+    EXCEPTION,
+    IllegalTransition,
+    is_legal,
+    legal_from,
 )
 from app.models import IncidentStatus as S
 
@@ -13,7 +18,7 @@ def test_canonical_chain_is_walkable():
     chain = [S.DETECTED, S.TRIAGED, S.INVESTIGATING, S.ROOT_CAUSE_IDENTIFIED,
              S.RECOVERY_PLANNED, S.POLICY_EVALUATING, S.APPROVAL_REQUIRED,
              S.EXECUTING, S.VERIFYING, S.RESOLVED, S.CLOSED]
-    for frm, to in zip(chain, chain[1:]):
+    for frm, to in zip(chain, chain[1:], strict=False):
         assert is_legal(frm, to), f"{frm.value} -> {to.value} should be legal"
 
 
@@ -32,7 +37,7 @@ def test_every_live_state_can_fail_escalate_or_cancel():
             S.RECOVERY_PLANNED, S.POLICY_EVALUATING, S.APPROVAL_REQUIRED,
             S.EXECUTING, S.VERIFYING]
     for state in live:
-        assert EXCEPTION <= legal_from(state), f"{state.value} cannot reach an exception state"
+        assert legal_from(state) >= EXCEPTION, f"{state.value} cannot reach an exception state"
 
 
 def test_unknown_is_not_a_dead_end():
@@ -51,9 +56,10 @@ def test_skipping_forward_is_legal_but_only_forward():
 
 
 def test_transition_refuses_and_says_what_was_legal(db):
+    from datetime import datetime
+
     from app.incidents.lifecycle import transition
     from app.models import Incident, IncidentSeverity, IncidentType
-    from datetime import datetime, timezone
 
     inc = Incident(
         id="INC_TEST01", merchant_id="MERCH_A",
@@ -61,7 +67,7 @@ def test_transition_refuses_and_says_what_was_legal(db):
         severity=IncidentSeverity.HIGH, status=S.RESOLVED,
         title="t", summary="s", detection_key="k1",
         detection_rule="r", detection_version="v", correlation_id="c",
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
     )
     db.add(inc)
     db.flush()
@@ -84,7 +90,9 @@ def test_the_full_v2_chain_is_walkable():
              S.DIAGNOSING, S.ROOT_CAUSE_IDENTIFIED, S.RECOVERY_PLANNED,
              S.POLICY_EVALUATING, S.APPROVAL_REQUIRED, S.APPROVED,
              S.EXECUTING, S.VERIFYING, S.MEASURING, S.RESOLVED, S.CLOSED]
-    for frm, to in zip(chain, chain[1:]):
+    # strict=False: chain[1:] is deliberately one shorter -- this walks
+    # adjacent pairs, and the last element has no successor to pair with.
+    for frm, to in zip(chain, chain[1:], strict=False):
         assert is_legal(frm, to), f"{frm.value} -> {to.value} should be legal"
 
 

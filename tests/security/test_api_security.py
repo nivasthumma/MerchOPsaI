@@ -1,6 +1,8 @@
 """API authentication and rate limiting — closes two threat-model residual risks."""
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -272,12 +274,12 @@ def test_the_approval_queue_is_a_resource_and_is_merchant_scoped(client, db, own
 def test_an_expired_approval_is_not_shown_as_actionable(client, db, owner):
     """It stays PENDING in the database until someone tries to use it. The
     queue must not present it as work an operator can still do."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from app.agent.runtime import AgentRuntime
 
     out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
-    out.approval.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    out.approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.commit()
 
     a = client.get("/approvals", headers=token("USR_A_OWNER")).json()["approvals"]
@@ -318,3 +320,91 @@ def test_temperature_is_never_sent_to_the_model():
     assert "temperature" not in src.split('"""')[0] or "temperature=" not in src
     assert "temperature=" not in src
     assert '"effort"' in src
+
+
+# --------------------------------------------------------------------------
+# The development signing secret must not reach a deployment
+# --------------------------------------------------------------------------
+class TestDevelopmentSecretIsRefusedOnDeployments:
+    """`require_configured_secret` — the control the docstring already claimed.
+
+    Until this existed, `app/api/security.py` described an API that "refuses to
+    start in strict mode without a real one (see require_configured_secret)"
+    and no such function was defined anywhere in the repository. `/health`
+    reported the fallback and nothing consulted the report before serving.
+
+    The fallback matters because the value is a literal in this repository:
+    anyone who can read it can mint a token for any user, and permissions are
+    then read from the database exactly as for a real one. The checks behind the
+    token hold; the identity in front of them does not.
+    """
+
+    def _reload(self, monkeypatch, **env):
+        """Re-read the module under a given environment.
+
+        DEV_SECRET_IN_USE is computed at import, so the environment has to be in
+        place before the module is read rather than after.
+        """
+        import importlib
+
+        import app.api.security as sec
+        for key in ("API_TOKEN_SECRET", "MERCHANTOPS_ALLOW_DEV_SECRET",
+                    "MERCHANTOPS_ENV", "VERCEL", "AWS_EXECUTION_ENV",
+                    "KUBERNETES_SERVICE_HOST", "DYNO", "RENDER",
+                    "FLY_APP_NAME", "WEBSITE_INSTANCE_ID"):
+            monkeypatch.delenv(key, raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        return importlib.reload(sec)
+
+    def test_a_laptop_with_no_secret_still_runs(self, monkeypatch):
+        """The fallback exists so a fresh clone works. That must keep working."""
+        sec = self._reload(monkeypatch)
+        sec.require_configured_secret()          # must not raise
+
+    def test_a_deployment_with_no_secret_refuses_to_start(self, monkeypatch):
+        sec = self._reload(monkeypatch, VERCEL="1")
+        with pytest.raises(sec.InsecureConfiguration) as exc:
+            sec.require_configured_secret()
+        assert "API_TOKEN_SECRET" in str(exc.value)
+        assert "VERCEL" in str(exc.value), "the message must name what gave it away"
+
+    @pytest.mark.parametrize("marker", [
+        "VERCEL", "AWS_EXECUTION_ENV", "KUBERNETES_SERVICE_HOST",
+        "DYNO", "RENDER", "FLY_APP_NAME", "WEBSITE_INSTANCE_ID",
+    ])
+    def test_every_platform_marker_is_honoured(self, monkeypatch, marker):
+        """One platform's variable being handled is not a control."""
+        sec = self._reload(monkeypatch, **{marker: "1"})
+        with pytest.raises(sec.InsecureConfiguration):
+            sec.require_configured_secret()
+
+    @pytest.mark.parametrize("value", ["production", "staging", "prod", "PRODUCTION"])
+    def test_an_explicit_environment_is_enough(self, monkeypatch, value):
+        sec = self._reload(monkeypatch, MERCHANTOPS_ENV=value)
+        with pytest.raises(sec.InsecureConfiguration):
+            sec.require_configured_secret()
+
+    def test_a_real_secret_satisfies_it_everywhere(self, monkeypatch):
+        sec = self._reload(monkeypatch, VERCEL="1", API_TOKEN_SECRET="a-real-secret")
+        sec.require_configured_secret()          # must not raise
+
+    def test_the_override_is_available_and_explicit(self, monkeypatch):
+        """A deliberate exception stays possible; it just has to be deliberate."""
+        sec = self._reload(monkeypatch, VERCEL="1", MERCHANTOPS_ALLOW_DEV_SECRET="1")
+        sec.require_configured_secret()          # must not raise
+
+    def test_tokens_signed_with_the_default_are_forgeable_from_this_repository(
+            self, monkeypatch):
+        """Why the control exists, stated as a test rather than a comment.
+
+        The default is a literal in the source. Anyone holding it can produce a
+        token the server accepts for any user id.
+        """
+        import hashlib
+        import hmac as _hmac
+
+        sec = self._reload(monkeypatch)
+        forged = "USR_A_OWNER." + _hmac.new(
+            sec.DEV_SECRET.encode(), b"USR_A_OWNER", hashlib.sha256).hexdigest()
+        assert sec.verify_token(forged) == "USR_A_OWNER"

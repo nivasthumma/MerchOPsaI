@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-462%20passed-brightgreen.svg)](#-measured-results)
-[![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-78%2F78-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-662%20passed-brightgreen.svg)](#-measured-results)
+[![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
+[![Mutations](https://img.shields.io/badge/mutations-113%20defined%20%C2%B7%20not%20re--measured-lightgrey.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 462 tests · 167/167 scenarios · 78/78 mutations |
+| [📊 Measured results](#-measured-results) | 662 tests · 187/187 scenarios · 113 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -55,6 +55,7 @@ directly is the second entry point, not the only one.
 | | |
 |---|---|
 | [⚙️ Setup](#-setup) · [🔌 API](#-api) | Local install; the endpoint surface |
+| [🚨 Runbook](docs/runbook.md) | Health, the `UNKNOWN` queue, deploys, restore, triage |
 | [🚧 Known limitations](#-known-limitations) | Split by *why* each one exists |
 | [🗺️ Roadmap](#-roadmap) · [📁 Repository layout](#-repository-layout) | What is next; where things live |
 | [📄 License / disclaimer](#-license--disclaimer) | MIT, and what this project is not |
@@ -84,7 +85,7 @@ and what is architecture.
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 167 scenarios + 78-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 187 scenarios + 113-mutant validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -125,27 +126,37 @@ ambiguous between "chosen" and "nothing was detected".
 From `make eval` — actual execution, not targets:
 
 ```
-167/167 scenarios passed      (critical: 110/110)
+187/187 scenarios passed      (critical: 130/130)
 
-  adversarial_security  34/34    recovery              14/14
-  detection             10/10    refund_policy         28/28
+  adversarial_security  34/34    recovery              19/19
+  detection             25/25    refund_policy         28/28
   duplicate_payment     16/16    revenue_investigation 19/19
   failure_unknown       20/20    risk_approval          7/7
   payment_failure       14/14    webhook                5/5
 
-median task latency 52 ms · mean grounding rate 1.0
+median task latency 49 ms · mean grounding rate 1.0
 ```
 
 **A suite that passes everything proves nothing on its own.** `make mutants`
 deliberately breaks each core control and re-runs the suite:
 
 ```
-78/78 mutations caught
+113 mutants defined         not yet re-measured on this tree
 ```
 
-*Measured in one full run — 55 mutants, each re-running the whole scenario and test suite.*
+*Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
+complete run takes the better part of an hour. **No complete run has happened since
+`feat/incident-spine` and `feat/merchantops-v2` were merged** (ADR-0041), and the two
+branches' last complete runs measured different tree*s* — 77/78 and 78/78 against
+mutant sets that no longer exist, since the merged set is 113. Neither number
+describes what is here now, so neither is published. CI runs the full set nightly and
+on every pull request; that is where the figure for this tree will come from.*
 
-That run is what makes the 167/167 meaningful — and it is how three real gaps
+*What is verified individually: the merchant-isolation mutant — the one a killed run
+left stranded in the working tree, and the reason `app/integrity.py` exists — was
+applied and caught on the merged tree.*
+
+That run is what makes the 187/187 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
 onset had no volume floor, so ordinary variance was being reported as the moment a
 degradation began.
@@ -174,7 +185,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **462 passed** (`make test`) across unit, security and integration, in
+Test suite: **662 passed** (`make test`) across unit, security and integration, in
 under 15 seconds — the suite seeds once and rolls each test back, rather than rebuilding
 the schema for every test.
 
@@ -231,7 +242,7 @@ Seven steps, each printing what actually happened:
                     └────────┬─────────┘
                              ▼
                     ┌──────────────────┐
-                    │ Typed Tool Layer │  6 tools, strict schemas
+                    │ Typed Tool Layer │  15 tools, strict schemas
                     └────────┬─────────┘
                              ▼
         ┌────────────────────────────────────┐
@@ -280,8 +291,14 @@ Four details in that diagram are load-bearing:
   `PARTIAL`.
 - **The mapping layer is on the critical path.** It is the only route from a synthetic
   id to a provider id, so the agent can never name one.
-- **There are no webhooks, deliberately.** A webhook is something you are *told*;
-  verification reads state *back*. It would buy latency, not truth.
+- **A webhook decides when to look, never what was found.** This used to read
+  "there are no webhooks, deliberately" — written before ADR-0018 added them,
+  and left standing while two other sections of this file documented signed
+  ingestion and a durable event store. The original reasoning survives the
+  change: a webhook is something you are *told*, and being told is weaker than
+  reading state back. So a relevant event marks an action for immediate
+  re-verification and verification goes and reads the provider. An attacker who
+  defeats the signature can make us re-read state we would have read anyway.
 
 Full detail — the request path gate by gate, the verification predicate, and the
 shape a webhook would take if one were added:
@@ -319,9 +336,20 @@ Dataset (`seed 20260825`, byte-identical every run): 2 merchants, 200 customers,
 | Untrusted data tagging | `Evidence.untrusted` + `<untrusted_merchant_data>` delimiters | `test_injected_text_is_tagged_untrusted` |
 | Injection resistance | asserted at the **policy layer**, not on prose | `test_injection_in_customer_notes_does_not_cause_refund` |
 | Idempotency | server-derived key + `UNIQUE` constraint | `test_double_approval_produces_one_refund` |
+| One live refund per payment | partial `UNIQUE` index, not a prior `SELECT` | `test_two_approvals_for_one_payment_produce_one_refund` |
+| Signing key on deployments | `require_configured_secret`, at import | `TestDevelopmentSecretIsRefusedOnDeployments` |
 | Argument validation | before policy touches the database | `test_malformed_arguments_rejected_*` |
 | Secret redaction | `app/audit/trace.py` | `test_secrets_are_redacted_from_traces` |
 | Loop budget | 12 tool calls / 8 turns / 60s | `test_budget_terminates_runaway_loop` |
+
+Two of those are recent and were found by review rather than by the suite, which
+is worth saying plainly because the suite is what this project asks to be judged
+on. Neither was reachable by a single-threaded test: the double-refund race
+needs two connections committing against each other, and the signing-key control
+was a docstring describing a function that did not exist. `tests/integration/
+test_concurrency.py` is the first test here to open two real connections, and it
+reproduces the double refund when the constraint is removed — two threads, both
+reporting success, two refunds against one payment.
 
 The injection claim is deliberately narrow: **"no external call occurred and the
 decision was recorded"** — not "the agent resisted". Threat model:
@@ -340,7 +368,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 462 tests
+make test                                # 662 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -365,7 +393,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 39 Vitest tests
+make web-test                     # 182 Vitest tests
 ```
 
 The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
@@ -531,8 +559,11 @@ are different claims.
     different and should be reported separately.
 14. **Authentication is HMAC bearer tokens, not an identity provider.** Tokens are
    unforgeable and permissions are read from the database on every request, but
-   there is no expiry, rotation, revocation list, or audience binding.
-16. **Detection observes state, not a stream.** `webhook_events` stores what the provider
+   there is no expiry, rotation, revocation list, or audience binding — revoking
+   one person means rotating the secret for everybody. A deployment can no
+   longer run on the development signing key, though: the application refuses to
+   start where a platform marker says it is not a laptop.
+15. **Detection observes state, not a stream.** `webhook_events` stores what the provider
    *tells* us, but the detection rules still read `payments`. A business change that
    never lands on a payment row is invisible to them. Wiring detection onto the event
    store is real work, not a rename.
@@ -544,7 +575,15 @@ are different claims.
 
 ### Coverage limits
 
-15. **Thirteen of the 45 mutants are caught by unit tests only** — no scenario
+18. **The per-mutant breakdown is stale.** The figures in this item and the next
+    were measured on `feat/incident-spine`'s 78-mutant set. The merge in ADR-0041
+    brought `feat/merchantops-v2`'s mutants in alongside them, making 113, and no
+    complete run has happened since. The shape of the finding is unchanged — some
+    mutants are reachable only by unit tests, and a few are detected as a crash rather
+    than a graded failure — but every number below describes the previous set. The
+    nightly CI run is what will replace them.
+
+    *As measured on the 78-mutant set:* **Thirteen are caught by unit tests only** — no scenario
     distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
     the key-name branch of audit redaction, the incident lifecycle's legality check, and
     grading a bulk action as if it stood alone, and six of the seven tooling controls.
@@ -559,11 +598,12 @@ are different claims.
     crash rather than a graded result, and the rest by unit tests alone — the metrics and
     taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-16. **The 45-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
-    The test half is now fast (one seed, per-test rollback); the scenario half still
-    rebuilds the schema per scenario, so a complete run is around fifty minutes.
-    `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
-    all of them.
+19. **The mutant run is slow, and got slower.** Each mutant re-runs the full scenario
+    and test suites. The test half is fast (one seed, per-test rollback); the scenario
+    half still rebuilds the schema per scenario. At 78 mutants against 167 scenarios a
+    complete run was around fifty minutes; at 113 against 187 it is longer, which is why
+    it no longer runs on every push (ADR-0041) — pull requests, the trunk, and nightly.
+    `scripts/mutation_test.py <substring>` runs a subset during development.
 
 ---
 
@@ -618,10 +658,10 @@ app/
   api/          FastAPI surface + response contracts (ADR-0032)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 181 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 189 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (462 tests)
+tests/          unit · security · integration  (662 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 32 ADRs
@@ -635,5 +675,10 @@ Independent developer project, provided as-is for demonstration purposes. Uses
 Razorpay Test Mode APIs where applicable. Not affiliated with, sponsored by, or
 endorsed by Razorpay. No real-money transactions are performed anywhere in this
 codebase.
+
+Operating it: [`docs/runbook.md`](docs/runbook.md) — health checks, the
+reconciliation and escalation queues, migration hazards, the backup/restore
+drill (rehearsed, and honest about what it does not tell you), and triage for
+the two objectives whose target is zero.
 
 Security reports: [`SECURITY.md`](SECURITY.md).

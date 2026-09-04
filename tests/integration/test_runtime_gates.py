@@ -19,8 +19,6 @@ same control — it is a crash that happens to prevent the same thing.
 """
 from __future__ import annotations
 
-import pytest
-
 from app.agent.runtime import AgentRuntime
 from app.llm.deterministic import DeterministicProvider
 from app.models import AgentAction, ToolCall

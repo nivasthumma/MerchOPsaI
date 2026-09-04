@@ -29,6 +29,13 @@ from app.events.bus import (
 from app.events.vocabulary import EVENT_TYPES, is_known
 
 __all__ = [
-    "EventPublisher", "EventConsumer", "EventStore", "PostgresEventStore",
-    "publish", "drain", "subscribe", "EVENT_TYPES", "is_known",
+    "EVENT_TYPES",
+    "EventConsumer",
+    "EventPublisher",
+    "EventStore",
+    "PostgresEventStore",
+    "drain",
+    "is_known",
+    "publish",
+    "subscribe",
 ]

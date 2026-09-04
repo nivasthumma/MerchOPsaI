@@ -13,7 +13,16 @@ PY=.venv/bin/python
 HOST ?= 127.0.0.1
 PORT ?= 8000
 
-setup:      ; python3 -m venv .venv && $(PY) -m pip install -q -r requirements.txt
+# `--require-hashes` so an install either matches the lock exactly or fails.
+# Without it pip will happily satisfy a pinned version from a substituted
+# artefact, which is the attack the hashes exist to close.
+setup:      ; python3 -m venv .venv && $(PY) -m pip install -q -r requirements.txt --require-hashes
+setup-dev:  ; $(PY) -m pip install -q -r requirements-dev.txt --require-hashes
+
+# Regenerate the locks after editing requirements*.in. Needs `uv`.
+lock:
+	uv pip compile requirements.in --generate-hashes --python-version 3.12 -o requirements.txt
+	uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 -o requirements-dev.txt
 seed:       ; $(PY) scripts/seed_data.py
 spike:      ; $(PY) scripts/razorpay_spike.py
 api:        ; PYTHONPATH=. .venv/bin/uvicorn app.api.main:app --reload --port 8000
@@ -38,7 +47,17 @@ migration:  ; PYTHONPATH=. .venv/bin/alembic revision --autogenerate -m "$(M)"
 openapi:    ; PYTHONPATH=. $(PY) scripts/export_openapi.py
 openapi-check: ; PYTHONPATH=. $(PY) scripts/export_openapi.py --check
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
-ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) test && $(MAKE) eval
+# The gates CI runs, in the order CI runs them. `lint` and `audit` need the
+# dev tooling: `make setup-dev`.
+lint:       ; $(PY) -m ruff check .
+lint-fix:   ; $(PY) -m ruff check . --fix
+audit:      ; $(PY) -m pip_audit -r requirements.txt --progress-spinner off && \
+              $(PY) -m pip_audit -r requirements-dev.txt --progress-spinner off
+# The tracked tree, and nothing else, must import. This is the check that
+# catches a file somebody wrote and never `git add`-ed -- the working directory
+# hides it, a fresh clone does not.
+cleanroom:  ; @$(PY) scripts/check_cleanroom.py
+ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------
@@ -62,6 +81,7 @@ serve: web-build
 	fi
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
-.PHONY: setup seed spike api ui test eval reconcile mutants compare harden token ci demo \
+.PHONY: setup setup-dev lock seed spike api ui test eval reconcile mutants compare harden token ci demo \
+        lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \
         web-setup web web-build web-test serve

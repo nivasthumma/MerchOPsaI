@@ -10,10 +10,13 @@ import pytest
 from sqlalchemy import text
 
 from app.detection import detect
-from app.models import CandidateStatus, Incident, Intervention, IncidentType
+from app.models import CandidateStatus, Incident, IncidentType, Intervention
 from app.recovery import plan_recovery
 from app.recovery.history import (
-    MIN_SAMPLE, Outcome, outcome_for, outcomes, rank,
+    MIN_SAMPLE,
+    outcome_for,
+    outcomes,
+    rank,
 )
 
 
@@ -218,7 +221,7 @@ def test_the_estimate_switches_to_the_measured_rate_once_there_is_one(db, owner)
     directly, so it replaces the assumption — and the basis says which is in
     use, because the two are not interchangeable.
     """
-    from app.models import RecoveryCandidate, RecoveryPlan
+    from app.models import RecoveryCandidate
     from app.recovery.planner import compute_plan
 
     detect(db, "MERCH_A")

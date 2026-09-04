@@ -35,7 +35,7 @@ EVIDENCE_COLLECTING; one that produces no output block never enters DIAGNOSING.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.agent.confidence import assess
 from app.agent.runtime import AgentRuntime, Principal
@@ -44,8 +44,14 @@ from app.evidence.graph import build as build_graph
 from app.evidence.hypotheses import adjudicate
 from app.incidents.lifecycle import legal_from, transition
 from app.models import (
-    Incident, IncidentEvidence, IncidentSeverity, IncidentStatus as S,
-    IncidentType, TaskStatus,
+    Incident,
+    IncidentEvidence,
+    IncidentSeverity,
+    IncidentType,
+    TaskStatus,
+)
+from app.models import (
+    IncidentStatus as S,
 )
 
 # Where an investigation leaves the incident, by the task's recorded status.
@@ -212,7 +218,7 @@ def raise_incident(session, *, merchant_id: str, incident_type: IncidentType,
         revenue_at_risk_minor=revenue_at_risk_minor, signals=signals or {},
         detection_rule=detection_rule, detection_version=detection_version,
         correlation_id=f"COR_{uuid.uuid4().hex[:12].upper()}",
-        started_at=started_at or datetime.now(timezone.utc),
+        started_at=started_at or datetime.now(UTC),
     )
     sp = session.begin_nested()
     try:

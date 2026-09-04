@@ -14,16 +14,21 @@ import pytest
 from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute
-from app.agent.runtime import AgentRuntime
 from app.config import get_settings
 from app.detection import detect
 from app.detection.rules import BURST_THRESHOLD, detect_provider_failure_burst
 from app.failures import Retryability, classify, may_retry, should_reconcile, unsettled_states
 from app.integrations.razorpay.adapter import get_adapter
-from app.integrations.razorpay.faults import Fault, FaultInjector
 from app.models import (
-    ActionStatus, AgentAction, AgentTask, CandidateStatus, Incident, IncidentType,
-    TaskStatus, VerificationState, WebhookStatus,
+    ActionStatus,
+    AgentAction,
+    AgentTask,
+    CandidateStatus,
+    Incident,
+    IncidentType,
+    TaskStatus,
+    VerificationState,
+    WebhookStatus,
 )
 from app.tools.actions import REVERIFIERS, reverify_action
 from app.tools.recovery_actions import execute_payment_link

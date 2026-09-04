@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 class Confidence(str, enum.Enum):
@@ -169,7 +169,7 @@ def assess(*, evidence: list, tool_calls: list | None = None,
     pass it is a caller that will eventually pass True by habit, and this is
     the one input that can lift a band.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     tool_calls = tool_calls or []
     a = ConfidenceAssessment(band=Confidence.INSUFFICIENT,
                              model_confidence=model_confidence)
@@ -197,7 +197,7 @@ def assess(*, evidence: list, tool_calls: list | None = None,
         if created is None:
             continue
         if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
+            created = created.replace(tzinfo=UTC)
         if now - created > FRESHNESS_WINDOW:
             a.stale_evidence += 1
 

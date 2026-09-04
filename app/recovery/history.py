@@ -115,7 +115,10 @@ def outcomes(session, merchant_id: str) -> dict[Intervention, Outcome]:
     would leak one merchant's commercial performance into another's plan --
     a cross-tenant read wearing a statistic (§54).
     """
-    rows = session.execute(text(f"""
+    # `= ANY(:settled)` rather than an IN-list spliced into the string: the
+    # statuses are ours and safe either way, but a bound array is one fewer
+    # place where a query is assembled by concatenation.
+    rows = session.execute(text("""
         SELECT intervention,
                COUNT(*)                                                  AS attempts,
                COUNT(*) FILTER (WHERE status = 'RECOVERED')              AS recovered,
@@ -123,9 +126,9 @@ def outcomes(session, merchant_id: str) -> dict[Intervention, Outcome]:
                COALESCE(SUM(actual_recovery_minor), 0)                   AS recovered_minor
         FROM recovery_candidates
         WHERE merchant_id = :m
-          AND status IN ({", ".join(f"'{s}'" for s in _SETTLED)})
+          AND status = ANY(:settled)
         GROUP BY intervention
-    """), {"m": merchant_id}).mappings().all()
+    """), {"m": merchant_id, "settled": list(_SETTLED)}).mappings().all()
 
     out: dict[Intervention, Outcome] = {}
     for r in rows:

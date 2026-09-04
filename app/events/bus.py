@@ -27,9 +27,10 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Callable, Protocol, runtime_checkable
+from datetime import UTC, datetime
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy import select
 
@@ -167,7 +168,7 @@ def publish(session, event_type: str, *, payload: dict | None = None,
         correlation_id=correlation_id,
         payload=body, payload_hash=_hash(body),
         status=OutboxStatus.PENDING,
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=datetime.now(UTC),
     )
     session.add(row)
     session.flush()
@@ -242,7 +243,7 @@ def drain(session, *, limit: int = 200) -> dict:
             failed += 1
             continue
         row.status = OutboxStatus.PUBLISHED
-        row.published_at = datetime.now(timezone.utc)
+        row.published_at = datetime.now(UTC)
         published += 1
 
     session.flush()

@@ -1,0 +1,9 @@
+# CI and developer tooling. Kept out of `requirements.in` so a deployment
+# installs neither the linter nor the auditor, and locked for the same reason
+# the application dependencies are: a gate that resolves to a different version
+# each run reports on a different thing each run.
+#
+#     uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 \
+#         -o requirements-dev.txt
+ruff==0.16.5
+pip-audit==2.9.0

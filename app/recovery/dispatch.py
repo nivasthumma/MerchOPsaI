@@ -15,11 +15,18 @@ from __future__ import annotations
 from app.agent.runtime import AgentRuntime
 from app.audit.trace import record_incident
 from app.incidents.lifecycle import advance as _advance
-from app.models import IncidentStatus as _S
 from app.models import (
-    AgentAction, CandidateStatus, Incident, Intervention, PlanStatus,
-    RecoveryCandidate, RecoveryPlan, TaskStatus, VerificationState,
+    AgentAction,
+    CandidateStatus,
+    Incident,
+    Intervention,
+    PlanStatus,
+    RecoveryCandidate,
+    RecoveryPlan,
+    TaskStatus,
+    VerificationState,
 )
+from app.models import IncidentStatus as _S
 from app.policy.risk import assess
 from app.recovery.stopping import Disposition, StopDecision, apply_stop, evaluate_stopping_rules
 from app.tools.registry import REGISTRY
@@ -183,7 +190,7 @@ def _settle_one(session, cand: RecoveryCandidate, action: AgentAction,
         if action.external_reference:
             try:
                 link = adapter.get_payment_link(action.external_reference)
-            except Exception:                                   # noqa: BLE001
+            except Exception:
                 link = None
         if link is not None and link.status == "paid":
             return CandidateStatus.RECOVERED, cand.attributed_amount_minor

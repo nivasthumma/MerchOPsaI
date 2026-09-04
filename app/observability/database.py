@@ -28,8 +28,8 @@ import time
 
 from sqlalchemy import event
 
-from app.observability.logs import get_logger
 from app.observability import runtime_metrics as metrics
+from app.observability.logs import get_logger
 
 log = get_logger("merchantops.db")
 

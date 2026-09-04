@@ -62,7 +62,7 @@ def get_payment_status(session, merchant_id: str, payment_id: str, *, adapter=No
     adapter = adapter or get_adapter(session)
     try:
         ext = adapter.get_payment(row["external_payment_id"])
-    except Exception as exc:                                        # noqa: BLE001
+    except Exception as exc:
         # A failed read is reported as a failed read. Falling back to our own
         # records here would answer a question about provider state with
         # internal state, which is the substitution §32 exists to prevent.
@@ -169,7 +169,7 @@ def reconcile_transaction(session, merchant_id: str, action_id: str, *, adapter=
     adapter = adapter or get_adapter(session)
     try:
         vr = reverify_action(session, adapter, action)
-    except Exception as exc:                                        # noqa: BLE001
+    except Exception as exc:
         # MerchantOps §57: an unreadable state is not a failed action. Leaving
         # it as it was is the correct outcome; the sweep will try again.
         return ToolResult(success=False, error_code="EXTERNAL_STATE_UNKNOWN",

@@ -255,8 +255,61 @@ def test_refusing_a_duplicate_does_not_erase_the_first_attempt(db, owner):
 def test_a_random_key_would_let_that_retry_through(db, owner, monkeypatch):
     """Proves the test above measures the KEY, not some other guard.
 
-    With derivation replaced by a random value the reserved row never collides,
-    the retry reaches the provider, and a second refund lands.
+    `sp.rollback()` discards one failed INSERT. A bare `session.rollback()`
+    there discards everything written since the last commit — which, after
+    ADR-0029 put a commit at the reservation, is precisely what the *first*
+    call established about itself: its provider reference and its verification
+    outcome. The action reverts to PENDING with no reference, so a refund that
+    genuinely reached the provider is left looking like one that never ran, and
+    the reconciliation sweep then picks it up as an unfinished claim.
+
+    This assertion replaces the one the sibling test used to make. Before the
+    claim was committed, `session.rollback()` took the whole first action with
+    it and a row count caught the mutant; now the row survives and only its
+    contents are lost, so the contents are what has to be checked.
+    """
+    from app.integrations.razorpay.adapter import get_adapter
+    from app.tools.actions import execute_refund
+
+    out, approval, payload = _approved_refund_args(db, owner)
+    kw = dict(task_id=out.task.id, merchant_id=owner.merchant_id,
+              synthetic_payment_id=payload["synthetic_payment_id"],
+              amount_minor=int(payload["amount_minor"]), approval_id=approval.id)
+
+    stalled = get_adapter(db, FaultInjector(fault=Fault.ACCEPTED_NOT_APPLIED))
+    first = execute_refund(db, stalled, **kw).action
+    established = (first.status, first.external_reference,
+                   first.verification_state, first.verify_attempts)
+    assert established[1] is not None, "the first call must have reached the provider"
+
+    # The duplicate is refused...
+    second = execute_refund(db, get_adapter(db), **kw)
+    assert second.result.data["error"] == "duplicate_action"
+
+    # ...and the refusal changed nothing about what we already knew.
+    db.refresh(first)
+    assert (first.status, first.external_reference,
+            first.verification_state, first.verify_attempts) == established
+
+
+def test_a_random_key_is_caught_by_the_second_guard(db, owner, monkeypatch):
+    """Proves the test above measures the KEY, and that a second guard backs it.
+
+    This test used to assert the opposite: with derivation replaced by a random
+    value the reserved row never collided, the retry reached the provider, and a
+    second refund landed. That was true, and it was the whole argument that the
+    sibling test measures the key rather than something else.
+
+    It is no longer true, deliberately. `uq_live_refund_per_payment` refuses a
+    second LIVE refund for one payment whatever its idempotency key, because the
+    key alone could never stop two *separately approved* refunds -- it is
+    derived partly from approval_id, so two approvals produce two distinct keys
+    and two accepted rows.
+
+    The sibling test does not become vacuous, and that is what this now checks:
+    the two guards report different error codes, so a broken key still changes
+    what comes back. `duplicate_action` means the key caught it;
+    `concurrent_refund_refused` means the key did not and the index did.
     """
     import uuid as _uuid
 
@@ -276,5 +329,7 @@ def test_a_random_key_would_let_that_retry_through(db, owner, monkeypatch):
     before = db.query(Refund).count()
     second = actions_mod.execute_refund(db, get_adapter(db), **kw)
 
-    assert second.action is not None, "a random key let the retry reserve a new action"
-    assert db.query(Refund).count() == before + 1, "and reach the provider"
+    assert second.action is None, "the random key must not have reserved a new action"
+    assert second.result.data["error"] == "concurrent_refund_refused", (
+        "a different guard caught this than the one the sibling test measures")
+    assert db.query(Refund).count() == before, "and no second refund reached the provider"

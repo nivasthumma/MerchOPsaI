@@ -15,7 +15,8 @@ from app.api import security as sec
 from app.api.main import app
 from app.detection import detect
 from app.incidents.manager import build_investigation_request, investigate
-from app.models import AuditLog, Incident, IncidentStatus as S
+from app.models import AuditLog, Incident
+from app.models import IncidentStatus as S
 
 
 @pytest.fixture
@@ -184,7 +185,7 @@ def test_every_lifecycle_move_is_audited(db, owner):
     assert moves, "lifecycle moves were not audited"
     chain = [(m.payload["from"], m.payload["to"]) for m in moves]
     # Contiguous: each move starts where the previous one ended.
-    for (_, to), (frm, _) in zip(chain, chain[1:]):
+    for (_, to), (frm, _) in zip(chain, chain[1:], strict=False):
         assert to == frm, f"audit trail has a gap: {chain}"
     assert chain[0][0] == "DETECTED"
 
@@ -212,7 +213,6 @@ def test_investigation_records_the_platforms_band_and_its_derivation(db, owner):
 
 def test_the_band_the_api_shows_is_not_the_number_the_model_chose(db, owner):
     """MerchantOps v2 §33. The screen in §64 is a claim by the platform."""
-    from app.agent.confidence import Confidence
     from app.incidents.manager import investigate
 
     detect(db, "MERCH_A")

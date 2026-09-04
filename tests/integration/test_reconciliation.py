@@ -7,7 +7,7 @@ cannot be settled they become visible rather than being swept forever.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -86,7 +86,7 @@ def test_unsettleable_action_escalates_and_stops(db, owner):
         status=ActionStatus.UNKNOWN,
         verification_state=VerificationState.UNKNOWN,
         verify_attempts=4,                            # one below the cap
-        updated_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        updated_at=datetime.now(UTC) - timedelta(minutes=5),
     )
     db.add(stuck)
     db.flush()
@@ -131,6 +131,7 @@ def test_escalated_rows_carry_the_reason(db, owner):
     """The operator queue is a work list. Identifiers alone make it a lookup
     exercise: the reason an action is unsettled belongs on the row."""
     from sqlalchemy import text
+
     from app.agent.approval import approve_and_execute
     from app.agent.runtime import AgentRuntime
     from app.integrations.razorpay.faults import Fault, FaultInjector

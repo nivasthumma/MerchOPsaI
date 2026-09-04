@@ -18,29 +18,39 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
-from app.agent.output import check_grounding, parse as parse_output, to_findings
+from app.agent.output import check_grounding, to_findings
+from app.agent.output import parse as parse_output
 from app.agent.prompts.investigator_v1 import PROMPT_VERSION, SYSTEM_PROMPT
 from app.audit.trace import (
-    correlation_scope, current_correlation_id, record, redact,
+    correlation_scope,
+    current_correlation_id,
+    record,
+    redact,
 )
-from app.observability.logs import get_logger
 from app.config import get_settings
 from app.failures import describe
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
 from app.llm import LLMProvider, get_provider
 from app.models import (
-    AgentMessage, AgentTask, Approval, TaskStatus, ToolCall, VerificationState,
+    AgentMessage,
+    AgentTask,
+    Approval,
+    TaskStatus,
+    ToolCall,
 )
+from app.observability.logs import get_logger
 from app.policy.engine import POLICY_VERSION, Decision, PolicyContext, evaluate
 from app.tools.registry import (
-    REGISTRY, execute_read_tool, registry_version, validate_arguments,
+    REGISTRY,
+    execute_read_tool,
+    registry_version,
+    validate_arguments,
 )
-
 
 log = get_logger("merchantops.agent")
 
@@ -354,10 +364,17 @@ class AgentRuntime:
                 self._say(task, messages, turn_no + 1, "assistant", turn.text)
                 break
 
-            assistant_blocks = [{"type": "tool_use", "id": t.id, "name": t.name,
-                                 "input": t.arguments} for t in turn.tool_requests]
-            if turn.text:
-                assistant_blocks.insert(0, {"type": "text", "text": turn.text})
+            # Replay what the model actually produced, when the provider can
+            # say. Rebuilding the turn from `text` + `tool_requests` drops
+            # `thinking` blocks, and a model running adaptive thinking requires
+            # them back unchanged on the turns that carry tool calls -- so the
+            # reconstruction is only correct for a provider that never thinks.
+            assistant_blocks = list(turn.echo_blocks)
+            if not assistant_blocks:
+                assistant_blocks = [{"type": "tool_use", "id": t.id, "name": t.name,
+                                     "input": t.arguments} for t in turn.tool_requests]
+                if turn.text:
+                    assistant_blocks.insert(0, {"type": "text", "text": turn.text})
             self._say(task, messages, turn_no + 1, "assistant", assistant_blocks)
 
             result_blocks = []
@@ -637,7 +654,7 @@ class AgentRuntime:
             # Fixed at proposal time. A later policy change must not quietly
             # reduce what an in-flight action needs.
             required_signatures=pol.required_signatures,
-            expires_at=datetime.now(timezone.utc) + timedelta(seconds=s.approval_ttl_seconds),
+            expires_at=datetime.now(UTC) + timedelta(seconds=s.approval_ttl_seconds),
         )
         self.session.add(ap)
         self.session.flush()

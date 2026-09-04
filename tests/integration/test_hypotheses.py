@@ -12,11 +12,20 @@ from sqlalchemy import text
 
 from app.detection import detect
 from app.evidence.hypotheses import (
-    adjudicate, candidates_for, for_incident, leading, propose,
+    adjudicate,
+    candidates_for,
+    for_incident,
+    leading,
+    propose,
 )
 from app.models import (
-    EventOutbox, EvidenceEdge, Hypothesis, HypothesisStatus, Incident,
-    IncidentType, Predicate,
+    EventOutbox,
+    EvidenceEdge,
+    Hypothesis,
+    HypothesisStatus,
+    Incident,
+    IncidentType,
+    Predicate,
 )
 
 

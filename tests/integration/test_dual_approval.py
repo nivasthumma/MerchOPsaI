@@ -11,12 +11,15 @@ from sqlalchemy import text
 
 from app.agent.approval import ApprovalError, approve_and_execute, reject
 from app.agent.runtime import AgentRuntime
-from app.integrations.razorpay.faults import Fault, FaultInjector
 from app.models import (
-    AgentAction, Approval, ApprovalSignature, Refund, TaskStatus, VerificationState,
+    AgentAction,
+    Approval,
+    ApprovalSignature,
+    Refund,
+    TaskStatus,
+    VerificationState,
 )
 from app.policy.engine import Decision, PolicyContext, evaluate
-
 
 # SYN_PAY_0007 is seeded as partially refunded: 200000 captured, 50000 already
 # back, 150000 still refundable. That combination is what makes the uncertainty

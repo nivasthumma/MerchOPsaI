@@ -160,7 +160,6 @@ def build_ledger(session, merchant_id: str) -> RecoveryLedger:
 
 def dashboard(session, merchant_id: str) -> dict:
     """§50. The ledger, plus incident counts and agent activity."""
-    from app.models import TaskStatus
 
     incidents = {r["status"]: int(r["n"]) for r in session.execute(text("""
         SELECT status, COUNT(*) AS n FROM incidents WHERE merchant_id = :m

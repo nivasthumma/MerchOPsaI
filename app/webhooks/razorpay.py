@@ -35,14 +35,15 @@ import hmac
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.models import (
-    ActionStatus, AgentAction, VerificationState, WebhookEvent, WebhookStatus,
+    WebhookEvent,
+    WebhookStatus,
 )
 
 SCHEMA_VERSION = "v1"
@@ -112,7 +113,7 @@ def _extract(payload: dict) -> tuple[str, str | None, datetime | None]:
 
     occurred_at = None
     if isinstance(payload.get("created_at"), (int, float)):
-        occurred_at = datetime.fromtimestamp(payload["created_at"], tz=timezone.utc)
+        occurred_at = datetime.fromtimestamp(payload["created_at"], tz=UTC)
     return event_type, entity_id, occurred_at
 
 
@@ -211,7 +212,7 @@ def ingest(session, raw_body: bytes, signature: str | None,
     # ---- processing ----------------------------------------------------
     if event_type not in ACTIONABLE:
         row.status = WebhookStatus.IGNORED
-        row.processed_at = datetime.now(timezone.utc)
+        row.processed_at = datetime.now(UTC)
         row.processing_note = f"No subscriber for '{event_type}'."
         session.flush()
         return IngestResult(WebhookStatus.IGNORED, event_id, stored_id=row.id,

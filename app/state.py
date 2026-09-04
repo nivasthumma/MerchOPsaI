@@ -39,7 +39,7 @@ ADR-0034 repeated it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -147,7 +147,7 @@ def build_state(session, merchant_id: str) -> MerchantState:
 
     return MerchantState(
         merchant_id=merchant_id,
-        as_of=datetime.now(timezone.utc).isoformat(),
+        as_of=datetime.now(UTC).isoformat(),
         period_days=PERIOD_DAYS,
         financial=_financial(session, params, ledger),
         payments=_payments(session, params),

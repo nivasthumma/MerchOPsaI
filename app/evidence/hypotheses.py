@@ -47,13 +47,17 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, text
 
 from app.evidence.graph import draw
 from app.models import (
-    Hypothesis, HypothesisStatus, Incident, IncidentType, Predicate,
+    Hypothesis,
+    HypothesisStatus,
+    Incident,
+    IncidentType,
+    Predicate,
 )
 
 
@@ -219,10 +223,10 @@ def _window_seconds(incident: Incident) -> int:
     Floored at an hour: a comparison window shorter than the detection rules'
     own bucket compares against noise.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     started = incident.started_at
     if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
+        started = started.replace(tzinfo=UTC)
     return max(int((now - started).total_seconds()), 3600)
 
 
@@ -328,7 +332,7 @@ def adjudicate(session, incident: Incident) -> list[Hypothesis]:
         h.support_count = 1 if result.supports else 0
         h.contradiction_count = 1 if result.contradicts else 0
         h.verdict_reason = result.detail
-        h.adjudicated_at = datetime.now(timezone.utc)
+        h.adjudicated_at = datetime.now(UTC)
 
         # The probe's finding is recorded in the graph, so the verdict is
         # walkable rather than merely stated. This is what CONTRADICTS was

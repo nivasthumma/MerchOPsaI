@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -55,7 +55,7 @@ def main() -> int:
         if r.status_code != 200:
             write_report(steps, "mock", "Authentication failed.")
             return 1
-    except Exception as e:                                   # noqa: BLE001
+    except Exception as e:
         step("authenticate", False, e)
         write_report(steps, "mock", "Could not reach the API.")
         return 1
@@ -90,7 +90,7 @@ def main() -> int:
 
     # ---- 4. refund a token amount --------------------------------------
     amount = min(100, int(payment["amount"]) - int(payment.get("amount_refunded", 0)))
-    key = f"spike-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    key = f"spike-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}"
     r4 = client.post(f"/payments/{pid}/refund",
                      json={"amount": amount, "speed": "normal",
                            "notes": {"idempotency_key": key}},
@@ -126,7 +126,7 @@ def write_report(steps: list[dict], verdict: str, note: str) -> None:
     lines = [
         "# Razorpay Test Mode feasibility spike",
         "",
-        f"Run at: {datetime.now(timezone.utc).isoformat()}",
+        f"Run at: {datetime.now(UTC).isoformat()}",
         f"**Verdict: `{verdict}`**",
         "",
     ]

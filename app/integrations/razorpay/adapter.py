@@ -19,13 +19,16 @@ from __future__ import annotations
 import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.integrations.razorpay.faults import (
-    Fault, FaultInjector, ProviderError, ProviderTimeout,
+    Fault,
+    FaultInjector,
+    ProviderError,
+    ProviderTimeout,
 )
 
 
@@ -152,7 +155,7 @@ class MockAdapter(RazorpayAdapter):
             return ExternalRefund(id=rid, payment_id=external_payment_id,
                                   amount_minor=int(existing["amount_minor"]),
                                   status=existing["status"],
-                                  created_at=datetime.now(timezone.utc).isoformat())
+                                  created_at=datetime.now(UTC).isoformat())
 
         row = self.session.execute(text("""
             SELECT id, amount_minor, amount_refunded_minor, status
@@ -178,7 +181,7 @@ class MockAdapter(RazorpayAdapter):
             # the payment to notice; the response alone looks like success.
             return ExternalRefund(id=rid, payment_id=external_payment_id,
                                   amount_minor=amount_minor, status="pending",
-                                  created_at=datetime.now(timezone.utc).isoformat())
+                                  created_at=datetime.now(UTC).isoformat())
 
         # Apply the state change.
         self.session.execute(text("""
@@ -205,7 +208,7 @@ class MockAdapter(RazorpayAdapter):
 
         return ExternalRefund(id=rid, payment_id=external_payment_id,
                               amount_minor=amount_minor, status="processed",
-                              created_at=datetime.now(timezone.utc).isoformat())
+                              created_at=datetime.now(UTC).isoformat())
 
     def get_refund(self, refund_id: str) -> ExternalRefund | None:
         self.injector.apply("get_refund")
@@ -413,12 +416,6 @@ class LiveTestModeAdapter(RazorpayAdapter):
                                    status=b.get("status", "created"),
                                    short_url=b.get("short_url", ""))
 
-    def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None:
-        return self.get_payment_link(self._link_id(key))
-
-    def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None:
-        return self.get_notification(self._notification_id(key))
-
     def get_payment_link(self, link_id: str) -> ExternalPaymentLink | None:
         self.injector.apply("get_payment_link")
         resp = self._client.get(f"/payment_links/{link_id}")
@@ -451,10 +448,25 @@ class LiveTestModeAdapter(RazorpayAdapter):
     def find_payment_link_by_idempotency_key(self, key: str) -> ExternalPaymentLink | None:
         """Razorpay has no key-lookup endpoint. The reference_id we set at
         creation is searchable, but listing is not implemented here — the same
-        honest gap `find_refund_by_idempotency_key` has."""
+        honest gap `find_refund_by_idempotency_key` has.
+
+        This class used to declare this method twice, and the other one looked
+        like a working implementation: `self.get_payment_link(self._link_id(key))`.
+        It was dead — Python keeps the last definition — and it could not have
+        worked, because `_link_id` is a MockAdapter method that derives a
+        deterministic id from the key. On a live adapter it would have raised
+        AttributeError. Reading the file top to bottom told you key lookup was
+        implemented; running it returned None.
+
+        The consequence of returning None is real and belongs in the open, not
+        behind a method that appears to do something: a payment link whose
+        creation response was lost cannot be reconciled by key, so it stays
+        UNKNOWN until the sweep escalates it (README, known limitation 7).
+        """
         return None
 
     def find_notification_by_idempotency_key(self, key: str) -> ExternalNotification | None:
+        """No lookup path, for the same reason as payment links above."""
         return None
 
 

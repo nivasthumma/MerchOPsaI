@@ -53,21 +53,26 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.audit.trace import record_incident
-from app.incidents.lifecycle import advance as _advance
 from app.config import get_settings
+from app.incidents.lifecycle import advance as _advance
+from app.models import (
+    CandidateStatus,
+    Incident,
+    IncidentType,
+    Intervention,
+    PlanStatus,
+    RecoveryCandidate,
+    RecoveryPlan,
+)
+from app.models import IncidentStatus as _S
 from app.recovery.history import MIN_SAMPLE, outcome_for
 from app.recovery.stopping import MAX_UNATTENDED_RISK
-from app.models import IncidentStatus as _S
-from app.models import (
-    CandidateStatus, Incident, IncidentType, Intervention, PlanStatus,
-    RecoveryCandidate, RecoveryPlan,
-)
 
 PLANNER_VERSION = "planner-v1"
 
@@ -288,14 +293,15 @@ def compute_plan(session, incident: Incident) -> PlanDraft:
     # lost or invented between them.
     eligible_rows = [g for g in graded if g["eligible"]]
     shares = _allocate([int(g["amount_minor"]) for g in eligible_rows], attributable)
-    for g, share in zip(eligible_rows, shares):
+    # strict: `_allocate` returns one share per amount. If it ever returns
+    # fewer, the shortfall is money silently not attributed to a candidate,
+    # and a shorter zip would hide it as a smaller total rather than raise.
+    for g, share in zip(eligible_rows, shares, strict=True):
         g["attributed"] = share
         g["expected"] = int(round(share * rate))
     for g in graded:
         g.setdefault("attributed", 0)
         g.setdefault("expected", 0)
-
-    eligible_volume = sum(int(g["amount_minor"]) for g in eligible_rows)
 
     # Round ONCE, from the exact aggregate. Rounding each candidate and then
     # summing accumulates: thirty-three shares rounded up by half a paise each
@@ -329,10 +335,8 @@ def plan_recovery(session, incident: Incident, *, principal=None) -> PlanResult:
     eligible_minor = draft.eligible_recovery_minor
     expected_minor = draft.expected_recovery_minor
     basis = draft.basis
-    attributable = draft.attributable
-    total_volume = draft.total_volume_minor
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     plan = RecoveryPlan(
         id=f"RPL_{uuid.uuid4().hex[:10].upper()}",
         incident_id=incident.id, merchant_id=incident.merchant_id,

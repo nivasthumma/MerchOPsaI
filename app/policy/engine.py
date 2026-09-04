@@ -10,14 +10,13 @@ from __future__ import annotations
 import enum
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.policy.risk import RiskAssessment, assess
 from app.tools.registry import REGISTRY
-
 
 # MerchantOps §41. Bumped by hand, because a policy version is a statement
 # about the RULES rather than about the code that expresses them: a refactor
@@ -178,6 +177,17 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
             SELECT o.merchant_id, m.tenant_id FROM orders o
             JOIN merchants m ON m.id = o.merchant_id WHERE o.id = :o
         """), {"o": order_id}).mappings().first()
+        # An order nobody owns is refused, exactly as an unknown payment is.
+        # This branch used to fall through: `owner is None` skipped both
+        # isolation checks and the call proceeded. The tool underneath is
+        # merchant-scoped in its own SQL so nothing leaked, but the two
+        # ownership gates disagreed about what a missing row means, and a
+        # reader had to know which resource they were looking at to know
+        # whether the gate applied.
+        if owner is None:
+            return PolicyResult(Decision.DENY,
+                                f"Order {order_id} does not exist.",
+                                "unknown_resource", risk)
         if owner is not None and owner["tenant_id"] != ctx.tenant_id:
             return PolicyResult(
                 Decision.DENY,
@@ -201,7 +211,15 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
     # ---- 5. Financial constraints ---------------------------------------
     # A positive integer amount is required of ANY tool that names one.
     amount = ctx.arguments.get("amount_minor")
-    if amount is not None and (not isinstance(amount, int) or amount <= 0):
+    # `isinstance(True, int)` is True in Python, and `True > 0`, so a boolean
+    # satisfies both halves of a naive check and arrives downstream as a
+    # one-paise refund. bool is excluded explicitly rather than relying on the
+    # argument validator upstream: this is the layer that calls itself the
+    # authorization authority, and it should not need a second layer to be
+    # correct about what a number is.
+    if amount is not None and (isinstance(amount, bool)
+                               or not isinstance(amount, int)
+                               or amount <= 0):
         return PolicyResult(Decision.DENY, f"Invalid amount: {amount!r}.",
                             "invalid_amount", risk)
 
@@ -290,7 +308,7 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
 
 def approval_is_valid(approval, now: datetime | None = None) -> tuple[bool, str]:
     """CONTRACT §21 — approvals expire. Checked server-side at execution time."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if approval is None:
         return False, "No approval record exists for this action."
     if approval.decision == "REJECTED":
@@ -299,7 +317,7 @@ def approval_is_valid(approval, now: datetime | None = None) -> tuple[bool, str]
         return False, f"Approval is not granted (state={approval.decision})."
     exp = approval.expires_at
     if exp.tzinfo is None:
-        exp = exp.replace(tzinfo=timezone.utc)
+        exp = exp.replace(tzinfo=UTC)
     if exp < now:
         return False, f"Approval {approval.id} expired at {exp.isoformat()}."
     return True, "Approval valid."

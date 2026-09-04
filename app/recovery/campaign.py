@@ -38,7 +38,7 @@ Two things, and neither was a table:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
@@ -91,8 +91,8 @@ def summary(session, plan: RecoveryPlan) -> dict:
 
     started = plan.created_at
     if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    elapsed = int((datetime.now(timezone.utc) - started).total_seconds())
+        started = started.replace(tzinfo=UTC)
+    elapsed = int((datetime.now(UTC) - started).total_seconds())
 
     return {
         "id": plan.id,

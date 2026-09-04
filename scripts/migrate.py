@@ -29,11 +29,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 
+from alembic import command
 from app.config import get_settings
 from app.db import get_engine
 
@@ -48,14 +48,41 @@ def _config() -> Config:
 
 
 def inspect_database() -> tuple[str, str | None]:
-    """Return (state, current_revision). State is empty | unstamped | stamped."""
+    """Return (state, current_revision).
+
+    State is empty | unstamped | current-models | stamped.
+
+    `unstamped` and `current-models` are both "has a schema, has no version
+    row", and they need opposite stamps.
+
+    A database that predates ADR-0030 carries the schema as it stood then, so
+    the revision it is really at is BASELINE and everything after it still has
+    to run. A database built by `scripts/seed_data.py` carries the schema
+    `Base.metadata` describes *today*, which is a different thing the moment any
+    migration creates a table -- and one does: `event_outbox` (ADR-0033). Stamp
+    that one at BASELINE and the upgrade re-creates a table that is already
+    there, which is a DuplicateTable error naming the newest migration, on a
+    database whose only fault is being newer than the assumption.
+
+    The two are told apart by asking whether every table the models currently
+    describe is already present. Only a create_all database can answer yes, and
+    `tests/integration/test_migrations.py` is what makes the answer mean
+    something: it upgrades a real database to head and asserts no differences
+    against `Base.metadata`, so "has every current table" and "is at head" are
+    the same statement rather than a hopeful one.
+    """
+    from app.models import Base
+
     engine = get_engine()
     with engine.connect() as conn:
         current = MigrationContext.configure(conn).get_current_revision()
-        has_schema = inspect(conn).has_table("audit_logs")
+        present = set(inspect(conn).get_table_names())
     if current is not None:
         return "stamped", current
-    return ("unstamped", None) if has_schema else ("empty", None)
+    if "audit_logs" not in present:
+        return "empty", None
+    missing = set(Base.metadata.tables) - present
+    return ("unstamped", None) if missing else ("current-models", None)
 
 
 def main() -> int:
@@ -80,12 +107,19 @@ def main() -> int:
         print(f"stamping   {BASELINE}  (schema predates migrations; not re-creating it)")
         if "--sql" not in args:
             command.stamp(cfg, BASELINE)
+    elif state == "current-models":
+        print("stamping   head  (schema was built from the models, not by migrations)")
+        if "--sql" not in args:
+            command.stamp(cfg, "head")
 
     if "--sql" in args:
         # Review before applying. The offline renderer needs a starting point,
         # and for an existing database that is the baseline it was just told it
         # is at.
         start = current or (BASELINE if state == "unstamped" else None)
+        if state == "current-models":
+            print("-- already at head; nothing to render")
+            return 0
         command.upgrade(cfg, "head", sql=True,
                         revision_range=f"{start}:head" if start else None)
         return 0
@@ -96,8 +130,8 @@ def main() -> int:
 
     # The control this schema's central claim rests on, checked rather than
     # assumed. A migration that ran and a trigger that fires are different facts.
-    from scripts.harden_db import verify
     from app.db import session_scope
+    from scripts.harden_db import verify
     with session_scope() as s:
         results = verify(s)
     for name, ok, detail in results:

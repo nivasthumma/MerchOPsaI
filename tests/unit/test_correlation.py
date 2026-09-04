@@ -7,7 +7,7 @@ hours apart do not describe the same episode.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.detection.correlation import CORRELATION_WINDOW, annotate, cluster
 
@@ -17,11 +17,11 @@ class A:
     def __init__(self, rule: str, key: str, *, at=None, risk: int = 0):
         self.detection_rule = rule
         self.detection_key = key
-        self.started_at = at or datetime(2026, 9, 1, 18, 7, tzinfo=timezone.utc)
+        self.started_at = at or datetime(2026, 9, 1, 18, 7, tzinfo=UTC)
         self.revenue_at_risk_minor = risk
 
 
-BASE = datetime(2026, 9, 1, 18, 7, tzinfo=timezone.utc)
+BASE = datetime(2026, 9, 1, 18, 7, tzinfo=UTC)
 
 
 # -------------------------------------------------------------------- clusters

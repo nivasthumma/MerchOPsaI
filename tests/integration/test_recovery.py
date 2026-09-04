@@ -1,18 +1,27 @@
 """Recovery planning, budgets and stopping rules — MerchantOps §22, §23, §27, §28."""
 from __future__ import annotations
 
+from datetime import UTC
+
 import pytest
 from sqlalchemy import text
 
 from app.detection import detect
 from app.models import (
-    CandidateStatus, Incident, IncidentType, Intervention, PlanStatus,
-    RecoveryCandidate, RecoveryPlan,
+    CandidateStatus,
+    Incident,
+    IncidentType,
+    Intervention,
+    PlanStatus,
+    RecoveryPlan,
 )
 from app.recovery import plan_recovery
 from app.recovery.dispatch import (
-    RecoveryStopped, assess_candidate_risk, dispatch_candidate,
-    executable_candidates, settle_plan,
+    RecoveryStopped,
+    assess_candidate_risk,
+    dispatch_candidate,
+    executable_candidates,
+    settle_plan,
 )
 from app.recovery.stopping import Disposition, check_budget, evaluate_stopping_rules
 
@@ -161,10 +170,10 @@ def test_budget_refuses_a_customer_already_approached(db):
 
 
 def test_an_expired_plan_stops(db):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
     inc = _incident(db, IncidentType.DUPLICATE_PAYMENT)
     r = plan_recovery(db, inc)
-    r.plan.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    r.plan.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.flush()
     assert check_budget(db, r.plan).rule == "max_duration_exceeded"
 
@@ -291,8 +300,8 @@ def test_a_non_executable_candidate_is_refused(db, owner):
     HUMAN_ESCALATION — which a reconciliation mismatch plans and which by
     definition has no tool.
     """
-    from app.models import IncidentSeverity, Intervention
     from app.incidents.manager import raise_incident
+    from app.models import IncidentSeverity, Intervention
 
     inc = raise_incident(
         db, merchant_id="MERCH_A", incident_type=IncidentType.RECONCILIATION_MISMATCH,

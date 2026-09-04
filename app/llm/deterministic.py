@@ -23,6 +23,7 @@ import re
 
 from app.llm.base import LLMProvider, LLMTurn, ToolRequest
 
+
 def _first_sentence(text: str, limit: int = 200) -> str:
     m = re.search(r"(?<=[.!?])\s", text)
     return (text[:m.start()] if m else text)[:limit].strip()

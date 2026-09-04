@@ -6,9 +6,9 @@ else is the arithmetic that makes that assertion meaningful.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from app.agent.confidence import Confidence, FRESHNESS_WINDOW, assess
+from app.agent.confidence import FRESHNESS_WINDOW, Confidence, assess
 
 
 class Ev:
@@ -16,7 +16,7 @@ class Ev:
     def __init__(self, source: str, *, untrusted: bool = False, age=None):
         self.source = source
         self.untrusted = untrusted
-        self.created_at = datetime.now(timezone.utc) - (age or timedelta(0))
+        self.created_at = datetime.now(UTC) - (age or timedelta(0))
 
 
 class Tool:

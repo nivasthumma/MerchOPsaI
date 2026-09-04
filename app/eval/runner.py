@@ -7,7 +7,7 @@ above all whether an external financial effect occurred. Never prose equality.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -21,8 +21,8 @@ from app.eval.schema import CheckResult, Scenario
 from app.integrations.razorpay.faults import FaultInjector
 from app.llm import get_provider
 from app.models import AgentAction, Approval, EvaluationResult, Refund
-from app.verification.reconciler import reconcile
 from app.tools.contracts import Finding
+from app.verification.reconciler import reconcile
 
 SCENARIO_FILE = Path(__file__).resolve().parents[2] / "data" / "scenarios" / "scenarios.yaml"
 
@@ -136,7 +136,15 @@ def _plant_unsettled_action(session, payment_id: str, principal) -> None:
     from sqlalchemy import text as _text
 
     from app.models import (
-        ActionStatus, AgentTask as _Task, TaskStatus as _TaskStatus,
+        ActionStatus,
+    )
+    from app.models import (
+        AgentTask as _Task,
+    )
+    from app.models import (
+        TaskStatus as _TaskStatus,
+    )
+    from app.models import (
         VerificationState as _VS,
     )
 
@@ -319,7 +327,7 @@ def _run_detection_scenario(session, sc: Scenario, run_id: str) -> EvaluationRes
         # The stored column is timestamptz and the driver renders it in the
         # session zone, so normalise before reading the hour -- otherwise this
         # check passes or fails on the server's timezone setting.
-        hours = [i.started_at.astimezone(timezone.utc).hour for i in deg]
+        hours = [i.started_at.astimezone(UTC).hour for i in deg]
         check("onset_hour", bool(hours) and all(lo <= h <= hi for h in hours),
               f"onset hours (UTC) = {hours}, expected within [{lo}, {hi}]")
 
@@ -557,21 +565,24 @@ def _plant_provider_events(session, sc: Scenario, principal) -> None:
         tag = event_type.split(".")[0]
         for i in range(n):
             if onset is None:
-                when_sql = "now() - (:off || ' minutes')::interval"
-                params = {"off": i % 10}
+                params = {"when": None, "off": i % 10}
             else:
                 # Inside BURST_WINDOW_MINUTES of each other, and inside
                 # CORRELATION_WINDOW of the onset.
-                when_sql = ":when"
-                params = {"when": onset + timedelta(minutes=3 + i)}
-            session.execute(text(f"""
+                params = {"when": onset + timedelta(minutes=3 + i), "off": 0}
+            # Both branches go through one bound statement -- `COALESCE` picks
+            # between them -- rather than splicing a different SQL fragment in
+            # per branch. `now()` stays the database's clock where it is used,
+            # which is what the no-onset case is measuring.
+            session.execute(text("""
                 INSERT INTO webhook_events (id, event_id, provider, event_type,
                     schema_version, tenant_id, merchant_id, entity_id, status,
                     signature_valid, payload, payload_hash, correlation_id,
                     occurred_at, received_at)
                 VALUES (:id, :eid, 'razorpay', :etype, 'v1', 'TEN_KETTLE',
-                        :m, :ent, 'PROCESSED', true, '{{}}', 'h', 'COR_EVAL',
-                        {when_sql}, now())
+                        :m, :ent, 'PROCESSED', true, '{}', 'h', 'COR_EVAL',
+                        COALESCE(CAST(:when AS timestamptz),
+                                 now() - (:off || ' minutes')::interval), now())
             """), {"id": f"WHE_EVAL_{tag}{i:03d}",
                    "eid": f"evt_eval_burst_{tag}_{i}", "etype": event_type,
                    "m": principal.merchant_id, "ent": f"pay_eval_{tag}_{i}",
@@ -675,7 +686,11 @@ def _run_recovery_scenario(session, sc: Scenario, run_id: str) -> EvaluationResu
     """
     from app.detection import detect
     from app.models import (
-        AgentAction, CandidateStatus, Incident, IncidentType, PlanStatus, Refund,
+        AgentAction,
+        CandidateStatus,
+        Incident,
+        IncidentType,
+        Refund,
     )
     from app.recovery import plan_recovery
     from app.recovery.dispatch import RecoveryStopped, dispatch_candidate, executable_candidates
@@ -980,7 +995,7 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     if out.approval is not None and sc.expire_approval:
         # Back-date past the TTL. Tests that expiry is enforced server-side at
         # execution time, not merely displayed in the UI.
-        out.approval.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        out.approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         session.flush()
 
     if out.approval is not None and sc.approve is True:

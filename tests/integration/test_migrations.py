@@ -12,13 +12,13 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
-from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
+from alembic import command
 from app.models import Base
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -162,9 +162,8 @@ def test_migrating_makes_the_audit_log_append_only(migrated_url):
 
         for verb, sql in (("UPDATE", "UPDATE audit_logs SET event_type = 'tampered'"),
                           ("DELETE", "DELETE FROM audit_logs")):
-            with pytest.raises(Exception) as exc:
-                with engine.begin() as c:
-                    c.execute(text(sql))
+            with pytest.raises(Exception) as exc, engine.begin() as c:
+                c.execute(text(sql))
             assert "append-only" in str(exc.value), f"{verb} was not refused"
     finally:
         engine.dispose()
@@ -224,11 +223,10 @@ def test_an_existing_database_is_stamped_rather_than_rebuilt():
 
         # And it gained the control it never had: create_all alone never
         # installed the triggers.
-        with pytest.raises(Exception) as exc:
-            with legacy.begin() as c:
-                c.execute(text(
-                    "INSERT INTO audit_logs (event_type, payload) VALUES ('p','{}'::json)"))
-                c.execute(text("DELETE FROM audit_logs"))
+        with pytest.raises(Exception) as exc, legacy.begin() as c:
+            c.execute(text(
+                "INSERT INTO audit_logs (event_type, payload) VALUES ('p','{}'::json)"))
+            c.execute(text("DELETE FROM audit_logs"))
         assert "append-only" in str(exc.value)
     finally:
         legacy.dispose()

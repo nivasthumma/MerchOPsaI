@@ -17,7 +17,7 @@ import pytest
 from app.audit.trace import record_incident
 from app.detection import detect
 from app.events import bus
-from app.events.bus import UnknownEventType, PostgresEventStore, drain, publish
+from app.events.bus import PostgresEventStore, UnknownEventType, drain, publish
 from app.events.vocabulary import EVENT_TYPES
 from app.models import EventOutbox, Incident, OutboxStatus
 

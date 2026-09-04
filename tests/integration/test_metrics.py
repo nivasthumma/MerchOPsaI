@@ -6,9 +6,6 @@ objectives would actually catch a violation rather than being trivially zero.
 """
 from __future__ import annotations
 
-import uuid
-
-import pytest
 from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute

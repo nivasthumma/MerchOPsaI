@@ -24,8 +24,8 @@ from app.audit.trace import trace_for
 from app.config import get_settings
 from app.db import session_scope
 from app.eval.runner import PRINCIPALS, load_scenarios
-from app.verification.reconciler import escalated_actions, reconcile
 from app.models import AgentAction, AgentTask, Approval
+from app.verification.reconciler import escalated_actions, reconcile
 
 st.set_page_config(page_title="MerchantOps Agent", layout="wide")
 S = get_settings()
@@ -103,17 +103,16 @@ EXAMPLES = [
     "Find the duplicate payment and refund it.",
 ]
 cols = st.columns(len(EXAMPLES))
-for c, ex in zip(cols, EXAMPLES):
+for c, ex in zip(cols, EXAMPLES, strict=False):
     if c.button(ex, use_container_width=True):
         request = ex
         go = True
 
 if go and request.strip():
-    with st.spinner("Agent running..."):
-        with session_scope() as s:
-            out = AgentRuntime(s, principal).run(request)
-            st.session_state["task_id"] = out.task.id
-            st.session_state.pop("replay", None)
+    with st.spinner("Agent running..."), session_scope() as s:
+        out = AgentRuntime(s, principal).run(request)
+        st.session_state["task_id"] = out.task.id
+        st.session_state.pop("replay", None)
 
 task_id = st.session_state.get("task_id")
 

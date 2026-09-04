@@ -10,10 +10,20 @@ edge is written by deterministic code from state the platform already owns.
 """
 from app.evidence.graph import build, draw, edges_for, explain, why
 from app.evidence.hypotheses import (
-    adjudicate, for_incident, leading, propose,
+    adjudicate,
+    for_incident,
+    leading,
+    propose,
 )
 
 __all__ = [
-    "build", "draw", "edges_for", "explain", "why",
-    "adjudicate", "propose", "leading", "for_incident",
+    "adjudicate",
+    "build",
+    "draw",
+    "edges_for",
+    "explain",
+    "for_incident",
+    "leading",
+    "propose",
+    "why",
 ]

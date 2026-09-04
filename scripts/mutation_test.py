@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app.integrity import HARNESS_ENV, MARKER
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -823,7 +825,8 @@ def run_suite() -> tuple[int, int, list[str]]:
     report.unlink(missing_ok=True)
     subprocess.run([PY, "scripts/run_scenarios.py"], cwd=ROOT,
                    capture_output=True, text=True,
-                   env={**os.environ, "PYTHONPATH": str(ROOT)})
+                   env={**os.environ, "PYTHONPATH": str(ROOT),
+                        HARNESS_ENV: "1"})
     if not report.exists():
         return 0, 0, ["<suite crashed mid-run>"]
     rep = json.loads(report.read_text())
@@ -836,12 +839,16 @@ def run_tests() -> tuple[bool, str]:
     # PATH the interpreter may need, which fails anywhere but a local dev box.
     r = subprocess.run([PY, "-m", "pytest", "tests", "-q", "--no-header", "-x"],
                        cwd=ROOT, capture_output=True, text=True,
-                       env={**os.environ, "PYTHONPATH": str(ROOT)})
+                       env={**os.environ, "PYTHONPATH": str(ROOT),
+                            HARNESS_ENV: "1"})
     line = [l for l in r.stdout.splitlines() if "passed" in l or "failed" in l]
     return r.returncode == 0, (line[-1] if line else "no output")
 
 
-LOCK = ROOT / ".mutation-in-progress"
+# The same path `app.integrity` refuses to start on, and the flag that exempts
+# this process from it. Imported rather than repeated: a guard naming a
+# different file from the one written here would be a guard that never fires.
+LOCK = MARKER
 
 
 def _hold(lock: Path, relpath: str | None, original: str | None) -> None:

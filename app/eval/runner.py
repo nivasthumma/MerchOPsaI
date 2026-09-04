@@ -1335,10 +1335,14 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
         seeder.reset_schema()
         data = seeder.build()
         with session_scope() as s:
-            for key in ("tenants", "merchants", "users", "customers", "products",
-                        "orders", "payments", "refunds"):
-                s.add_all(data[key])
-                s.flush()
+            # `seeder.insert_all`, not a loop of its own. This was the THIRD
+            # copy of the seeder's insert order -- the suite fixture had the
+            # second, and when roles became rows (ADR-0047) both copies fell
+            # behind and inserted users with no role. The fixture was fixed;
+            # this one was not, and because a crashed run leaves the previous
+            # `evaluation_report.json` on disk, the failure read as a stale
+            # pass rather than as an error.
+            seeder.insert_all(s, data)
         with session_scope() as s:
             res = run_scenario(s, sc, run_id)
             results.append({

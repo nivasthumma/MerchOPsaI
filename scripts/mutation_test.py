@@ -232,8 +232,12 @@ MUTATIONS = [
     (
         "tenancy: take the tenant from the request instead of the database",
         "app/api/security.py",
-        '    return Principal(row["tenant_id"], row["id"], row["merchant_id"],',
-        '    return Principal("TEN_KETTLE", row["id"], row["merchant_id"],  # MUTANT',
+        # `row` became an `authz.PrincipalRow` dataclass in ADR-0047, so this
+        # anchor moved from subscripting to attribute access. The preflight
+        # caught the drift on the first run after the change, which is the
+        # difference between a stale anchor and a control nobody is testing.
+        '    return Principal(row.tenant_id, row.user_id, row.merchant_id,',
+        '    return Principal("TEN_KETTLE", row.user_id, row.merchant_id,  # MUTANT',
     ),
     (
         "failures: let an unknown financial state be retried",

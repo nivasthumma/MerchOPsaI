@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-743%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-755%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations](https://img.shields.io/badge/mutations-113%20defined%20%C2%B7%20not%20re--measured-lightgrey.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 743 tests · 187/187 scenarios · 113 mutants defined |
+| [📊 Measured results](#-measured-results) | 755 tests · 187/187 scenarios · 113 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -76,6 +76,7 @@ and what is architecture.
 | Agent | One bounded agent, **15 typed tools** (§18 complete) | Specialised multi-agent orchestration |
 | Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources | Model routing, cost-aware selection |
 | Policy | Deterministic engine: RBAC, merchant isolation, computed risk, amount limits, duplicate guard | Per-merchant configurable policy, approval chains |
+| Isolation | Two walls: the application's own checks, **and** PostgreSQL row-level security bound to the authenticated principal (ADR-0046). 26 forced policies; a query that forgets its `WHERE` returns nothing | Fail-closed for background code; per-tenant database roles |
 | Shared state | Rate limit and provider override shared across replicas via Redis, sliding window applied atomically on Redis's own clock; falls back per-process and reports which is live (ADR-0044) | Distributed locks, session storage |
 | Approval | Server-side, expiring, re-checked at execution. **Dual approval** for CRITICAL risk, enforced by a UNIQUE constraint | N-of-M chains, delegation |
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
@@ -189,12 +190,12 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **743 passed** (`make test`) across unit, security and integration, in
+Test suite: **755 passed** (`make test`) across unit, security and integration, in
 under 15 seconds — the suite seeds once and rolls each test back, rather than rebuilding
 the schema for every test.
 
 Five of those need a real Redis and **skip without one**, so a laptop run reports
-738 passed and 5 skipped. They are the cross-replica tests, and a fake that agrees
+750 passed and 5 skipped. They are the cross-replica tests, and a fake that agrees
 with itself would pass them while proving nothing — so they are skipped rather than
 faked. `TEST_REDIS_URL=redis://localhost:6379/15 make test` runs them; CI always does.
 
@@ -341,7 +342,7 @@ Dataset (`seed 20260825`, byte-identical every run): 2 merchants, 200 customers,
 | Control | Where it lives | Test |
 |---|---|---|
 | Authorization outside the model | `app/policy/engine.py` | `test_unauthorized_user_cannot_refund` |
-| Merchant isolation | SQL predicate + policy gate | `test_cross_merchant_*` |
+| Merchant isolation | SQL predicate + policy gate, **and** PostgreSQL row-level security bound to the principal | `test_cross_merchant_*`, `test_the_database_refuses_when_the_application_forgets` |
 | Untrusted data tagging | `Evidence.untrusted` + `<untrusted_merchant_data>` delimiters | `test_injected_text_is_tagged_untrusted` |
 | Injection resistance | asserted at the **policy layer**, not on prose | `test_injection_in_customer_notes_does_not_cause_refund` |
 | Idempotency | server-derived key + `UNIQUE` constraint | `test_double_approval_produces_one_refund` |
@@ -350,6 +351,14 @@ Dataset (`seed 20260825`, byte-identical every run): 2 merchants, 200 customers,
 | Argument validation | before policy touches the database | `test_malformed_arguments_rejected_*` |
 | Secret redaction | `app/audit/trace.py` | `test_secrets_are_redacted_from_traces` |
 | Loop budget | 12 tool calls / 8 turns / 60s | `test_budget_terminates_runaway_loop` |
+
+Merchant isolation has two walls since ADR-0046. It had one until a killed
+mutation-test run left `if False:  # MUTANT` where the cross-merchant check
+belonged, and the application started, the suite passed, and merchant A could act
+on merchant B's orders. Row-level security is bound to the authenticated
+principal, so a query that forgets its `WHERE merchant_id` now returns nothing
+rather than everything. The test named above is the reproduction: it deletes the
+application's own check and asserts the request still fails.
 
 Two of those are recent and were found by review rather than by the suite, which
 is worth saying plainly because the suite is what this project asks to be judged
@@ -377,7 +386,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 743 tests
+make test                                # 755 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -689,7 +698,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 194 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (743 tests)
+tests/          unit · security · integration  (755 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 32 ADRs

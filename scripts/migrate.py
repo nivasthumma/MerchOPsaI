@@ -150,9 +150,13 @@ def main() -> int:
     # The control this schema's central claim rests on, checked rather than
     # assumed. A migration that ran and a trigger that fires are different facts.
     from app.db import session_scope
-    from scripts.harden_db import verify
+    from scripts.harden_db import verify, verify_isolation
     with session_scope() as s:
-        results = verify(s)
+        # Both controls this schema's claims rest on: the audit log is
+        # append-only, and a merchant cannot read another's rows. Checked rather
+        # than assumed -- a migration that ran and a policy that filters are
+        # different facts (ADR-0046).
+        results = verify(s) + verify_isolation(s)
     for name, ok, detail in results:
         print(f"  {'ok  ' if ok else 'FAIL'} {name}: {detail}")
     return 0 if all(ok for _, ok, _ in results) else 1

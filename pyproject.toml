@@ -119,6 +119,11 @@ ignore = [
 "app/metrics.py" = ["S608"]
 "app/tools/investigation.py" = ["S608"]
 "app/detection/baselines.py" = ["S608"]
+# app/tenancy.py builds the row-level-security DDL. The only interpolations are
+# table and column names from module constants in that same file -- there is no
+# bound form of a table name, and the values a caller supplies (tenant and
+# merchant) go in through `set_config` parameters, never into this SQL.
+"app/tenancy.py" = ["S608"]
 
 # S607 (partial executable path): `subprocess.run(["ant", "auth", "status"])`
 # resolves `ant` on PATH deliberately -- the CLI's install location is the

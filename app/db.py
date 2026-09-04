@@ -85,6 +85,17 @@ def checkpoint(session: Session) -> None:
 def session_scope() -> Iterator[Session]:
     s = get_session_factory()()
     try:
+        # The authenticated principal, pushed onto this transaction so that
+        # row-level security can filter every table against it (ADR-0046).
+        # Applied here rather than at each of forty-eight routes, because a
+        # control every route has to remember is one that most of them will not.
+        #
+        # `SET LOCAL`, so it dies with the transaction: on a pooled connection a
+        # session-lifetime setting would outlive the request that made it and
+        # apply to whichever request got that connection next.
+        from app.tenancy import apply as apply_scope
+
+        apply_scope(s.connection())
         yield s
         s.commit()
     except Exception:

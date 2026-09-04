@@ -61,6 +61,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import text
 
+from app import tenancy
 from app.audit.trace import correlation_scope
 from app.config import get_settings
 from app.db import session_scope
@@ -168,7 +169,15 @@ def job_tasks() -> dict:
             principal = Principal(row["tenant_id"], row["id"], row["merchant_id"],
                                   row["role"], list(row["permissions"]))
             try:
-                AgentRuntime(s, principal).run(task.request, existing_task=task)
+                # Bound for the run, the same way an HTTP request is, so the
+                # database filters this task's queries to its own merchant
+                # (ADR-0046). A worker is the one place where one process runs
+                # work for several merchants in sequence, which makes it the
+                # place where a leaked binding would matter most -- the context
+                # manager sheds it, so the sweeps that follow still see
+                # everything.
+                with tenancy.scoped(principal.tenant_id, principal.merchant_id):
+                    AgentRuntime(s, principal).run(task.request, existing_task=task)
                 ran += 1
             except AgentRuntimeError:
                 # Already recorded on the task, with its partial trace committed

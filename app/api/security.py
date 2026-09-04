@@ -44,8 +44,9 @@ from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, Request
 from sqlalchemy import text
+from starlette.concurrency import run_in_threadpool
 
-from app import shared_state
+from app import shared_state, tenancy
 from app.agent.runtime import Principal
 from app.db import session_scope
 from app.observability.logs import get_logger
@@ -247,10 +248,36 @@ def reset_rate_limits() -> None:
 # --------------------------------------------------------------------------
 # Dependency
 # --------------------------------------------------------------------------
-def current_principal(
+async def current_principal(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> Principal:
+    """Authenticate, rate limit, and bind the principal to this request.
+
+    Async, and that is load-bearing rather than stylistic. FastAPI runs a *sync*
+    dependency and a *sync* endpoint in two different threadpool contexts, each
+    a copy of the request's -- so a ContextVar set in a sync dependency is
+    invisible to the endpoint, and the row-level-security binding silently did
+    nothing. Found by a test that removed the application's own merchant check
+    and watched the request succeed anyway.
+
+    Awaited here, the binding happens in the request's own task context, and the
+    endpoint's threadpool run copies it. The blocking work stays off the event
+    loop in `run_in_threadpool` below, which is where it was already.
+    """
+    principal = await run_in_threadpool(_authenticate, request, authorization)
+
+    # Bind for row-level security (ADR-0046). Every `session_scope` opened from
+    # here on pushes this onto its transaction, so a query that forgets
+    # `WHERE merchant_id` returns nothing rather than another merchant's rows.
+    #
+    # Not reset afterwards, and it does not need to be: this context belongs to
+    # this request, and the next one starts from the default.
+    tenancy.bind(principal.tenant_id, principal.merchant_id)
+    return principal
+
+
+def _authenticate(request: Request, authorization: str | None) -> Principal:
     """Authenticate, then rate limit. Order matters: rate limiting an
     unauthenticated caller by a self-declared identity would let an attacker
     exhaust someone else's budget."""

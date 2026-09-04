@@ -55,6 +55,16 @@ STATEMENTS = [
 def harden(session) -> None:
     for stmt in STATEMENTS:
         session.execute(text(stmt))
+    # Row-level security (ADR-0046). Applied here for the same reason the audit
+    # triggers are: `seed_data.reset_schema` builds the schema with `create_all`
+    # from `Base.metadata`, and neither a trigger nor a policy is in
+    # `Base.metadata`. A database built the fast way would otherwise have every
+    # table and no boundary -- which is how this was found, by applying the
+    # migration and counting zero policies afterwards.
+    from app.tenancy import policy_statements
+
+    for stmt in policy_statements():
+        session.execute(text(stmt))
     # Grants are best-effort: the role may already lack them, or may be the
     # owner. Best-effort is not the same as unobserved, though — these are
     # REVOKEs on the audit log, and one failing silently is a security control
@@ -71,6 +81,49 @@ def harden(session) -> None:
             sp.rollback()
             print(f"  warn  {stmt.strip()} did not apply: "
                   f"{type(exc).__name__}: {str(exc).splitlines()[0]}")
+
+
+def verify_isolation(session) -> list[tuple[str, bool, str]]:
+    """Prove the row-level policies FILTER, rather than that the DDL ran.
+
+    `pg_policies` having rows says a policy exists. It does not say the boundary
+    holds: without FORCE ROW LEVEL SECURITY the owning role -- which is this
+    application -- is exempt from every one of them, and the control reports as
+    present while filtering nothing. That is the failure this check exists for,
+    and it is the same reasoning as `verify()` below proving the audit trigger
+    actually fires.
+    """
+    from app.tenancy import MERCHANT_GUC, TENANT_GUC, covered_tables
+
+    results: list[tuple[str, bool, str]] = []
+
+    present = {r[0] for r in session.execute(text(
+        "SELECT tablename FROM pg_policies WHERE schemaname = 'public'"))}
+    missing = sorted(set(covered_tables()) - present)
+    results.append(("policies present", not missing,
+                    "all covered tables" if not missing else f"missing: {missing}"))
+
+    unforced = [r[0] for r in session.execute(text(
+        "SELECT relname FROM pg_class WHERE relrowsecurity AND NOT relforcerowsecurity"))]
+    results.append(("policies forced", not unforced,
+                    "owner is subject to them" if not unforced
+                    else f"NOT forced, so the owner bypasses: {unforced}"))
+
+    # The real check: bind a merchant and see whether an unfiltered read is
+    # filtered anyway.
+    sp = session.begin_nested()
+    try:
+        session.execute(text(
+            "SELECT set_config(:t, 'TEN_KETTLE', true), set_config(:m, 'MERCH_A', true)"),
+            {"t": TENANT_GUC, "m": MERCHANT_GUC})
+        others = session.execute(text(
+            "SELECT count(*) FROM payments WHERE merchant_id <> 'MERCH_A'")).scalar()
+        results.append(("boundary filters", others == 0,
+                        "a scoped session sees one merchant" if others == 0
+                        else f"scoped session still saw {others} other rows"))
+    finally:
+        sp.rollback()
+    return results
 
 
 def verify(session) -> list[tuple[str, bool, str]]:

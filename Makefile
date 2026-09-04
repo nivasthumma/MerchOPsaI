@@ -69,6 +69,9 @@ migration:  ; PYTHONPATH=. .venv/bin/alembic revision --autogenerate -m "$(M)"
 openapi:    ; PYTHONPATH=. $(PY) scripts/export_openapi.py
 openapi-check: ; PYTHONPATH=. $(PY) scripts/export_openapi.py --check
 token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
+# Create a tenant, its first merchant and its first owner. Everything else
+# about administering people is API (ADR-0048); creating a tenant is not.
+provision:  ; PYTHONPATH=. $(PY) scripts/provision.py $(ARGS)
 # The gates CI runs, in the order CI runs them. `lint` and `audit` need the
 # dev tooling: `make setup-dev`.
 lint:       ; $(PY) -m ruff check .
@@ -103,7 +106,7 @@ serve: web-build
 	fi
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
-.PHONY: setup setup-dev lock seed spike api ui test eval reconcile notify \
+.PHONY: setup setup-dev lock seed spike api ui test eval reconcile notify provision \
         worker worker-once image up down clean logs ps seed-docker mutants compare harden token ci demo \
         lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \

@@ -974,6 +974,10 @@ class AccessReviewEntry(Contract):
     merchant_id: str
     role: str
     permissions: list[str]
+    #: ACTIVE | DISABLED. Offboarded accounts are listed deliberately: "whose
+    #: access was removed, and when" is half of what a review asks.
+    status: str
+    deactivated_at: str | None = None
 
 
 class AccessReview(Contract):
@@ -984,3 +988,85 @@ class AccessReview(Contract):
     generated_at: str
     roles: list[RoleView]
     users: list[AccessReviewEntry]
+
+
+# ------------------------------------------------------ people (ADR-0048)
+class CreateUserRequest(Contract):
+    email: str
+    #: The role's NAME, not its id. An id is a value a caller could copy from
+    #: another tenant's response; a name that does not exist here is a clean 404.
+    role: str
+
+
+class UpdateUserRequest(Contract):
+    role: str | None = None
+    #: ACTIVE | DISABLED. Offboarding is a status change, never a delete: the
+    #: audit trail points at this row and has to outlive the employment.
+    status: str | None = None
+
+
+class UserSummary(Contract):
+    user_id: str
+    email: str
+    role: str
+    status: str
+    permissions: list[str]
+
+
+class UserList(Contract):
+    users: list[UserSummary]
+
+
+class UserCreated(Contract):
+    user_id: str
+    email: str
+    role: str
+    #: Returned ONCE and never stored. Authentication is an HMAC of the user id,
+    #: so there is no password to set and no acceptance step -- creating the user
+    #: is granting the credential.
+    token: str
+
+
+class UserChange(Contract):
+    user_id: str
+    role: str | None = None
+    status: str | None = None
+    changed: bool | None = None
+
+
+class CreateRoleRequest(Contract):
+    name: str
+    description: str | None = None
+    permissions: list[str] = []
+
+
+class SetPermissionsRequest(Contract):
+    permissions: list[str]
+
+
+class RoleSummary(Contract):
+    name: str
+    description: str
+    permissions: list[str]
+    #: How many users hold it. A role nobody holds is a role that can be deleted;
+    #: one that everybody holds is a role worth looking at.
+    held_by: int
+
+
+class PermissionView(Contract):
+    name: str
+    description: str
+
+
+class RoleList(Contract):
+    roles: list[RoleSummary]
+    #: Every permission that exists, derived from the tool registry. Sent
+    #: alongside so a client building a role picker does not have to guess.
+    catalogue: list[PermissionView]
+
+
+class RoleChange(Contract):
+    name: str
+    permissions: list[str]
+    granted: list[str]
+    revoked: list[str]

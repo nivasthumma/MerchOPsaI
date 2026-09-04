@@ -40,6 +40,17 @@
       "AccessReviewEntry": {
         "additionalProperties": false,
         "properties": {
+          "deactivated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivated At"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -59,6 +70,10 @@
             "title": "Role",
             "type": "string"
           },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -69,7 +84,8 @@
           "email",
           "merchant_id",
           "role",
-          "permissions"
+          "permissions",
+          "status"
         ],
         "title": "AccessReviewEntry",
         "type": "object"
@@ -938,6 +954,58 @@
           "span_count"
         ],
         "title": "CorrelationTrace",
+        "type": "object"
+      },
+      "CreateRoleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateRoleRequest",
+        "type": "object"
+      },
+      "CreateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "CreateUserRequest",
         "type": "object"
       },
       "DashboardView": {
@@ -2782,6 +2850,25 @@
         "title": "OperationalMetrics",
         "type": "object"
       },
+      "PermissionView": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "PermissionView",
+        "type": "object"
+      },
       "PlanBudget": {
         "additionalProperties": false,
         "description": "MerchantOps v2 \u00a738's five bounds. All five belong to the plan.",
@@ -3322,6 +3409,101 @@
         "title": "ReverifyResult",
         "type": "object"
       },
+      "RoleChange": {
+        "additionalProperties": false,
+        "properties": {
+          "granted": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Granted",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "revoked": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Revoked",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "permissions",
+          "granted",
+          "revoked"
+        ],
+        "title": "RoleChange",
+        "type": "object"
+      },
+      "RoleList": {
+        "additionalProperties": false,
+        "properties": {
+          "catalogue": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionView"
+            },
+            "title": "Catalogue",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleSummary"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roles",
+          "catalogue"
+        ],
+        "title": "RoleList",
+        "type": "object"
+      },
+      "RoleSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "held_by": {
+            "title": "Held By",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "permissions",
+          "held_by"
+        ],
+        "title": "RoleSummary",
+        "type": "object"
+      },
       "RoleView": {
         "additionalProperties": false,
         "properties": {
@@ -3558,6 +3740,23 @@
           "setup"
         ],
         "title": "ScenarioView",
+        "type": "object"
+      },
+      "SetPermissionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "permissions"
+        ],
+        "title": "SetPermissionsRequest",
         "type": "object"
       },
       "SettleReport": {
@@ -4157,6 +4356,165 @@
           "payload"
         ],
         "title": "TraceEvent",
+        "type": "object"
+      },
+      "UpdateUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "UpdateUserRequest",
+        "type": "object"
+      },
+      "UserChange": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "UserChange",
+        "type": "object"
+      },
+      "UserCreated": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "role",
+          "token"
+        ],
+        "title": "UserCreated",
+        "type": "object"
+      },
+      "UserList": {
+        "additionalProperties": false,
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/UserSummary"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "title": "UserList",
+        "type": "object"
+      },
+      "UserSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "role",
+          "status",
+          "permissions"
+        ],
+        "title": "UserSummary",
         "type": "object"
       },
       "ValidationError": {
@@ -6229,6 +6587,173 @@
         "summary": "Settle Recovery Plan"
       }
     },
+    "/roles": {
+      "get": {
+        "description": "This tenant's roles and what each grants.",
+        "operationId": "list_roles_roles_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Roles"
+      },
+      "post": {
+        "operationId": "create_role_roles_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Role"
+      }
+    },
+    "/roles/{role_name}/permissions": {
+      "put": {
+        "description": "Replace what a role grants \u2014 for everybody holding it, at once.\n\nWhich is the entire reason roles are rows (ADR-0047), and the reason this is\naudited with what was granted and revoked rather than just the new set.",
+        "operationId": "set_permissions_roles__role_name__permissions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_name",
+            "required": true,
+            "schema": {
+              "title": "Role Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Permissions"
+      }
+    },
     "/scenarios": {
       "get": {
         "description": "The suite, including what each scenario actually asserts.\n\nThe description is prose; `expect` is the contract. A reader deciding\nwhether \"106/106\" means anything needs the second, and returning only the\nfirst left them opening the YAML to find out. Setup that changes what a\nscenario means \u2014 who runs it, an injected fault, a back-dated approval \u2014 is\nreturned for the same reason.\n\nAll of it is static configuration that ships in the repository. Nothing here\nis per-merchant or secret, which is why the route stays unauthenticated\nalongside the runner.",
@@ -6919,6 +7444,184 @@
           }
         },
         "summary": "Get Correlation Trace"
+      }
+    },
+    "/users": {
+      "get": {
+        "description": "Who has access to this merchant. Disabled accounts included by default:\n\"whose access was removed, and when\" is half of an access review.",
+        "operationId": "list_users_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_disabled",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Disabled",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Users"
+      },
+      "post": {
+        "description": "Add somebody to this merchant.\n\nReturns a bearer token, ONCE. This is not an invitation flow: authentication\nis an HMAC of the user id, so there is no password to set and no acceptance\nstep -- creating the user is granting the credential. A real invitation, with\na link the person redeems themselves, arrives with an identity provider.",
+        "operationId": "create_user_users_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create User"
+      }
+    },
+    "/users/{user_id}": {
+      "patch": {
+        "description": "Move somebody between roles, or turn their account off and on.",
+        "operationId": "update_user_users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update User"
       }
     },
     "/webhooks/events": {

@@ -78,16 +78,31 @@ def test_every_response_model_forbids_extra_keys(route: APIRoute):
 
 # ------------------------------------------------------------------ the document
 def test_the_openapi_document_has_a_schema_for_every_route():
+    """Every route documents the shape of its success response.
+
+    Any 2xx, not specifically 200. A route that creates something answers 201
+    (ADR-0048 added several), and requiring 200 would have pushed those to lie
+    about their status code to satisfy a test -- which is the wrong direction
+    for a check that exists to keep the document honest. What matters is that
+    exactly one success shape is declared and that it has a schema.
+    """
     spec = app.openapi()
     missing = []
     for route in api_routes():
-        for method in (m.lower() for m in route.methods if m in ("GET", "POST")):
-            content = (spec["paths"].get(route.path, {}).get(method, {})
-                       .get("responses", {}).get("200", {}).get("content", {}))
-            schema = content.get("application/json", {}).get("schema")
+        for method in (m.lower() for m in route.methods
+                       if m in ("GET", "POST", "PUT", "PATCH")):
+            responses = (spec["paths"].get(route.path, {}).get(method, {})
+                         .get("responses", {}))
+            success = [code for code in responses if code.startswith("2")]
+            schema = None
+            for code in success:
+                schema = (responses[code].get("content", {})
+                          .get("application/json", {}).get("schema"))
+                if schema:
+                    break
             if not schema:
-                missing.append(f"{method.upper()} {route.path}")
-    assert missing == [], f"routes with no 200 schema: {missing}"
+                missing.append(f"{method.upper()} {route.path} (declared: {success})")
+    assert missing == [], f"routes with no success schema: {missing}"
 
 
 def test_the_committed_document_matches_the_application():

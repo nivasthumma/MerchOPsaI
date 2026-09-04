@@ -77,13 +77,18 @@ class PrincipalRow:
     email: str
     role: str
     permissions: list[str]
+    status: str = "ACTIVE"
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "ACTIVE"
 
 
 # Split rather than `.format`ed: the SQL contains `'{}'` -- an empty text array,
 # which is what a role with no permissions aggregates to -- and `str.format`
 # reads that as a replacement field. It raised on the first call.
 _RESOLVE_HEAD = """
-    SELECT u.id, u.tenant_id, u.merchant_id, u.email, r.name AS role,
+    SELECT u.id, u.tenant_id, u.merchant_id, u.email, u.status, r.name AS role,
            coalesce(
                array_agg(rp.permission_name ORDER BY rp.permission_name)
                    FILTER (WHERE rp.permission_name IS NOT NULL),
@@ -93,35 +98,48 @@ _RESOLVE_HEAD = """
     LEFT JOIN role_permissions rp ON rp.role_id = r.id
     WHERE """
 _RESOLVE_TAIL = """
-    GROUP BY u.id, u.tenant_id, u.merchant_id, u.email, r.name
+    GROUP BY u.id, u.tenant_id, u.merchant_id, u.email, u.status, r.name
 """
 
 
-def resolve(session, user_id: str) -> PrincipalRow | None:
+def resolve(session, user_id: str, *, active_only: bool = True) -> PrincipalRow | None:
     """What this user may do, right now.
 
-    A LEFT JOIN, so a role with no permissions resolves to a principal holding
-    none rather than to no principal at all. Those are different facts: one is a
-    user who can do nothing, the other is a user who does not exist, and the API
-    distinguishes them with 403 and 401.
+    `active_only` by default, so an offboarded account stops working the moment
+    it is disabled rather than at its next login -- there is no session to expire
+    and the bearer token stays valid forever (ADR-0025), so the row is the only
+    thing that can revoke it. Pass False to look one up for administration,
+    where a disabled user is exactly who you are asking about.
+
+    A LEFT JOIN on permissions, so a role granting none resolves to a principal
+    holding none rather than to no principal at all. Those are different facts:
+    one is a user who can do nothing, the other is a user who does not exist,
+    and the API answers 403 to one and 401 to the other.
     """
+    predicate = "u.id = :u" + (" AND u.status = 'ACTIVE'" if active_only else "")
     row = session.execute(
-        text(_RESOLVE_HEAD + "u.id = :u" + _RESOLVE_TAIL), {"u": user_id}
+        text(_RESOLVE_HEAD + predicate + _RESOLVE_TAIL), {"u": user_id}
     ).mappings().first()
     return _row(row) if row else None
 
 
 def holders(session, *, tenant_id: str, merchant_id: str,
-            required: list[str] | None = None) -> list[PrincipalRow]:
+            required: list[str] | None = None,
+            active_only: bool = True) -> list[PrincipalRow]:
     """Everyone attached to this merchant, optionally filtered to those holding
     every permission in `required`.
 
     This is the query that was impossible before: "who can approve a CRITICAL
     refund?" is `holders(..., required=["action:refund"])`.
     """
+    predicate = "u.tenant_id = :t AND u.merchant_id = :m"
+    if active_only:
+        # A disabled user holding `action:refund` is not somebody who can
+        # approve a refund, and a notification routed to them is a notification
+        # nobody reads.
+        predicate += " AND u.status = 'ACTIVE'"
     rows = session.execute(
-        text(_RESOLVE_HEAD + "u.tenant_id = :t AND u.merchant_id = :m"
-             + _RESOLVE_TAIL + " ORDER BY u.id"),
+        text(_RESOLVE_HEAD + predicate + _RESOLVE_TAIL + " ORDER BY u.id"),
         {"t": tenant_id, "m": merchant_id},
     ).mappings().all()
     out = [_row(r) for r in rows]
@@ -134,7 +152,8 @@ def holders(session, *, tenant_id: str, merchant_id: str,
 def _row(row) -> PrincipalRow:
     return PrincipalRow(
         user_id=row["id"], tenant_id=row["tenant_id"], merchant_id=row["merchant_id"],
-        email=row["email"], role=row["role"], permissions=list(row["permissions"]))
+        email=row["email"], role=row["role"], permissions=list(row["permissions"]),
+        status=row["status"])
 
 
 # --------------------------------------------------------------------------
@@ -190,9 +209,15 @@ def access_review(session, *, tenant_id: str | None = None) -> list[dict]:
     The artefact a SOC 2 access review asks for quarterly. It was previously
     produced by reading `users.permissions` out of the database by hand, which
     is why it was never produced.
+
+    Includes DISABLED accounts, deliberately. "Who still has access" and "whose
+    access was removed, and when" are both questions a review asks, and an
+    offboarded account missing from the list is indistinguishable from one that
+    never existed.
     """
     rows = session.execute(text("""
         SELECT u.id AS user_id, u.email, u.tenant_id, u.merchant_id,
+               u.status, u.created_at, u.deactivated_at,
                r.name AS role,
                coalesce(array_agg(rp.permission_name ORDER BY rp.permission_name)
                    FILTER (WHERE rp.permission_name IS NOT NULL), '{}') AS permissions
@@ -200,7 +225,8 @@ def access_review(session, *, tenant_id: str | None = None) -> list[dict]:
         JOIN roles r ON r.id = u.role_id
         LEFT JOIN role_permissions rp ON rp.role_id = r.id
         WHERE (:t IS NULL OR u.tenant_id = :t)
-        GROUP BY u.id, u.email, u.tenant_id, u.merchant_id, r.name
+        GROUP BY u.id, u.email, u.tenant_id, u.merchant_id, u.status,
+                 u.created_at, u.deactivated_at, r.name
         ORDER BY u.tenant_id, u.merchant_id, u.id
     """), {"t": tenant_id}).mappings().all()
     return [dict(r) | {"permissions": list(r["permissions"])} for r in rows]

@@ -361,6 +361,188 @@ def ready(response: Response):
     return {"ready": ok, "checks": checks}
 
 
+# --------------------------------------------------------------------------
+# People — MerchantOps §66, ADR-0048
+#
+# Owner only, and scoped to the caller's own merchant. Row-level security bounds
+# every write here independently of these checks (ADR-0046): a user row inserted
+# with somebody else's tenant is refused by the policy, not by a code path that
+# has to remember.
+# --------------------------------------------------------------------------
+def _owner_only(principal: Principal, what: str) -> None:
+    if principal.role != "owner":
+        raise HTTPException(403, {"error": f"{what} requires the owner role.",
+                                  "code": "role_required"})
+
+
+def _lifecycle(fn, *args, **kwargs):
+    """Run a lifecycle operation, turning its refusals into 4xx.
+
+    `LifecycleError` carries a machine code precisely so this does not become a
+    string match on a message somebody will reword.
+    """
+    from app.lifecycle import LifecycleError
+
+    try:
+        return fn(*args, **kwargs)
+    except LifecycleError as exc:
+        status = {"unknown_user": 404, "unknown_role": 404,
+                  "already_exists": 409, "role_in_use": 409,
+                  "last_owner": 409}.get(exc.code, 422)
+        raise HTTPException(status, {"error": str(exc), "code": exc.code}) from exc
+
+
+@app.get("/users", response_model=schemas.UserList,
+         response_model_exclude_unset=True)
+def list_users(include_disabled: bool = True,
+               principal: Principal = Depends(current_principal)):
+    """Who has access to this merchant. Disabled accounts included by default:
+    "whose access was removed, and when" is half of an access review."""
+    from app import authz
+
+    _owner_only(principal, "Listing users")
+    with session_scope() as s:
+        people = authz.holders(s, tenant_id=principal.tenant_id,
+                               merchant_id=principal.merchant_id,
+                               active_only=not include_disabled)
+        return {"users": [{"user_id": p.user_id, "email": p.email, "role": p.role,
+                           "status": p.status, "permissions": p.permissions}
+                          for p in people]}
+
+
+@app.post("/users", response_model=schemas.UserCreated, status_code=201)
+def create_user(body: schemas.CreateUserRequest, response: Response,
+                principal: Principal = Depends(current_principal)):
+    """Add somebody to this merchant.
+
+    Returns a bearer token, ONCE. This is not an invitation flow: authentication
+    is an HMAC of the user id, so there is no password to set and no acceptance
+    step -- creating the user is granting the credential. A real invitation, with
+    a link the person redeems themselves, arrives with an identity provider.
+    """
+    from app import lifecycle
+
+    _owner_only(principal, "Creating users")
+    with session_scope() as s:
+        created = _lifecycle(lifecycle.create_user, s, actor=principal,
+                             email=body.email, role_name=body.role)
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "user_created",
+               {"user_id": created.user_id, "email": created.email,
+                "role": created.role, "by": principal.user_id})
+        response.status_code = 201
+        return {"user_id": created.user_id, "email": created.email,
+                "role": created.role, "token": created.token}
+
+
+@app.patch("/users/{user_id}", response_model=schemas.UserChange)
+def update_user(user_id: str, body: schemas.UpdateUserRequest,
+                principal: Principal = Depends(current_principal)):
+    """Move somebody between roles, or turn their account off and on."""
+    from app import lifecycle
+
+    _owner_only(principal, "Changing users")
+    if body.role is None and body.status is None:
+        raise HTTPException(422, {"error": "Nothing to change: send `role`, "
+                                           "`status`, or both.",
+                                  "code": "empty_change"})
+    with session_scope() as s:
+        result: dict = {"user_id": user_id}
+        if body.role is not None:
+            change = _lifecycle(lifecycle.change_role, s, actor=principal,
+                                user_id=user_id, role_name=body.role)
+            result |= {"role": change["role"], "changed": change["changed"]}
+            if change["changed"]:
+                record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                          user_id=principal.user_id),
+                       "user_role_changed",
+                       {"user_id": user_id, "from": change["previous_role"],
+                        "to": change["role"], "by": principal.user_id})
+        if body.status is not None:
+            wanted = body.status.upper()
+            if wanted not in {"ACTIVE", "DISABLED"}:
+                raise HTTPException(422, {"error": "status must be ACTIVE or DISABLED.",
+                                          "code": "invalid_status"})
+            fn = (lifecycle.deactivate_user if wanted == "DISABLED"
+                  else lifecycle.reactivate_user)
+            change = _lifecycle(fn, s, actor=principal, user_id=user_id)
+            result |= {"status": change["status"], "changed": change["changed"]}
+            if change["changed"]:
+                record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                          user_id=principal.user_id),
+                       "user_status_changed",
+                       {"user_id": user_id, "to": change["status"],
+                        "by": principal.user_id})
+        return result
+
+
+@app.get("/roles", response_model=schemas.RoleList,
+         response_model_exclude_unset=True)
+def list_roles(principal: Principal = Depends(current_principal)):
+    """This tenant's roles and what each grants."""
+    with session_scope() as s:
+        rows = s.execute(text("""
+            SELECT r.name, r.description,
+                   coalesce(array_agg(rp.permission_name ORDER BY rp.permission_name)
+                       FILTER (WHERE rp.permission_name IS NOT NULL), '{}'::text[]),
+                   (SELECT count(*) FROM users u WHERE u.role_id = r.id)
+            FROM roles r
+            LEFT JOIN role_permissions rp ON rp.role_id = r.id
+            WHERE r.tenant_id = :t
+            GROUP BY r.id, r.name, r.description ORDER BY r.name
+        """), {"t": principal.tenant_id}).all()
+        catalogue = s.execute(text(
+            "SELECT name, description FROM permissions ORDER BY name")).all()
+        return {
+            "roles": [{"name": n, "description": d, "permissions": list(p),
+                       "held_by": int(c)} for n, d, p, c in rows],
+            "catalogue": [{"name": n, "description": d} for n, d in catalogue],
+        }
+
+
+@app.post("/roles", response_model=schemas.RoleView, status_code=201)
+def create_role(body: schemas.CreateRoleRequest, response: Response,
+                principal: Principal = Depends(current_principal)):
+    from app import lifecycle
+
+    _owner_only(principal, "Creating roles")
+    with session_scope() as s:
+        role = _lifecycle(lifecycle.create_role, s, actor=principal,
+                          name=body.name, description=body.description or "",
+                          permissions=body.permissions)
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "role_created", {"role": role["name"],
+                                "permissions": role["permissions"],
+                                "by": principal.user_id})
+        response.status_code = 201
+        return {"name": role["name"], "permissions": role["permissions"]}
+
+
+@app.put("/roles/{role_name}/permissions", response_model=schemas.RoleChange)
+def set_permissions(role_name: str, body: schemas.SetPermissionsRequest,
+                    principal: Principal = Depends(current_principal)):
+    """Replace what a role grants — for everybody holding it, at once.
+
+    Which is the entire reason roles are rows (ADR-0047), and the reason this is
+    audited with what was granted and revoked rather than just the new set.
+    """
+    from app import lifecycle
+
+    _owner_only(principal, "Changing permissions")
+    with session_scope() as s:
+        change = _lifecycle(lifecycle.set_role_permissions, s, actor=principal,
+                            role_name=role_name, permissions=body.permissions)
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "role_permissions_changed",
+               {"role": change["name"], "granted": change["granted"],
+                "revoked": change["revoked"], "by": principal.user_id})
+        return {"name": change["name"], "permissions": change["permissions"],
+                "granted": change["granted"], "revoked": change["revoked"]}
+
+
 @app.get("/access-review", response_model=schemas.AccessReview,
          response_model_exclude_unset=True)
 def get_access_review(principal: Principal = Depends(current_principal)):
@@ -395,7 +577,9 @@ def get_access_review(principal: Principal = Depends(current_principal)):
             "roles": [{"name": n, "permissions": list(p)} for n, p in roles],
             "users": [{"user_id": r["user_id"], "email": r["email"],
                        "merchant_id": r["merchant_id"], "role": r["role"],
-                       "permissions": r["permissions"]} for r in rows],
+                       "permissions": r["permissions"], "status": r["status"],
+                       "deactivated_at": r["deactivated_at"].isoformat()
+                       if r["deactivated_at"] else None} for r in rows],
         }
 
 

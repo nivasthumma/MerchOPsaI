@@ -368,6 +368,16 @@ class RolePermission(Base):
     role: Mapped[Role] = relationship(back_populates="permissions")
 
 
+class UserStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    #: Offboarded. The row stays: `audit_logs.user_id` and
+    #: `approval_signatures.user_id` point at it, and the trail has to outlive
+    #: the employment. Deleting a user would either orphan those or cascade them
+    #: away, and an audit record that disappears when somebody leaves is not an
+    #: audit record.
+    DISABLED = "DISABLED"
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -388,6 +398,17 @@ class User(Base):
     # name on a seeded database. Naming it here makes both paths agree.
     role_id: Mapped[str] = mapped_column(
         ForeignKey("roles.id", name="fk_users_role"), index=True)
+
+    status: Mapped[UserStatus] = mapped_column(
+        Enum(UserStatus, native_enum=False), default=UserStatus.ACTIVE, index=True)
+    deactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    #: Who created this user, and who turned them off. Not derivable from the
+    #: audit log alone once it has been rotated, and it is the first thing an
+    #: access review asks about an account nobody recognises.
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deactivated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     role_ref: Mapped[Role] = relationship()
 

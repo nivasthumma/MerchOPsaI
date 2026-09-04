@@ -861,6 +861,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Roles
+         * @description This tenant's roles and what each grants.
+         */
+        get: operations["list_roles_roles_get"];
+        put?: never;
+        /** Create Role */
+        post: operations["create_role_roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/roles/{role_name}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Permissions
+         * @description Replace what a role grants — for everybody holding it, at once.
+         *
+         *     Which is the entire reason roles are rows (ADR-0047), and the reason this is
+         *     audited with what was granted and revoked rather than just the new set.
+         */
+        put: operations["set_permissions_roles__role_name__permissions_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/scenarios": {
         parameters: {
             query?: never;
@@ -1173,6 +1217,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description Who has access to this merchant. Disabled accounts included by default:
+         *     "whose access was removed, and when" is half of an access review.
+         */
+        get: operations["list_users_users_get"];
+        put?: never;
+        /**
+         * Create User
+         * @description Add somebody to this merchant.
+         *
+         *     Returns a bearer token, ONCE. This is not an invitation flow: authentication
+         *     is an HMAC of the user id, so there is no password to set and no acceptance
+         *     step -- creating the user is granting the credential. A real invitation, with
+         *     a link the person redeems themselves, arrives with an identity provider.
+         */
+        post: operations["create_user_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update User
+         * @description Move somebody between roles, or turn their account off and on.
+         */
+        patch: operations["update_user_users__user_id__patch"];
+        trace?: never;
+    };
     "/webhooks/events": {
         parameters: {
             query?: never;
@@ -1247,6 +1341,8 @@ export interface components {
         };
         /** AccessReviewEntry */
         AccessReviewEntry: {
+            /** Deactivated At */
+            deactivated_at?: string | null;
             /** Email */
             email: string;
             /** Merchant Id */
@@ -1255,6 +1351,8 @@ export interface components {
             permissions: string[];
             /** Role */
             role: string;
+            /** Status */
+            status: string;
             /** User Id */
             user_id: string;
         };
@@ -1536,6 +1634,25 @@ export interface components {
             events: components["schemas"]["TraceEvent"][];
             /** Span Count */
             span_count: number;
+        };
+        /** CreateRoleRequest */
+        CreateRoleRequest: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Permissions
+             * @default []
+             */
+            permissions: string[];
+        };
+        /** CreateUserRequest */
+        CreateUserRequest: {
+            /** Email */
+            email: string;
+            /** Role */
+            role: string;
         };
         /** DashboardView */
         DashboardView: {
@@ -2196,6 +2313,13 @@ export interface components {
             /** Unavailable */
             unavailable: components["schemas"]["MetricView"][];
         };
+        /** PermissionView */
+        PermissionView: {
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+        };
         /**
          * PlanBudget
          * @description MerchantOps v2 §38's five bounds. All five belong to the plan.
@@ -2375,6 +2499,35 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RoleChange */
+        RoleChange: {
+            /** Granted */
+            granted: string[];
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
+            /** Revoked */
+            revoked: string[];
+        };
+        /** RoleList */
+        RoleList: {
+            /** Catalogue */
+            catalogue: components["schemas"]["PermissionView"][];
+            /** Roles */
+            roles: components["schemas"]["RoleSummary"][];
+        };
+        /** RoleSummary */
+        RoleSummary: {
+            /** Description */
+            description: string;
+            /** Held By */
+            held_by: number;
+            /** Name */
+            name: string;
+            /** Permissions */
+            permissions: string[];
+        };
         /** RoleView */
         RoleView: {
             /** Name */
@@ -2452,6 +2605,11 @@ export interface components {
             setup: {
                 [key: string]: unknown;
             };
+        };
+        /** SetPermissionsRequest */
+        SetPermissionsRequest: {
+            /** Permissions */
+            permissions: string[];
         };
         /** SettleReport */
         SettleReport: {
@@ -2622,6 +2780,53 @@ export interface components {
             };
             /** Task Id */
             task_id?: string | null;
+        };
+        /** UpdateUserRequest */
+        UpdateUserRequest: {
+            /** Role */
+            role?: string | null;
+            /** Status */
+            status?: string | null;
+        };
+        /** UserChange */
+        UserChange: {
+            /** Changed */
+            changed?: boolean | null;
+            /** Role */
+            role?: string | null;
+            /** Status */
+            status?: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /** UserCreated */
+        UserCreated: {
+            /** Email */
+            email: string;
+            /** Role */
+            role: string;
+            /** Token */
+            token: string;
+            /** User Id */
+            user_id: string;
+        };
+        /** UserList */
+        UserList: {
+            /** Users */
+            users: components["schemas"]["UserSummary"][];
+        };
+        /** UserSummary */
+        UserSummary: {
+            /** Email */
+            email: string;
+            /** Permissions */
+            permissions: string[];
+            /** Role */
+            role: string;
+            /** Status */
+            status: string;
+            /** User Id */
+            user_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -3806,6 +4011,109 @@ export interface operations {
             };
         };
     };
+    list_roles_roles_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_role_roles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_permissions_roles__role_name__permissions_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                role_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPermissionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_scenarios_scenarios_get: {
         parameters: {
             query?: never;
@@ -4211,6 +4519,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CorrelationTrace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_users_get: {
+        parameters: {
+            query?: {
+                include_disabled?: boolean;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_user_users_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChange"];
                 };
             };
             /** @description Validation Error */

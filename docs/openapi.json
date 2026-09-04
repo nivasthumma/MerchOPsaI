@@ -990,6 +990,10 @@
       "EscalatedAction": {
         "additionalProperties": false,
         "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
           "amount_minor": {
             "anyOf": [
               {
@@ -1087,6 +1091,7 @@
           "id",
           "task_id",
           "merchant_id",
+          "action_type",
           "verify_attempts"
         ],
         "title": "EscalatedAction",
@@ -2420,6 +2425,173 @@
           "signing_secret_is_development_default"
         ],
         "title": "MetricsStrip",
+        "type": "object"
+      },
+      "NotificationList": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationView"
+            },
+            "title": "Notifications",
+            "type": "array"
+          },
+          "undelivered": {
+            "title": "Undelivered",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notifications",
+          "undelivered",
+          "channels"
+        ],
+        "title": "NotificationList",
+        "type": "object"
+      },
+      "NotificationView": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "recipient": {
+            "title": "Recipient",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "subject_type": {
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "severity",
+          "subject_type",
+          "subject_id",
+          "recipient",
+          "channel",
+          "title",
+          "status",
+          "attempts",
+          "created_at"
+        ],
+        "title": "NotificationView",
+        "type": "object"
+      },
+      "NotifyCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "suppressed": {
+            "title": "Suppressed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "sent",
+          "failed",
+          "suppressed",
+          "duplicate"
+        ],
+        "title": "NotifyCounts",
+        "type": "object"
+      },
+      "NotifySweepReport": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals": {
+            "$ref": "#/components/schemas/NotifyCounts"
+          },
+          "escalated": {
+            "$ref": "#/components/schemas/NotifyCounts"
+          }
+        },
+        "required": [
+          "approvals",
+          "escalated"
+        ],
+        "title": "NotifySweepReport",
         "type": "object"
       },
       "ObjectiveView": {
@@ -5464,6 +5636,110 @@
           }
         },
         "summary": "Prometheus"
+      }
+    },
+    "/notifications": {
+      "get": {
+        "description": "What this merchant has been told, and what it has not.\n\nMerchant-scoped from the bearer token, never a query parameter. The point of\nreading it is `undelivered`: a notification recorded and never sent is\nsomebody who was not told, and the only reason this table is queryable is so\nthat state is findable rather than silent.",
+        "operationId": "list_notifications_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Notifications"
+      }
+    },
+    "/notifications/sweep": {
+      "post": {
+        "description": "Send the notifications nothing raises an event for.\n\nAn approval expiring is the absence of a decision and an escalated action is\na threshold crossed, so neither has a moment to hook. Both are found by\nlooking, on a cadence -- the same shape as detection and reconciliation, and\nthe same honest limitation: bounded by how often this is called.\n\nSafe to call as often as you like. Every send is deduplicated by a UNIQUE\nconstraint, so an overlapping cron costs queries and sends nothing twice.\nUntil there is a scheduler this needs a caller; `scripts/notify_sweep.py` is\nthe one for a cron.",
+        "operationId": "sweep_notifications_notifications_sweep_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifySweepReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sweep Notifications"
       }
     },
     "/recovery/candidates/{candidate_id}/dispatch": {

@@ -210,7 +210,8 @@ def escalated_actions(session, *, max_attempts: int = 5) -> list[dict]:
     """Actions that automatic reconciliation could not settle. This is the
     operator's work queue; it must not be silently empty-looking."""
     rows = session.execute(text("""
-        SELECT id, task_id, merchant_id, target_payment_id, external_payment_id,
+        SELECT id, task_id, merchant_id, action_type, target_payment_id,
+               external_payment_id,
                amount_minor, external_reference, verification_state,
                verify_attempts, updated_at,
                -- Why it is stuck. Without this the queue lists identifiers and

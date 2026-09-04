@@ -150,6 +150,39 @@ class Settings(BaseSettings):
     # Chasing INR 20 costs more in support load than it returns.
     recovery_min_expected_minor: int = 100_00
 
+    # --- Operator notifications ---------------------------------------
+    # The channels a notification may go out on, in order of preference. `log`
+    # is always available and is the default: a deployment with no SMTP still
+    # records every notification somewhere a human can read, rather than
+    # dropping it. A name here that is not configured is a startup error, not a
+    # silent fallback -- "we thought we were emailing" is the failure this
+    # package exists to prevent.
+    notify_channels: str = "log"
+    notify_timeout_seconds: float = 10.0
+    # How long before an approval expires to chase it. Must be less than
+    # `approval_ttl_seconds` or the chase never fires; asserted at startup.
+    notify_approval_warning_seconds: int = 300
+    # Below this severity nothing is sent. INFO | WARNING | CRITICAL.
+    notify_min_severity: str = "INFO"
+    # Where the links in a notification point. Unset means relative paths,
+    # which are useless in an email -- so a deployment that sends email
+    # should set this, and one that does not costs nothing by leaving it.
+    notify_base_url: str | None = None
+
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    notify_email_from: str | None = None
+
+    slack_webhook_url: str | None = None
+
+    # A JSON POST to a URL the customer owns -- their PagerDuty, Opsgenie or
+    # ticket queue. Signed with `notify_webhook_secret` when one is set, the
+    # same shape as the Razorpay signature we verify inbound.
+    notify_webhook_url: str | None = None
+    notify_webhook_secret: str | None = None
+
     agent_version: str = "merchantops-agent/0.1.0"
     prompt_version: str = "investigator-v1"
     # MerchantOps §41. The shape of the loop the agent runs inside: gather,

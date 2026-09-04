@@ -55,6 +55,9 @@ from app.models import (
     WebhookStatus,
     utcnow,
 )
+from app.notify import channels as notify_channels
+from app.notify import consumers as notify
+from app.notify import service as notify_service
 from app.observability import runtime_metrics as runtime
 from app.observability.logs import configure_logging
 from app.observability.middleware import ObservabilityMiddleware
@@ -78,6 +81,17 @@ configure_logging()
 # forgeable identity. Raises only where a platform marker says this is a
 # deployment, so a fresh clone still runs `make api` with no configuration.
 require_configured_secret()
+
+# Also at import, and for a related reason: a consumer registered lazily on
+# first drain is a consumer that is absent for every event drained before the
+# first drain. `register()` is idempotent -- `subscribe` appends, so calling it
+# twice would deliver every notification twice.
+#
+# This validates `NOTIFY_CHANNELS` as a side effect. A deployment that lists
+# `email` and has no SMTP host fails here rather than discovering it the first
+# time an approval needs a human.
+notify.register()
+notify_service.configured_channels()
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
@@ -899,6 +913,67 @@ def drain_events(limit: int = 200, principal: Principal = Depends(current_princi
 
     with session_scope() as s:
         return drain(s, limit=min(limit, 1000))
+
+
+@app.post("/notifications/sweep", response_model=schemas.NotifySweepReport)
+def sweep_notifications(principal: Principal = Depends(current_principal)):
+    """Send the notifications nothing raises an event for.
+
+    An approval expiring is the absence of a decision and an escalated action is
+    a threshold crossed, so neither has a moment to hook. Both are found by
+    looking, on a cadence -- the same shape as detection and reconciliation, and
+    the same honest limitation: bounded by how often this is called.
+
+    Safe to call as often as you like. Every send is deduplicated by a UNIQUE
+    constraint, so an overlapping cron costs queries and sends nothing twice.
+    Until there is a scheduler this needs a caller; `scripts/notify_sweep.py` is
+    the one for a cron.
+    """
+    from app.notify.sweep import sweep
+
+    with session_scope() as s:
+        return sweep(s)
+
+
+@app.get("/notifications", response_model=schemas.NotificationList,
+         response_model_exclude_unset=True)
+def list_notifications(limit: int = 50,
+                       principal: Principal = Depends(current_principal)):
+    """What this merchant has been told, and what it has not.
+
+    Merchant-scoped from the bearer token, never a query parameter. The point of
+    reading it is `undelivered`: a notification recorded and never sent is
+    somebody who was not told, and the only reason this table is queryable is so
+    that state is findable rather than silent.
+    """
+    from app.models import NotificationStatus, OperatorNotification
+
+    with session_scope() as s:
+        rows = s.execute(
+            select(OperatorNotification)
+            .where(OperatorNotification.merchant_id == principal.merchant_id)
+            .order_by(OperatorNotification.created_at.desc())
+            .limit(min(limit, 200))
+        ).scalars().all()
+        undelivered = s.execute(
+            select(func.count()).select_from(OperatorNotification).where(
+                OperatorNotification.merchant_id == principal.merchant_id,
+                OperatorNotification.status.in_([NotificationStatus.PENDING,
+                                                 NotificationStatus.FAILED]))
+        ).scalar() or 0
+        return {
+            "notifications": [{
+                "id": n.id, "kind": n.kind.value, "severity": n.severity,
+                "subject_type": n.subject_type, "subject_id": n.subject_id,
+                "recipient": n.recipient, "channel": n.channel,
+                "title": n.title, "status": n.status.value,
+                "attempts": n.attempts, "last_error": n.last_error,
+                "created_at": n.created_at.isoformat(),
+                "sent_at": n.sent_at.isoformat() if n.sent_at else None,
+            } for n in rows],
+            "undelivered": undelivered,
+            "channels": notify_channels.active_channel_names(),
+        }
 
 
 # --------------------------------------------------------------------------

@@ -646,6 +646,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description What this merchant has been told, and what it has not.
+         *
+         *     Merchant-scoped from the bearer token, never a query parameter. The point of
+         *     reading it is `undelivered`: a notification recorded and never sent is
+         *     somebody who was not told, and the only reason this table is queryable is so
+         *     that state is findable rather than silent.
+         */
+        get: operations["list_notifications_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sweep Notifications
+         * @description Send the notifications nothing raises an event for.
+         *
+         *     An approval expiring is the absence of a decision and an escalated action is
+         *     a threshold crossed, so neither has a moment to hook. Both are found by
+         *     looking, on a cadence -- the same shape as detection and reconciliation, and
+         *     the same honest limitation: bounded by how often this is called.
+         *
+         *     Safe to call as often as you like. Every send is deduplicated by a UNIQUE
+         *     constraint, so an overlapping cron costs queries and sends nothing twice.
+         *     Until there is a scheduler this needs a caller; `scripts/notify_sweep.py` is
+         *     the one for a cron.
+         */
+        post: operations["sweep_notifications_notifications_sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recovery/candidates/{candidate_id}/dispatch": {
         parameters: {
             query?: never;
@@ -1402,6 +1457,8 @@ export interface components {
         };
         /** EscalatedAction */
         EscalatedAction: {
+            /** Action Type */
+            action_type: string;
             /** Amount Minor */
             amount_minor?: number | null;
             /** External Payment Id */
@@ -1921,6 +1978,62 @@ export interface components {
             tool_errors: number;
             /** Window Hours */
             window_hours: number;
+        };
+        /** NotificationList */
+        NotificationList: {
+            /** Channels */
+            channels: string[];
+            /** Notifications */
+            notifications: components["schemas"]["NotificationView"][];
+            /** Undelivered */
+            undelivered: number;
+        };
+        /** NotificationView */
+        NotificationView: {
+            /** Attempts */
+            attempts: number;
+            /** Channel */
+            channel: string;
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Last Error */
+            last_error?: string | null;
+            /** Recipient */
+            recipient: string;
+            /** Sent At */
+            sent_at?: string | null;
+            /** Severity */
+            severity: string;
+            /** Status */
+            status: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Title */
+            title: string;
+        };
+        /** NotifyCounts */
+        NotifyCounts: {
+            /** Created */
+            created: number;
+            /** Duplicate */
+            duplicate: number;
+            /** Failed */
+            failed: number;
+            /** Sent */
+            sent: number;
+            /** Suppressed */
+            suppressed: number;
+        };
+        /** NotifySweepReport */
+        NotifySweepReport: {
+            approvals: components["schemas"]["NotifyCounts"];
+            escalated: components["schemas"]["NotifyCounts"];
         };
         /** ObjectiveView */
         ObjectiveView: {
@@ -3254,6 +3367,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notifications_notifications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sweep_notifications_notifications_sweep_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifySweepReport"];
                 };
             };
             /** @description Validation Error */

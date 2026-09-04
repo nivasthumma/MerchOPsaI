@@ -280,6 +280,11 @@ class EscalatedAction(Contract):
     id: str
     task_id: str
     merchant_id: str
+    # What kind of action is stuck. The queue listed identifiers and amounts and
+    # left the reader to open each task to find out whether the money in
+    # question was a refund going out or a payment link that may never have been
+    # sent. It is also what notification routing derives its recipients from.
+    action_type: str
     target_payment_id: str | None = None
     external_payment_id: str | None = None
     amount_minor: int | None = None
@@ -864,3 +869,47 @@ class ScenarioRunResult(Contract):
     task_id: str | None = None
     provider: str
     model: str
+
+
+# ------------------------------------------------------ notifications
+class NotifyCounts(Contract):
+    created: int
+    sent: int
+    failed: int
+    suppressed: int
+    # Not an error. The sweep recomputes the same "expiring soon" on every pass
+    # and the UNIQUE constraint refuses the repeat, which is the mechanism
+    # working rather than a problem to report.
+    duplicate: int
+
+
+class NotifySweepReport(Contract):
+    approvals: NotifyCounts
+    escalated: NotifyCounts
+
+
+class NotificationView(Contract):
+    id: str
+    kind: str
+    severity: str
+    subject_type: str
+    subject_id: str
+    recipient: str
+    channel: str
+    title: str
+    status: str
+    attempts: int
+    last_error: str | None = None
+    created_at: str
+    sent_at: str | None = None
+
+
+class NotificationList(Contract):
+    notifications: list[NotificationView]
+    #: Recorded and never delivered — PENDING or FAILED. The number worth
+    #: looking at: it counts people who were not told.
+    undelivered: int
+    #: What this deployment can actually send on. A deployment that believes it
+    #: is emailing and is only writing to a log should be able to find that out
+    #: without sending a test approval.
+    channels: list[str]

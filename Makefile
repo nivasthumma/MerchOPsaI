@@ -30,6 +30,9 @@ ui:         ; PYTHONPATH=. .venv/bin/streamlit run ui/streamlit_app.py
 test:       ; PYTHONPATH=. $(PY) -m pytest tests -q
 eval:       ; $(PY) scripts/run_scenarios.py
 reconcile:  ; $(PY) scripts/reconcile.py
+# Drain the event spine and send the time-based notifications. Wants a
+# cadence of a couple of minutes -- see the module docstring.
+notify:     ; PYTHONPATH=. $(PY) scripts/notify_sweep.py
 mutants:    ; $(PY) scripts/mutation_test.py
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
@@ -81,7 +84,7 @@ serve: web-build
 	fi
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
-.PHONY: setup setup-dev lock seed spike api ui test eval reconcile mutants compare harden token ci demo \
+.PHONY: setup setup-dev lock seed spike api ui test eval reconcile notify mutants compare harden token ci demo \
         lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \
         web-setup web web-build web-test serve

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-662%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-700%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations](https://img.shields.io/badge/mutations-113%20defined%20%C2%B7%20not%20re--measured-lightgrey.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 662 tests · 187/187 scenarios · 113 mutants defined |
+| [📊 Measured results](#-measured-results) | 700 tests · 187/187 scenarios · 113 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -88,6 +88,7 @@ and what is architecture.
 | Evaluation | 187 scenarios + 113-mutant validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
+| Notifications | Operator notifications on approval requested / expiring / expired, HIGH+ incidents, escalated actions, UNKNOWN verifications. Channels: log (always), email, Slack, signed outbound webhook. Recipients derived from the permissions the action requires (ADR-0042) | Quiet hours, per-user preferences, digests, escalation chains |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
 
 Nothing in the right column is claimed as implemented.
@@ -185,7 +186,7 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **662 passed** (`make test`) across unit, security and integration, in
+Test suite: **700 passed** (`make test`) across unit, security and integration, in
 under 15 seconds — the suite seeds once and rolls each test back, rather than rebuilding
 the schema for every test.
 
@@ -368,7 +369,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 662 tests
+make test                                # 700 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -572,6 +573,15 @@ are different claims.
 17. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
    not a defect.
+18. **Notifications exist, but nothing calls the sweep on a cadence.** Three of the
+   six kinds arrive by event and need no scheduler — an approval being requested, a
+   HIGH incident opening, a verification coming back UNKNOWN — because they ride the
+   event spine's drain. The other two have no moment to hook: an approval *expiring*
+   is the absence of a decision, and an escalated action is a threshold crossed. Those
+   need `make notify` (or `POST /notifications/sweep`) run on a cadence, and there is
+   no scheduler in this deployment to run it. The cadence matters: the chase fires
+   five minutes before a fifteen-minute expiry, so an hourly sweep delivers every
+   warning after the window it was warning about closed.
 
 ### Coverage limits
 
@@ -661,7 +671,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 189 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (662 tests)
+tests/          unit · security · integration  (700 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 32 ADRs

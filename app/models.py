@@ -1186,3 +1186,94 @@ class Hypothesis(Base):
     __table_args__ = (
         UniqueConstraint("incident_id", "key", name="uq_hypothesis_once"),
     )
+
+
+# --------------------------------------------------------------------------
+# Operator notifications — telling a human that the system needs them
+# --------------------------------------------------------------------------
+class NotificationKind(str, enum.Enum):
+    """What happened, from the operator's side of the screen.
+
+    Deliberately not the §62 event vocabulary. That list is a contract with the
+    UI about what to draw on a timeline; this is a list of things worth
+    interrupting somebody for, and the two are different questions. Most §62
+    events belong on a timeline and nowhere near an inbox.
+    """
+    APPROVAL_REQUESTED = "approval.requested"
+    APPROVAL_EXPIRING = "approval.expiring"
+    APPROVAL_EXPIRED = "approval.expired"
+    INCIDENT_OPENED = "incident.opened"
+    ACTION_ESCALATED = "action.escalated"
+    VERIFICATION_UNKNOWN = "verification.unknown"
+
+
+class NotificationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+    #: Deliverable, but a channel refused it on purpose -- quiet hours, an
+    #: unroutable recipient. Distinct from FAILED so a suppressed notification
+    #: is not counted as an outage.
+    SUPPRESSED = "SUPPRESSED"
+
+
+class OperatorNotification(Base):
+    """One attempt to tell one person one thing, on one channel.
+
+    A row per (notification, recipient, channel) rather than per notification,
+    because the question anybody actually asks is "was the approver told?" and
+    a single row covering four recipients cannot answer it.
+
+    **Every send is recorded before it is attempted.** A notification the
+    process died halfway through is PENDING with an attempt count, which is a
+    fact somebody can act on; a notification sent with no record is
+    indistinguishable from one never sent, and the whole reason this table
+    exists is that MerchantOps had approvals expiring with nobody told and no
+    way to find out.
+    """
+    __tablename__ = "operator_notifications"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    # Both boundaries, checked the same way every other read is. A notification
+    # routed to the wrong tenant is a data leak that arrives by email, which is
+    # the one place it cannot be recalled.
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+
+    kind: Mapped[NotificationKind] = mapped_column(
+        Enum(NotificationKind, native_enum=False))
+    severity: Mapped[str] = mapped_column(String(16))       # INFO | WARNING | CRITICAL
+
+    # What it is about, so a reader can get from the inbox back to the thing.
+    subject_type: Mapped[str] = mapped_column(String(32))   # approval | incident | action
+    subject_id: Mapped[str] = mapped_column(String(64), index=True)
+
+    recipient: Mapped[str] = mapped_column(String(200))
+    recipient_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    channel: Mapped[str] = mapped_column(String(32))        # log | email | slack | webhook
+
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+
+    status: Mapped[NotificationStatus] = mapped_column(
+        Enum(NotificationStatus, native_enum=False),
+        default=NotificationStatus.PENDING, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    #: What makes this notification the same as another one. The UNIQUE below is
+    #: the whole design, for the same reason `approval_signatures` uses one: a
+    #: sweep that runs every five minutes over a fifteen-minute approval window
+    #: would otherwise send "expiring soon" three times, and "do not resend"
+    #: enforced by an if-statement is a rule any retry or concurrent drain
+    #: bypasses. Under concurrency the constraint is the authority and the
+    #: preceding SELECT is only an optimisation.
+    dedupe_key: Mapped[str] = mapped_column(String(200))
+
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_notification_once"),
+    )

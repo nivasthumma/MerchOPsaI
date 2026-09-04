@@ -16,14 +16,22 @@ makes the trust boundary explicit rather than aspirational.
 
 ## Rate limiting
 
-A fixed-window counter per (principal, route class), in-process. Agent tasks are
-expensive — each one runs a model loop and several database queries — so an
+A **sliding window log** per (principal, route class): the timestamps of recent
+requests, with the ones older than the window dropped on each check. Agent tasks
+are expensive — each one runs a model loop and several database queries — so an
 unauthenticated flood was previously bounded only by the box. Write and action
 routes get tighter limits than reads.
 
-In-process state means the limit is per-worker. With one worker that is exact;
-with several it is approximate. A shared counter needs Redis, which §52 excludes,
-so the limitation is stated rather than hidden.
+(This docstring described a *fixed* window for a long time. The code never was
+one — it has always kept timestamps and filtered by a cutoff. A fixed window
+would let a caller send twice the limit across a boundary, so the code was the
+better of the two; only the description was wrong.)
+
+Shared across replicas when `REDIS_URL` is set (`app/shared_state.py`), and
+per-process when it is not. Per-process is exact with one worker and multiplies
+by N with N of them — and on a serverless host, where every invocation may be a
+new process, it is not a limit at all. `/health` reports which is live, so the
+two are never a guess.
 """
 from __future__ import annotations
 
@@ -37,8 +45,13 @@ from dataclasses import dataclass
 from fastapi import Header, HTTPException, Request
 from sqlalchemy import text
 
+from app import shared_state
 from app.agent.runtime import Principal
 from app.db import session_scope
+from app.observability.logs import get_logger
+
+log = get_logger("merchantops.security")
+
 
 # --------------------------------------------------------------------------
 # Tokens
@@ -172,6 +185,33 @@ def _class_for(path: str, method: str) -> str:
 def check_rate_limit(principal_id: str, path: str, method: str) -> None:
     cls = _class_for(path, method)
     limit = LIMITS[cls]
+
+    # Shared first. Returns None when there is no Redis configured, and also
+    # when a configured one is unreachable -- in both cases the per-process
+    # limiter below runs instead, which is a documented state rather than no
+    # limit at all.
+    verdict = shared_state.consume(
+        f"{principal_id}:{cls}", limit=limit.requests,
+        window_seconds=limit.window_seconds)
+    if verdict is not None:
+        if verdict.limited:
+            _refuse(cls, limit, verdict.retry_after_seconds)
+        return
+
+    _check_in_process(principal_id, cls, limit)
+
+
+def _refuse(cls: str, limit: Limit, retry: int) -> None:
+    raise HTTPException(
+        429,
+        detail={"error": "rate_limit_exceeded", "limit_class": cls,
+                "limit": f"{limit.requests}/{limit.window_seconds}s",
+                "retry_after_seconds": retry},
+        headers={"Retry-After": str(retry)},
+    )
+
+
+def _check_in_process(principal_id: str, cls: str, limit: Limit) -> None:
     key = (principal_id, cls)
     now = time.monotonic()
 
@@ -181,20 +221,27 @@ def check_rate_limit(principal_id: str, path: str, method: str) -> None:
     window[:] = [t for t in window if t > cutoff]
 
     if len(window) >= limit.requests:
-        retry = int(limit.window_seconds - (now - window[0])) + 1
-        raise HTTPException(
-            429,
-            detail={"error": "rate_limit_exceeded", "limit_class": cls,
-                    "limit": f"{limit.requests}/{limit.window_seconds}s",
-                    "retry_after_seconds": retry},
-            headers={"Retry-After": str(retry)},
-        )
+        _refuse(cls, limit, int(limit.window_seconds - (now - window[0])) + 1)
     window.append(now)
 
 
 def reset_rate_limits() -> None:
-    """Test hook. Rate limit state is process-local and must not leak between tests."""
+    """Test hook. Rate limit state must not leak between tests -- both copies of
+    it, since a suite run with REDIS_URL set uses the shared one."""
     _hits.clear()
+    client = shared_state.get_client()
+    if client is not None:
+        try:
+            for key in client.scan_iter("rl:*", count=500):
+                client.delete(key)
+        except Exception as exc:
+            # A test hook that fails because Redis is down should not fail the
+            # test that called it; the process-local clear above still happened.
+            # Logged rather than swallowed, because a suite that silently stops
+            # clearing shared state produces failures in whichever test runs
+            # next, which is the hardest kind to attribute.
+            log.warning("rate_limit_reset_incomplete", extra={
+                "error": f"{type(exc).__name__}: {exc}"})
 
 
 # --------------------------------------------------------------------------

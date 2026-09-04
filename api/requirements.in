@@ -25,3 +25,8 @@ psycopg2-binary==2.9.12
 pydantic==2.13.4
 pydantic-settings==2.15.0
 pyyaml==6.0.3
+# Shared rate-limit state. This bundle needs it more than the container
+# does: every Vercel invocation is its own process, so an in-process
+# counter there is not an approximate limit, it is no limit at all.
+# redis-py is pure Python and small; the bundle can afford it.
+redis==6.4.0

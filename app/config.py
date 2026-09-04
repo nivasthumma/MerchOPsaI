@@ -57,20 +57,48 @@ def _cli_profile_is_active() -> bool:
 
 # A runtime override of the configured provider.
 #
-# Process-local and deliberately not persisted: it survives no restart, and with
-# more than one worker each would hold its own. That is a real limitation, and
-# the honest place for it is here rather than in a comment on the UI — the same
-# constraint the in-process rate limiter carries.
+# Shared across replicas when REDIS_URL is set, and process-local when it is
+# not. Process-local was the whole story until ADR-0044, and it made this switch
+# quietly wrong with more than one worker: an operator switching to the
+# deterministic planner switched it for whichever replica served the POST, and
+# then watched the model keep being used by the other two.
+#
+# The process-local copy is still written on both paths. It is the fallback when
+# there is no Redis, and it also means a replica that just set the value behaves
+# correctly for the rest of the request even if Redis drops immediately after.
 _runtime_provider: str | None = None
 
 
-def set_runtime_llm_provider(value: str | None) -> None:
+def set_runtime_llm_provider(value: str | None) -> bool:
+    """Set the override. Returns True when it reached shared state.
+
+    The caller reports that: an operator who switched providers across a fleet
+    and an operator who switched them for one replica should not receive the
+    same response.
+    """
     global _runtime_provider
     _runtime_provider = value
 
+    from app import shared_state
+
+    return shared_state.set_provider_override(value)
+
 
 def runtime_llm_provider() -> str | None:
-    return _runtime_provider
+    """The active override.
+
+    Shared state wins when it can be read. `UNAVAILABLE` is not `None`: a Redis
+    that cannot be reached must not read as "somebody cleared the override",
+    which would silently switch a fleet back to its configured provider in the
+    middle of an incident. That case falls through to this process's own copy,
+    which is the last value this replica knew.
+    """
+    from app import shared_state
+
+    value = shared_state.get_provider_override()
+    if value is shared_state.UNAVAILABLE:
+        return _runtime_provider
+    return value
 
 
 @lru_cache(maxsize=8)

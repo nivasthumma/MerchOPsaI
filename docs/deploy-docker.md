@@ -13,6 +13,7 @@ them drifting.
 | service | what it is | notes |
 |---|---|---|
 | `db` | PostgreSQL 16 | published on **5433**, not 5432 — see below |
+| `redis` | shared state | rate limit + provider override; no persistence, on purpose |
 | `migrate` | one-shot | runs to completion; `api` and `worker` wait on it |
 | `api` | `uvicorn api.index:app` | the SPA and the API under `/api` |
 | `worker` | `python -m app.worker` | drain · notify · reconcile · detect |
@@ -88,6 +89,44 @@ The SPA is built **inside** the image from source, so an image cannot ship a
 stale `web/dist` somebody forgot to rebuild. `npm run build` runs `tsc && vite
 build`, so a type error fails the image build.
 
+## Why Redis, and why it stores nothing durable
+
+Two pieces of state have to agree across replicas.
+
+The **rate limiter** is a security control. Held in process memory it is exact
+with one worker and multiplies by N with N of them — three API replicas serve
+three times the configured limit. On a serverless host it is worse than
+approximate: every invocation may be a new process, so the counter starts empty
+on most requests and the limit is not enforced at all.
+
+The **runtime provider override** (`POST /config/llm-provider`) is a live
+switch. Process-local, it applied to whichever replica served the POST — so an
+operator switching to the deterministic planner would watch the model keep being
+used by the other two. The response now says `applies_to: fleet` or
+`this_replica_only`, because those are different outcomes.
+
+Neither is persisted, and the compose service runs with `--save "" --appendonly
+no` to make that explicit. A rate limit carried across a restart would apply a
+caller's old refusals to a fresh process, and the override deliberately does not
+survive one.
+
+**Unset `REDIS_URL` and the stack still runs**, per-process. That is a supported
+configuration for a single container, not a degraded one — and `/health` says
+which is live:
+
+```bash
+curl -s localhost:8000/api/health | jq .shared_state
+{"backend": "shared", "rate_limit_scope": "all_replicas",
+ "provider_override_scope": "all_replicas"}
+```
+
+`backend` is `shared`, `process`, or `degraded`. **`degraded` means Redis is
+configured and not answering**: the limiter has fallen back to per-process for
+those calls rather than failing requests. Failing closed would turn a Redis blip
+into an outage of the whole API; failing open would remove the control silently.
+The fallback lands on the documented single-process behaviour instead, and says
+so.
+
 ## Configuration
 
 Everything is an environment variable and nothing is baked in. See
@@ -100,6 +139,7 @@ Everything is an environment variable and nothing is baked in. See
 | `API_TOKEN_SECRET` | *unset* | unset means the development default — see below |
 | `MERCHANTOPS_ENV` | *unset* | `production` or `staging` makes the secret mandatory |
 | `NOTIFY_CHANNELS` | `log` | naming an unconfigured channel fails at startup |
+| `REDIS_URL` | `redis://redis:6379/0` | unset it and state is per-process — see above |
 
 ### The token secret
 

@@ -45,7 +45,22 @@ jobs:
     name: Tests (unit · security · integration)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Not REDIS_URL: setting that would put the whole suite on the shared
+      # limiter, and the per-process path is what most deployments run and what
+      # every other test assumes. TEST_REDIS_URL turns on the tests that
+      # genuinely need a server -- "several processes agree" cannot be proved
+      # against a fake that agrees with itself -- and leaves the rest alone.
+      TEST_REDIS_URL: redis://127.0.0.1:6379/15
     services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
       postgres:
         image: postgres:16
         env:
@@ -193,6 +208,17 @@ jobs:
           echo "$body"
           echo "$body" | grep -q '"ready":true' \
             || { echo "::error::container came up but is not ready"; exit 1; }
+
+      - name: The stack reports shared state, not per-process
+        # compose wires REDIS_URL, so an API that comes up reporting
+        # `this_replica_only` means the client could not reach it -- which is
+        # exactly the misconfiguration that looks fine until there are two
+        # replicas and the rate limit is quietly doubled.
+        run: |
+          body=$(curl -fsS http://localhost:8000/api/health)
+          echo "$body" | python -c 'import json,sys; print(json.load(sys.stdin)["shared_state"])'
+          echo "$body" | grep -q '"rate_limit_scope":"all_replicas"' \
+            || { echo "::error::shared state is not live in the compose stack"; exit 1; }
 
       - name: The worker runs its cadence
         # Seeding gives detection something to find. The worker should open

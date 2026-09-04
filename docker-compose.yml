@@ -23,6 +23,14 @@ x-app: &app
   environment: &app-env
     DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@db:5432/merchantops
 
+    # Shared rate-limit state and the runtime provider override. Without this
+    # the API is exact with one replica and multiplies its rate limit by N with
+    # N of them, and a provider switch reaches only the replica that served it.
+    # `/health` reports `shared_state.backend`, so which one is live is never a
+    # guess. Unset it and the stack still runs -- per-process, which is correct
+    # for a single container and stated rather than hidden.
+    REDIS_URL: ${REDIS_URL-redis://redis:6379/0}
+
     # Deterministic planner and mock payments unless told otherwise. A local
     # stack that quietly reached a real payment provider because a credential
     # was in the environment would be the worst kind of surprise.
@@ -63,6 +71,8 @@ x-app: &app
   depends_on:
     db:
       condition: service_healthy
+    redis:
+      condition: service_healthy
     migrate:
       condition: service_completed_successfully
 
@@ -92,6 +102,20 @@ services:
       test: ["CMD-SHELL", "pg_isready -U merchantops -d merchantops"]
       interval: 5s
       timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # No persistence configured, and that is right for what is kept here: a
+    # sliding window of recent request timestamps and a provider override with a
+    # twelve-hour TTL. Both are meant to be lost on restart -- persisting a rate
+    # limit across a restart would carry a caller's old refusals into a fresh
+    # process, and the override deliberately does not survive one.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 10
 
   # One-shot. Runs to completion, then the services that depend on it start.

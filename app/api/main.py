@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select, text
 
+from app import shared_state
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
@@ -250,7 +251,21 @@ def health():
             "max_tool_calls": s.max_tool_calls_per_task,
             "max_llm_turns": s.max_llm_turns_per_task,
         },
+        # Reported for the same reason the token secret and the budget are: a
+        # posture that differs from the one somebody assumes is the failure this
+        # endpoint exists to prevent. Three API processes with no Redis serve
+        # three times the configured rate limit, and every other field here
+        # would look correct.
+        "shared_state": {
+            "backend": shared_state.backend(),
+            "rate_limit_scope": _scope_word(),
+            "provider_override_scope": _scope_word(),
+        },
     }
+
+
+def _scope_word() -> str:
+    return "all_replicas" if shared_state.backend() == "shared" else "this_replica_only"
 
 
 @app.get("/ready", response_model=schemas.Readiness,
@@ -350,10 +365,17 @@ def set_llm_provider(body: ProviderRequest,
     reach; it never accepts a credential. CONTRACT §37 keeps secrets in the
     environment, and a browser form is not that.
 
-    The override is process-local and does not survive a restart — with more
-    than one worker, each would hold its own. Persisting it would make the
-    active provider a piece of durable state that no environment variable
-    explains, which is a worse trade.
+    The override does not survive a restart, deliberately: persisting it would
+    make the active provider a piece of durable state that no environment
+    variable explains, which is a worse trade.
+
+    Where it applies depends on the deployment, and the response says which.
+    With `REDIS_URL` set it is shared, so the switch applies to every replica.
+    Without it the override is process-local and this switched the provider for
+    whichever replica happened to serve the request -- an operator switching to
+    the deterministic planner would then watch the model keep being used by the
+    others. `applies_to` is `fleet` or `this_replica_only`, because those are
+    different outcomes and the operator is entitled to know which one happened.
     """
     s = get_settings()
     choice = body.provider.lower()
@@ -372,7 +394,7 @@ def set_llm_provider(body: ProviderRequest,
             "code": "no_credential"})
 
     before = s.resolved_llm_provider
-    set_runtime_llm_provider(None if choice == "auto" else choice)
+    shared = set_runtime_llm_provider(None if choice == "auto" else choice)
     after = s.resolved_llm_provider
 
     with session_scope() as sess:
@@ -382,11 +404,16 @@ def set_llm_provider(body: ProviderRequest,
                                      user_id=principal.user_id),
                "llm_provider_changed",
                {"from": before, "to": after, "requested": choice,
-                "by": principal.user_id, "role": principal.role})
+                "by": principal.user_id, "role": principal.role,
+                # Audited, because "the provider was changed" and "the provider
+                # was changed on one of three replicas" are different events and
+                # only one of them explains the metrics afterwards.
+                "applies_to": "fleet" if shared else "this_replica_only"})
 
     return {"llm_provider": after, "llm_provider_source": s.llm_provider_source,
             "llm_model": s.llm_model if after == "anthropic" else "deterministic-planner-v1",
-            "changed_from": before}
+            "changed_from": before,
+            "applies_to": "fleet" if shared else "this_replica_only"}
 
 
 @app.post("/tasks", response_model=schemas.TaskView,

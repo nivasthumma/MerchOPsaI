@@ -30,6 +30,7 @@ pydantic-settings==2.15.0
 pyyaml==6.0.3
 python-dotenv==1.2.3
 httpx==0.28.1
+redis==6.4.0
 # The reasoning provider. A container with no ANTHROPIC_* credential runs the
 # deterministic planner and never imports this -- but the image should be able
 # to do either, since which one is chosen is a runtime decision (`/health`

@@ -1434,6 +1434,9 @@
             "title": "Razorpay Execution Is Real",
             "type": "boolean"
           },
+          "shared_state": {
+            "$ref": "#/components/schemas/SharedState"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -1454,7 +1457,8 @@
           "auth",
           "auth_secret_is_development_default",
           "webhook_signature_verification",
-          "agent_budget"
+          "agent_budget",
+          "shared_state"
         ],
         "title": "Health",
         "type": "object"
@@ -2861,6 +2865,11 @@
       "ProviderChange": {
         "additionalProperties": false,
         "properties": {
+          "applies_to": {
+            "default": "this_replica_only",
+            "title": "Applies To",
+            "type": "string"
+          },
           "changed_from": {
             "title": "Changed From",
             "type": "string"
@@ -3435,6 +3444,31 @@
           "by_status"
         ],
         "title": "SettleReport",
+        "type": "object"
+      },
+      "SharedState": {
+        "additionalProperties": false,
+        "description": "Whether state that must agree across replicas actually does.",
+        "properties": {
+          "backend": {
+            "title": "Backend",
+            "type": "string"
+          },
+          "provider_override_scope": {
+            "title": "Provider Override Scope",
+            "type": "string"
+          },
+          "rate_limit_scope": {
+            "title": "Rate Limit Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "rate_limit_scope",
+          "provider_override_scope"
+        ],
+        "title": "SharedState",
         "type": "object"
       },
       "TaskEvidence": {
@@ -4609,7 +4643,7 @@
     },
     "/config/llm-provider": {
       "post": {
-        "description": "Switch between providers that are already configured.\n\nDeliberately narrow. It selects among providers the process can already\nreach; it never accepts a credential. CONTRACT \u00a737 keeps secrets in the\nenvironment, and a browser form is not that.\n\nThe override is process-local and does not survive a restart \u2014 with more\nthan one worker, each would hold its own. Persisting it would make the\nactive provider a piece of durable state that no environment variable\nexplains, which is a worse trade.",
+        "description": "Switch between providers that are already configured.\n\nDeliberately narrow. It selects among providers the process can already\nreach; it never accepts a credential. CONTRACT \u00a737 keeps secrets in the\nenvironment, and a browser form is not that.\n\nThe override does not survive a restart, deliberately: persisting it would\nmake the active provider a piece of durable state that no environment\nvariable explains, which is a worse trade.\n\nWhere it applies depends on the deployment, and the response says which.\nWith `REDIS_URL` set it is shared, so the switch applies to every replica.\nWithout it the override is process-local and this switched the provider for\nwhichever replica happened to serve the request -- an operator switching to\nthe deterministic planner would then watch the model keep being used by the\nothers. `applies_to` is `fleet` or `this_replica_only`, because those are\ndifferent outcomes and the operator is entitled to know which one happened.",
         "operationId": "set_llm_provider_config_llm_provider_post",
         "parameters": [
           {

@@ -162,10 +162,17 @@ export interface paths {
          *     reach; it never accepts a credential. CONTRACT §37 keeps secrets in the
          *     environment, and a browser form is not that.
          *
-         *     The override is process-local and does not survive a restart — with more
-         *     than one worker, each would hold its own. Persisting it would make the
-         *     active provider a piece of durable state that no environment variable
-         *     explains, which is a worse trade.
+         *     The override does not survive a restart, deliberately: persisting it would
+         *     make the active provider a piece of durable state that no environment
+         *     variable explains, which is a worse trade.
+         *
+         *     Where it applies depends on the deployment, and the response says which.
+         *     With `REDIS_URL` set it is shared, so the switch applies to every replica.
+         *     Without it the override is process-local and this switched the provider for
+         *     whichever replica happened to serve the request -- an operator switching to
+         *     the deterministic planner would then watch the model keep being used by the
+         *     others. `applies_to` is `fleet` or `this_replica_only`, because those are
+         *     different outcomes and the operator is entitled to know which one happened.
          */
         post: operations["set_llm_provider_config_llm_provider_post"];
         delete?: never;
@@ -1667,6 +1674,7 @@ export interface components {
             payment_adapter: string;
             /** Razorpay Execution Is Real */
             razorpay_execution_is_real: boolean;
+            shared_state: components["schemas"]["SharedState"];
             /** Status */
             status: string;
             /** Webhook Signature Verification */
@@ -2159,6 +2167,11 @@ export interface components {
         };
         /** ProviderChange */
         ProviderChange: {
+            /**
+             * Applies To
+             * @default this_replica_only
+             */
+            applies_to: string;
             /** Changed From */
             changed_from: string;
             /** Llm Model */
@@ -2350,6 +2363,18 @@ export interface components {
             plan_id: string;
             /** Status */
             status: string;
+        };
+        /**
+         * SharedState
+         * @description Whether state that must agree across replicas actually does.
+         */
+        SharedState: {
+            /** Backend */
+            backend: string;
+            /** Provider Override Scope */
+            provider_override_scope: string;
+            /** Rate Limit Scope */
+            rate_limit_scope: string;
         };
         /** TaskEvidence */
         TaskEvidence: {

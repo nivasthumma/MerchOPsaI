@@ -25,3 +25,4 @@ pyyaml==6.0.3
 python-dotenv==1.2.3
 anthropic==1.0.0
 httpx==0.28.1
+redis==6.4.0

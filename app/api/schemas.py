@@ -628,6 +628,16 @@ class AgentBudget(Contract):
     max_llm_turns: int
 
 
+class SharedState(Contract):
+    """Whether state that must agree across replicas actually does."""
+    #: `shared` | `degraded` | `process`. `degraded` means Redis is configured
+    #: and not answering, so the limiter has fallen back per-process -- a state
+    #: worth seeing, because nothing else about the response reveals it.
+    backend: str
+    rate_limit_scope: str
+    provider_override_scope: str
+
+
 class Health(Contract):
     status: str
     llm_provider: str
@@ -641,6 +651,11 @@ class Health(Contract):
     auth_secret_is_development_default: bool
     webhook_signature_verification: bool
     agent_budget: AgentBudget
+    #: Whether the rate limiter and the provider override are shared across
+    #: replicas. A deployment running three API processes with no Redis is
+    #: serving three times its configured rate limit, and nothing else in this
+    #: response would say so.
+    shared_state: SharedState
 
 
 class Me(Contract):
@@ -656,6 +671,12 @@ class ProviderChange(Contract):
     llm_provider_source: str
     llm_model: str
     changed_from: str
+    #: `fleet` when the override reached shared state and every replica will
+    #: honour it, `this_replica_only` when there is no shared backend and it
+    #: applied to the process that served this request. Different outcomes, and
+    #: an operator watching the provider they just turned off keep being used is
+    #: entitled to know which one happened.
+    applies_to: str = "this_replica_only"
 
 
 # ------------------------------------------------------------- detection

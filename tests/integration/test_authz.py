@@ -155,3 +155,46 @@ def test_the_access_review_lists_everyone_and_what_they_hold(db):
 def test_the_access_review_can_be_scoped_to_one_tenant(db):
     review = authz.access_review(db, tenant_id="TEN_NORTHWIND")
     assert {r["user_id"] for r in review} == {"USR_B_OWNER"}
+
+
+# --------------------------------------------------------------------------
+# Isolating the status filter
+# --------------------------------------------------------------------------
+def test_resolve_refuses_a_disabled_account_on_its_own(db):
+    """`resolve` filtering on status, tested WITHOUT the token revocation that
+    normally also stops a disabled user.
+
+    Both controls fire on offboarding (ADR-0048 disables, ADR-0049 revokes), and
+    together they hid each other: a mutation that removed the status filter left
+    every test passing, because the revocation caught it. Defence in depth is
+    the right design and it makes each layer untestable through the front door,
+    so this reaches for one of them directly.
+    """
+    from sqlalchemy import text
+
+    db.execute(text("UPDATE users SET status = 'DISABLED' WHERE id = 'USR_A_ANALYST'"))
+    db.flush()
+
+    assert authz.resolve(db, "USR_A_ANALYST") is None, (
+        "a DISABLED user resolved to a principal; offboarding relies on this "
+        "filter and on nothing else in this function")
+    # Still findable when you are asking *about* them, which is what
+    # administration needs.
+    assert authz.resolve(db, "USR_A_ANALYST", active_only=False) is not None
+
+
+def test_holders_excludes_a_disabled_account_on_its_own(db):
+    """The same filter on the other query. A disabled user holding
+    `action:refund` is not somebody who can approve one, and a notification
+    routed to them is one nobody reads."""
+    from sqlalchemy import text
+
+    db.execute(text("UPDATE users SET status = 'DISABLED' WHERE id = 'USR_A_APPROVER'"))
+    db.flush()
+
+    live = {p.user_id for p in authz.holders(
+        db, tenant_id="TEN_KETTLE", merchant_id="MERCH_A", required=["action:refund"])}
+    assert "USR_A_APPROVER" not in live
+    everyone = {p.user_id for p in authz.holders(
+        db, tenant_id="TEN_KETTLE", merchant_id="MERCH_A", active_only=False)}
+    assert "USR_A_APPROVER" in everyone

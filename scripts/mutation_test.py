@@ -814,6 +814,138 @@ MUTATIONS = [
         "    except IllegalTransition:",
         "    except IllegalTransition:\n        raise  # MUTANT",
     ),
+
+    # ----------------------------------------------------------------------
+    # Phase 2 controls — ADR-0046 to ADR-0051.
+    #
+    # Everything above grades the original control plane. These six subsystems
+    # arrived afterwards and had tests but no mutants, which means the suite
+    # could have lost any of them and reported the same number. Each mutation
+    # below turns off exactly one thing a security review was told this system
+    # does.
+    # ----------------------------------------------------------------------
+    (
+        # The whole second wall. Without FORCE, PostgreSQL exempts a table's
+        # OWNER from its own policies -- and the application IS the owner. The
+        # policies would still be listed in pg_policies and would filter
+        # nothing, which is the failure mode ADR-0046 was written around.
+        "tenancy: enable row-level security without forcing it on the owner",
+        "app/tenancy.py",
+        '        out.append(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")',
+        '        pass  # MUTANT',
+    ),
+    (
+        # The binding that makes the policies mean anything. With no scope
+        # pushed onto the transaction, every policy sees an empty
+        # `app.merchant_id` and passes -- the documented "unbound is
+        # unrestricted" state, reached by accident on an authenticated request.
+        "tenancy: stop binding the principal to the transaction",
+        "app/tenancy.py",
+        "    scope = current_scope() if scope is None else scope",
+        "    scope = UNBOUND  # MUTANT",
+    ),
+    # NOT a mutant: "drop WITH CHECK so the boundary applies to reads only".
+    # It survived a spot-check and the reason is that it is EQUIVALENT, not that
+    # the suite misses it. PostgreSQL applies the USING expression to writes as
+    # well when no WITH CHECK is given, so removing it changes nothing --
+    # verified by building a probe table with a USING-only policy and watching
+    # an INSERT into another owner get refused anyway. Left here as a note so
+    # nobody adds it again and spends an afternoon on it.
+    (
+        # ADR-0047. Permissions come from the role; granting every permission to
+        # everybody is the failure a permissions model exists to prevent, and it
+        # would look like a working system until somebody audited it.
+        "authz: grant every principal every permission",
+        "app/authz.py",
+        '        email=row["email"], role=row["role"], permissions=list(row["permissions"]),',
+        '        email=row["email"], role=row["role"],'
+        ' permissions=["read:metrics", "read:orders", "action:refund",'
+        ' "action:recover"],  # MUTANT',
+    ),
+    (
+        # ADR-0048's offboarding, and ADR-0049 depends on it. Without the status
+        # filter a DISABLED user resolves normally and their token keeps
+        # working -- deprovisioning that changes a column and nothing else.
+        "authz: let a disabled account keep authenticating",
+        "app/authz.py",
+        '    predicate = "u.id = :u" + (" AND u.status = \'ACTIVE\'" if active_only else "")',
+        '    predicate = "u.id = :u"  # MUTANT',
+    ),
+    (
+        # ADR-0049. An expired token that still works is a token with no expiry,
+        # which is the limitation the whole ADR was written to close.
+        "tokens: honour an expired token",
+        "app/auth.py",
+        '    if float(payload["exp"]) <= moment.timestamp():',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # The individual revocation. "Sign out this session" becomes a database
+        # write with no effect.
+        "tokens: ignore the revocation list",
+        "app/auth.py",
+        '    revoked = session.execute(text(\n'
+        '        "SELECT reason FROM revoked_tokens WHERE jti = :j"), {"j": claims.jti}).scalar()',
+        '    revoked = None  # MUTANT',
+    ),
+    (
+        # The wholesale revocation. Sign-out-everywhere, offboarding and the
+        # response to a replayed refresh token all stop working together.
+        "tokens: ignore the credentials-valid-from reset",
+        "app/auth.py",
+        "        if claims.iat < valid_from.timestamp():",
+        "        if False:  # MUTANT",
+    ),
+    (
+        # `typ` is what keeps a long-lived refresh token from being used as a
+        # session credential. Same bytes to a signature check; different
+        # meanings.
+        "tokens: accept a refresh token wherever an access token is expected",
+        "app/auth.py",
+        '    if payload["typ"] != expect:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # ADR-0050. The nonce binds the ID token to THIS sign-in; without it a
+        # token obtained in one attempt can be replayed into another.
+        "sso: accept an ID token that answers a different sign-in",
+        "app/sso.py",
+        '    if claims.get("nonce") != flow["nonce"]:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # Without the audience check, a token minted for any other client of the
+        # same provider is accepted here.
+        "sso: accept an ID token issued for another client",
+        "app/sso.py",
+        '    if provider["client_id"] not in audiences:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # The replay guard on the callback. A captured redirect can be used
+        # again.
+        "sso: let a completed sign-in be replayed",
+        "app/sso.py",
+        '    if flow["consumed_at"] is not None:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # An unverified address is one somebody claimed. Matching an account on
+        # it lets anyone who can add an address at the customer's IdP sign in as
+        # somebody else.
+        "sso: trust an unverified email address",
+        "app/sso.py",
+        '    if claims.get("email_verified") is False:',
+        "    if False:  # MUTANT",
+    ),
+    (
+        # ADR-0051. Deprovisioning that leaves live sessions is deprovisioning
+        # in name only -- the exact gap SCIM was added to close.
+        "scim: deactivate without revoking the person's tokens",
+        "app/scim.py",
+        "    auth.revoke_all_for(session, row[\"id\"])",
+        "    pass  # MUTANT",
+    ),
 ]
 
 

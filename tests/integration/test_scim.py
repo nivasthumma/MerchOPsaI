@@ -310,3 +310,32 @@ def test_managing_provisioning_tokens_requires_the_owner_role(client):
     analyst = {"Authorization": f"Bearer {sec.issue_token('USR_A_ANALYST')}"}
     assert client.get("/scim/tokens", headers=analyst).status_code == 403
     assert client.post("/scim/tokens", headers=analyst, json={}).status_code == 403
+
+
+# --------------------------------------------------------------------------
+# Isolating the revocation
+# --------------------------------------------------------------------------
+def test_deactivating_through_scim_moves_credentials_valid_from(client, token, db):
+    """The revocation, asserted directly rather than through its effect.
+
+    Deactivating sets two things: the status, and `credentials_valid_from`. The
+    status filter alone already stops the account, so a mutation that removed
+    the revocation left every test passing -- the two controls hid each other.
+    This one reaches for the revocation on its own, because it is what still
+    stands if somebody adds a lookup that skips `authz.resolve`.
+    """
+    created = _create(client, token, email="revoked@kettle.example")
+    user_id = created["id"]
+    assert db.execute(text(
+        "SELECT credentials_valid_from FROM users WHERE id = :i"),
+        {"i": user_id}).scalar() is None
+
+    client.patch(f"/scim/v2/Users/{user_id}", headers=token, json={
+        "schemas": [scim.PATCH_SCHEMA],
+        "Operations": [{"op": "replace", "value": {"active": False}}],
+    })
+
+    assert db.execute(text(
+        "SELECT credentials_valid_from FROM users WHERE id = :i"),
+        {"i": user_id}).scalar() is not None, (
+        "deprovisioning disabled the account without revoking its tokens")

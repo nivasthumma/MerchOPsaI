@@ -370,6 +370,219 @@ def ready(response: Response):
 
 
 # --------------------------------------------------------------------------
+# SCIM 2.0 provisioning — ADR-0051
+#
+# Its own authentication (a long-lived provisioning token, not a user's), its
+# own error shape (RFC 7644 §3.12, not FastAPI's `detail`), and its own media
+# type. A provider that gets a MerchantOps error body where it expects a SCIM
+# one reports "invalid response" and stops, which is a support ticket rather
+# than a diagnosis.
+# --------------------------------------------------------------------------
+def scim_client(authorization: str | None = Header(default=None)):
+    from app import scim, tenancy
+
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, scim.ScimError(
+            "A provisioning token is required.", status=401).as_dict(),
+            headers={"WWW-Authenticate": "Bearer"})
+    with session_scope() as s:
+        try:
+            client = scim.authenticate(s, authorization[7:].strip())
+        except scim.ScimError as exc:
+            raise HTTPException(exc.status, exc.as_dict(),
+                                headers={"WWW-Authenticate": "Bearer"}) from exc
+    # Bind the tenant so row-level security bounds every read and write this
+    # request makes (ADR-0046), exactly as an authenticated user's request is.
+    # A provisioning token is a credential for one tenant and nothing else.
+    tenancy.bind(client.tenant_id, None)
+    return client
+
+
+def _scim(fn, *args, **kwargs):
+    from app import scim
+
+    try:
+        return fn(*args, **kwargs)
+    except scim.ScimError as exc:
+        raise HTTPException(exc.status, exc.as_dict()) from exc
+
+
+@app.get("/scim/v2/ServiceProviderConfig", response_model=dict)
+def scim_service_provider_config():
+    """Read before anything else. Advertises what is not supported -- bulk,
+    sort, etag, groups -- because a truthful `false` saves a support ticket."""
+    from app import scim
+
+    return scim.service_provider_config()
+
+
+@app.get("/scim/v2/ResourceTypes", response_model=dict)
+def scim_resource_types():
+    from app import scim
+
+    return scim.resource_types()
+
+
+@app.get("/scim/v2/Schemas", response_model=dict)
+def scim_schemas():
+    from app import scim
+
+    return scim.schemas()
+
+
+@app.get("/scim/v2/Users", response_model=dict)
+def scim_list_users(filter: str | None = None, startIndex: int = 1,
+                    count: int = 100, client=Depends(scim_client)):
+    """List, or answer `userName eq "…"` — which is how a provider decides
+    whether to create somebody or update them."""
+    from app import scim
+
+    with session_scope() as s:
+        return _scim(scim.list_users, s, client, scim_filter=filter,
+                     start_index=startIndex, count=count)
+
+
+@app.post("/scim/v2/Users", response_model=dict, status_code=201)
+def scim_create_user(payload: dict, response: Response,
+                     client=Depends(scim_client)):
+    from app import scim
+
+    with session_scope() as s:
+        created = _scim(scim.create_user, s, client, payload)
+        record(s, SimpleNamespace(id=None, merchant_id=client.default_merchant_id,
+                                  user_id=None),
+               "scim_user_created",
+               {"user_id": created["id"], "email": created["userName"],
+                "by_token": client.token_id})
+        response.status_code = 201
+        return created
+
+
+@app.get("/scim/v2/Users/{user_id}", response_model=dict)
+def scim_get_user(user_id: str, client=Depends(scim_client)):
+    from app import scim
+
+    with session_scope() as s:
+        return _scim(scim.get_user, s, client, user_id)
+
+
+@app.put("/scim/v2/Users/{user_id}", response_model=dict)
+def scim_replace_user(user_id: str, payload: dict, client=Depends(scim_client)):
+    from app import scim
+
+    with session_scope() as s:
+        updated = _scim(scim.replace_user, s, client, user_id, payload)
+        record(s, SimpleNamespace(id=None, merchant_id=client.default_merchant_id,
+                                  user_id=None),
+               "scim_user_replaced",
+               {"user_id": user_id, "active": updated["active"],
+                "by_token": client.token_id})
+        return updated
+
+
+@app.patch("/scim/v2/Users/{user_id}", response_model=dict)
+def scim_patch_user(user_id: str, payload: dict, client=Depends(scim_client)):
+    """What Entra sends to deactivate somebody."""
+    from app import scim
+
+    with session_scope() as s:
+        updated = _scim(scim.patch_user, s, client, user_id, payload)
+        record(s, SimpleNamespace(id=None, merchant_id=client.default_merchant_id,
+                                  user_id=None),
+               "scim_user_patched",
+               {"user_id": user_id, "active": updated["active"],
+                "by_token": client.token_id})
+        return updated
+
+
+@app.delete("/scim/v2/Users/{user_id}", status_code=204)
+def scim_delete_user(user_id: str, client=Depends(scim_client)):
+    """Deactivates rather than deletes. RFC 7644 §3.6 permits it, and the audit
+    trail points at the row."""
+    from app import scim
+
+    with session_scope() as s:
+        _scim(scim.delete_user, s, client, user_id)
+        record(s, SimpleNamespace(id=None, merchant_id=client.default_merchant_id,
+                                  user_id=None),
+               "scim_user_deleted",
+               {"user_id": user_id, "by_token": client.token_id})
+    return Response(status_code=204)
+
+
+@app.get("/scim/tokens", response_model=schemas.ScimTokenList,
+         response_model_exclude_unset=True)
+def list_scim_tokens(principal: Principal = Depends(current_principal)):
+    """Provisioning tokens for this tenant. `last_used_at` answers "is the
+    integration actually running?", which is what gets asked when somebody's
+    offboarding did not take effect."""
+    _owner_only(principal, "Reading provisioning tokens")
+    with session_scope() as s:
+        rows = s.execute(text("""
+            SELECT id, name, default_merchant_id, default_role, created_at,
+                   last_used_at, revoked_at
+            FROM scim_tokens WHERE tenant_id = :t ORDER BY created_at DESC
+        """), {"t": principal.tenant_id}).mappings().all()
+        return {"tokens": [{
+            "id": r["id"], "name": r["name"],
+            "default_merchant_id": r["default_merchant_id"],
+            "default_role": r["default_role"],
+            "created_at": r["created_at"].isoformat(),
+            "last_used_at": r["last_used_at"].isoformat() if r["last_used_at"] else None,
+            "revoked": r["revoked_at"] is not None,
+        } for r in rows]}
+
+
+@app.post("/scim/tokens", response_model=schemas.ScimTokenCreated, status_code=201)
+def create_scim_token(body: schemas.CreateScimTokenRequest, response: Response,
+                      principal: Principal = Depends(current_principal)):
+    """Mint a provisioning token. Shown once and stored as a hash."""
+    from app import scim
+
+    _owner_only(principal, "Creating provisioning tokens")
+    if body.default_role == "owner":
+        raise HTTPException(422, {"error": "Provisioning may not create owners.",
+                                  "code": "owner_not_allowed"})
+    with session_scope() as s:
+        role = s.execute(text(
+            "SELECT name FROM roles WHERE tenant_id = :t AND name = :n"),
+            {"t": principal.tenant_id, "n": body.default_role}).scalar()
+        if role is None:
+            raise HTTPException(404, {"error": f"No role named "
+                                               f"{body.default_role!r} here.",
+                                      "code": "unknown_role"})
+        token_id, token = scim.mint_token(
+            s, tenant_id=principal.tenant_id,
+            merchant_id=body.default_merchant_id or principal.merchant_id,
+            role=body.default_role, name=body.name or "",
+            created_by=principal.user_id)
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "scim_token_created",
+               {"token_id": token_id, "name": body.name,
+                "default_role": body.default_role, "by": principal.user_id})
+        response.status_code = 201
+        return {"id": token_id, "token": token, "name": body.name or ""}
+
+
+@app.delete("/scim/tokens/{token_id}", response_model=schemas.ScimTokenRevoked)
+def revoke_scim_token(token_id: str, principal: Principal = Depends(current_principal)):
+    _owner_only(principal, "Revoking provisioning tokens")
+    with session_scope() as s:
+        updated = s.execute(text("""
+            UPDATE scim_tokens SET revoked_at = now()
+            WHERE id = :i AND tenant_id = :t AND revoked_at IS NULL
+        """), {"i": token_id, "t": principal.tenant_id}).rowcount
+        if not updated:
+            raise HTTPException(404, {"error": "Unknown provisioning token.",
+                                      "code": "unknown_token"})
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "scim_token_revoked", {"token_id": token_id, "by": principal.user_id})
+        return {"id": token_id, "revoked": True}
+
+
+# --------------------------------------------------------------------------
 # Single sign-on — ADR-0050
 #
 # The three unauthenticated routes are unauthenticated by necessity: the whole

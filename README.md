@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-876%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-916%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations](https://img.shields.io/badge/mutations-113%20defined%20%C2%B7%20not%20re--measured-lightgrey.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 876 tests · 187/187 scenarios · 113 mutants defined |
+| [📊 Measured results](#-measured-results) | 916 tests · 187/187 scenarios · 113 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -82,7 +82,8 @@ and what is architecture.
 | Shared state | Rate limit and provider override shared across replicas via Redis, sliding window applied atomically on Redis's own clock; falls back per-process and reports which is live (ADR-0044) | Distributed locks, session storage |
 | Approval | Server-side, expiring, re-checked at execution. **Dual approval** for CRITICAL risk, enforced by a UNIQUE constraint | N-of-M chains, delegation |
 | Tokens | Expire, rotate through an overlap window, revocable individually or wholesale; refresh is single-use with replay detection (ADR-0049) | MFA, per-device sessions, httpOnly cookies |
-| SSO | OIDC authorization code flow with PKCE, one provider per tenant routed by email domain, JIT provisioning onto existing roles, one-time handoff so no credential travels in a URL (ADR-0050) | SAML, SCIM, IdP-initiated sign-in, back-channel logout |
+| SSO | OIDC authorization code flow with PKCE, one provider per tenant routed by email domain, JIT provisioning onto existing roles, one-time handoff so no credential travels in a URL (ADR-0050) | SAML, IdP-initiated sign-in, back-channel logout |
+| Provisioning | SCIM 2.0 Users (ADR-0051): create, read, replace, patch, delete and filter, with discovery. Deactivating at the IdP disables the account and revokes its tokens. Tokens stored as SHA-256, shown once | SCIM Groups, group-to-role mapping, bulk |
 | Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
 | UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
@@ -194,12 +195,12 @@ Configuration: `llm_provider=deterministic`, `payment_adapter=mock`,
 `dataset=synthetic-v1 (seed 20260825)`. Counts are reported rather than percentages.
 Verified reproducible: two consecutive runs produce an identical pass/fail vector.
 
-Test suite: **876 passed** (`make test`) across unit, security and integration, in
+Test suite: **916 passed** (`make test`) across unit, security and integration, in
 under 15 seconds — the suite seeds once and rolls each test back, rather than rebuilding
 the schema for every test.
 
 Five of those need a real Redis and **skip without one**, so a laptop run reports
-871 passed and 5 skipped. They are the cross-replica tests, and a fake that agrees
+911 passed and 5 skipped. They are the cross-replica tests, and a fake that agrees
 with itself would pass them while proving nothing — so they are skipped rather than
 faked. `TEST_REDIS_URL=redis://localhost:6379/15 make test` runs them; CI always does.
 
@@ -390,7 +391,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 876 tests
+make test                                # 916 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -596,12 +597,13 @@ are different claims.
    Permissions are still read from the database on every request, and a
    deployment cannot run on the development signing key.
 
-   SSO arrived with ADR-0050 — OIDC authorization code flow with PKCE, one
-   provider per tenant. What is still missing: **SAML** (it needs `xmlsec` and a
-   native build), **SCIM** (so an employee removed at the IdP keeps working here
-   until somebody says so), MFA, per-device sessions — "sign out my old phone"
-   means signing out everywhere — and the token still lives in `localStorage`
-   where any script on the origin can read it.
+   SSO arrived with ADR-0050 and SCIM provisioning with ADR-0051, so an
+   employee removed at the customer's IdP is disabled here and their tokens
+   revoked. What is still missing: **SAML** (it needs `xmlsec` and a native
+   build, so a SAML-only customer can be deprovisioned but cannot sign in),
+   **SCIM Groups**, MFA, per-device sessions — "sign out my old phone" means
+   signing out everywhere — and the token still lives in `localStorage` where any
+   script on the origin can read it.
 15. **Detection observes state, not a stream.** `webhook_events` stores what the provider
    *tells* us, but the detection rules still read `payments`. A business change that
    never lands on a payment row is invisible to them. Wiring detection onto the event
@@ -709,7 +711,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 198 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (876 tests)
+tests/          unit · security · integration  (916 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 32 ADRs

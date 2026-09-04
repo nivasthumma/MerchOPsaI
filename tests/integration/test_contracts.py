@@ -34,6 +34,23 @@ NON_JSON_ROUTES = {
 }
 
 
+# Routes whose shape is defined by somebody else's standard. Listed for the
+# same reason as NON_JSON_ROUTES: exempting one is a decision, not a pattern.
+#
+# SCIM (ADR-0051) is RFC 7643/7644, consumed by Okta and Entra and never by this
+# application's frontend. Modelling it as strict `Contract`s would mean
+# reimplementing the RFC's schema in pydantic and then fighting its
+# extensibility -- `schemas`, `meta`, and `urn:...:extension:...` attributes are
+# open by design. The guard below exists to stop the SPA's contract rotting;
+# these routes are not part of it, and `tests/integration/test_scim.py` asserts
+# their shape directly instead.
+RFC_DEFINED_ROUTES = {r for r in (
+    "/scim/v2/Users", "/scim/v2/Users/{user_id}",
+    "/scim/v2/ServiceProviderConfig", "/scim/v2/ResourceTypes",
+    "/scim/v2/Schemas",
+)}
+
+
 def api_routes() -> list[APIRoute]:
     return [r for r in app.routes
             if isinstance(r, APIRoute) and r.path not in NON_JSON_ROUTES]
@@ -50,7 +67,18 @@ def test_every_route_declares_what_it_returns(route: APIRoute):
 
     Modelling today's 37 endpoints is worth little if the 38th goes back to a
     bare dict. This fails the moment one does.
+
+    A 204 is the exception, and a real one rather than a carve-out: "No Content"
+    means there is no body, so a model would describe something that is never
+    sent. Declaring one would be the drift this guard exists to catch, pointing
+    the other way.
     """
+    if route.status_code == 204:
+        assert route.response_model is None, (
+            f"{route.path} answers 204 No Content and declares a response "
+            f"model, which describes a body it will never send.")
+        return
+
     assert route.response_model is not None, (
         f"{route.path} returns an undeclared shape. Add a model to "
         f"app/api/schemas.py and attach it with response_model=.")
@@ -64,6 +92,9 @@ def test_every_response_model_forbids_extra_keys(route: APIRoute):
     would therefore let a field disappear from a response with nothing failing
     anywhere — which is worse than the bare dict it replaced.
     """
+    if route.path in RFC_DEFINED_ROUTES:
+        pytest.skip("shape is defined by RFC 7643/7644; see RFC_DEFINED_ROUTES")
+
     model = route.response_model
     # Unwrap list[...] and X | None to reach the model itself.
     for candidate in (model, *getattr(model, "__args__", ())):

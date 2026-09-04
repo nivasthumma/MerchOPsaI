@@ -310,6 +310,42 @@ class Merchant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ScimToken(Base):
+    """The credential an identity provider uses to provision users — ADR-0051.
+
+    Separate from a user's token, and long-lived, because a SCIM client is a
+    machine configured once: Okta and Entra hold a static bearer token and have
+    nowhere to put a refresh flow. ADR-0049's tokens expire by design, which is
+    right for a person and wrong for this.
+
+    **Stored as a SHA-256 hash.** The value is shown once at creation and never
+    again. A provisioning credential in a readable column is a credential that
+    leaves in a database dump, and unlike a user's token it grants the ability
+    to create accounts.
+    """
+    __tablename__ = "scim_tokens"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    #: SHA-256 of the token. Unique so a lookup is one indexed read rather than
+    #: a scan comparing every hash.
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    #: Which merchant SCIM-provisioned users are attached to, and what role they
+    #: get. Same reasoning as the identity provider's: a tenant with several
+    #: merchants has to say, and never `owner`.
+    default_merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"))
+    default_role: Mapped[str] = mapped_column(String(64), default="analyst")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Answers "is this integration actually running?", which is the question
+    #: asked when somebody's offboarding did not take effect.
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+
 class IdentityProvider(Base):
     """A tenant's OIDC provider — ADR-0050.
 
@@ -512,6 +548,14 @@ class User(Base):
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     deactivated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: The identity provider's own id for this person — SCIM's `externalId`.
+    #:
+    #: Matching on email alone breaks the day somebody's surname changes, which
+    #: for a provisioning integration means a duplicate account rather than a
+    #: rename. Nullable: users created here, or through SSO, have no external id
+    #: and are matched by email as before.
+    external_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, index=True)
     #: Every token issued before this moment is refused (ADR-0049).
     #:
     #: "Sign out everywhere", as a timestamp rather than a row per live session.

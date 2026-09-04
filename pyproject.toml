@@ -124,6 +124,11 @@ ignore = [
 # bound form of a table name, and the values a caller supplies (tenant and
 # merchant) go in through `set_config` parameters, never into this SQL.
 "app/tenancy.py" = ["S608"]
+# app/scim.py builds one WHERE clause from two literal fragments chosen by a
+# validated filter (`userName eq` or `externalId eq`, nothing else parses). The
+# value the caller supplied is bound; only the column choice is interpolated,
+# and it is one of two constants in the same function.
+"app/scim.py" = ["S608"]
 
 # S607 (partial executable path): `subprocess.run(["ant", "auth", "status"])`
 # resolves `ant` on PATH deliberately -- the CLI's install location is the

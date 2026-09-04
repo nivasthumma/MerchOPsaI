@@ -1137,3 +1137,38 @@ class SsoConfig(Contract):
     default_role: str | None = None
     default_merchant_id: str | None = None
     enabled: bool | None = None
+
+
+# ------------------------------------------------------ SCIM (ADR-0051)
+class CreateScimTokenRequest(Contract):
+    name: str | None = None
+    default_role: str = "analyst"
+    default_merchant_id: str | None = None
+
+
+class ScimTokenCreated(Contract):
+    id: str
+    #: Shown once. Stored as a SHA-256 hash, so it cannot be shown again.
+    token: str
+    name: str
+
+
+class ScimTokenSummary(Contract):
+    id: str
+    name: str
+    default_merchant_id: str
+    default_role: str
+    created_at: str
+    #: Answers "is the integration actually running?" — which is the question
+    #: asked when somebody's offboarding did not take effect.
+    last_used_at: str | None = None
+    revoked: bool
+
+
+class ScimTokenList(Contract):
+    tokens: list[ScimTokenSummary]
+
+
+class ScimTokenRevoked(Contract):
+    id: str
+    revoked: bool

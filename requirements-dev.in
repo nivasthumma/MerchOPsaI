@@ -6,4 +6,4 @@
 #     uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 \
 #         -o requirements-dev.txt
 ruff==0.16.5
-pip-audit==2.9.0
+pip-audit==2.10.1

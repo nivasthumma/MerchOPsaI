@@ -158,6 +158,14 @@ def deactivate_user(session, *, actor, user_id: str) -> dict:
                          deactivated_by = :by
         WHERE id = :u
     """), {"u": user_id, "by": actor.user_id})
+
+    # Offboarding revokes every token they hold (ADR-0049). `resolve` already
+    # refuses a DISABLED user, so this is belt and braces -- but the two answer
+    # different questions, and the day somebody adds a path that looks a user up
+    # without going through `resolve`, this is the one still standing.
+    from app import auth
+
+    auth.revoke_all_for(session, user_id)
     session.flush()
     return {"user_id": user_id, "status": "DISABLED", "changed": True}
 

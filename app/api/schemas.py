@@ -663,6 +663,11 @@ class Health(Contract):
     razorpay_execution_is_real: bool
     auth: str
     auth_secret_is_development_default: bool
+    #: True means pre-ADR-0049 tokens -- which never expire and cannot be
+    #: revoked individually -- are still accepted. Intended for the length of a
+    #: rollout and not beyond it.
+    auth_accepts_legacy_tokens: bool
+    auth_access_token_seconds: int
     webhook_signature_verification: bool
     agent_budget: AgentBudget
     #: Whether the rate limiter and the provider override are shared across
@@ -1070,3 +1075,22 @@ class RoleChange(Contract):
     permissions: list[str]
     granted: list[str]
     revoked: list[str]
+
+
+# ------------------------------------------------------ tokens (ADR-0049)
+class RefreshRequest(Contract):
+    refresh_token: str
+
+
+class TokenPair(Contract):
+    access_token: str
+    #: A NEW one. The presented refresh token is revoked by the exchange:
+    #: single use, so a replay is detectable and means somebody has a copy.
+    refresh_token: str
+    expires_in: int
+    token_type: str = "Bearer"  # noqa: S105 - the scheme name, not a secret
+
+
+class SignOutResult(Contract):
+    #: `this_session` or `all_sessions`.
+    signed_out: str

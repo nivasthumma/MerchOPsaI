@@ -243,6 +243,22 @@ class Settings(BaseSettings):
     # reads as dead between beats and `POST /tasks` starts refusing.
     worker_heartbeat_interval_seconds: int = 15
 
+    # --- Tokens (ADR-0049) ---------------------------------------------
+    # An access token's life. Short enough that a copy stops working on its own,
+    # long enough that a working session is not a stream of refreshes. One hour
+    # is the usual answer and there is no reason here to be unusual.
+    auth_access_token_seconds: int = 3600
+    # A refresh token's. This is how long "stay signed in" lasts, and it is the
+    # window in which a stolen refresh token is useful -- bounded by single-use
+    # rotation and replay detection rather than by being short.
+    auth_refresh_token_seconds: int = 30 * 24 * 3600
+    # Accept the pre-ADR-0049 `user_id.signature` tokens, which never expire.
+    # OFF by default: accepting them indefinitely would leave every property
+    # this change adds optional. Turn it on for the length of a rollout, then
+    # off -- `/health` reports it, because a deployment that left it on has
+    # expiry and revocation that anybody can opt out of.
+    auth_accept_legacy_tokens: bool = False
+
     # --- Agent execution (ADR-0045) ------------------------------------
     # `inline` runs a task inside the request that created it, which is the
     # only thing possible where there is no worker -- Vercel, or a bare

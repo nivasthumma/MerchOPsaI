@@ -179,7 +179,11 @@ TENANT_VIA_PARENT: dict[str, tuple[str, str]] = {
 #: tenant to scope it to. Inventing one would be inventing a relationship that
 #: does not exist. Listed rather than omitted so the gap is a decision.
 UNSCOPED_TABLES: tuple[str, ...] = (
-    "evaluation_results", "worker_heartbeats", "permissions")
+    "evaluation_results", "worker_heartbeats", "permissions",
+    # A denylist of token ids, consulted on every request before the principal
+    # -- and therefore before there is a scope to filter by. Scoping it would
+    # make revocation depend on the very session it is deciding about.
+    "revoked_tokens")
 
 _UNRESTRICTED = "coalesce(current_setting('app.merchant_id', true), '') = ''"
 _TENANT_UNRESTRICTED = "coalesce(current_setting('app.tenant_id', true), '') = ''"

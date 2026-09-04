@@ -189,6 +189,19 @@ def job_tasks() -> dict:
     return {"ran": ran, "failed": failed, "abandoned": len(abandoned)}
 
 
+def job_prune_tokens() -> dict:
+    """Drop revocations for tokens that have expired anyway.
+
+    A denylist that only grows eventually costs more than what it protects.
+    Once a token's own `exp` has passed the signature check refuses it without
+    consulting the table at all, so the row buys nothing after that.
+    """
+    from app.auth import prune_revoked
+
+    with session_scope() as s:
+        return {"pruned": prune_revoked(s)}
+
+
 def job_heartbeat() -> dict:
     """Say this worker is alive, so its absence is visible.
 
@@ -232,6 +245,9 @@ def build_jobs() -> list[Job]:
         Job("notify", s.worker_notify_interval_seconds, job_notify),
         Job("reconcile", s.worker_reconcile_interval_seconds, job_reconcile),
         Job("detect", s.worker_detect_interval_seconds, job_detect),
+        # Hourly. The table only grows by one row per explicit sign-out, so
+        # this is housekeeping rather than a load-bearing sweep.
+        Job("prune_tokens", 3600, job_prune_tokens),
     ]
 
 

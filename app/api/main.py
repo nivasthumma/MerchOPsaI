@@ -235,6 +235,12 @@ def health():
         "razorpay_execution_is_real": s.resolved_razorpay_mode == "live_test_mode",
         "auth": "bearer_hmac",
         "auth_secret_is_development_default": DEV_SECRET_IN_USE,
+        # Reported for the same reason the development secret is: a deployment
+        # that left the legacy path on has expiry and revocation that anybody
+        # holding an old token can opt out of, and nothing else in this response
+        # would say so (ADR-0049).
+        "auth_accepts_legacy_tokens": s.auth_accept_legacy_tokens,
+        "auth_access_token_seconds": s.auth_access_token_seconds,
         # Without a secret the webhook endpoint stores deliveries but refuses to
         # act on them. Published so "nothing happened" is never ambiguous
         # between "no events" and "events arrived unverified".
@@ -359,6 +365,99 @@ def ready(response: Response):
     if not ok:
         response.status_code = 503
     return {"ready": ok, "checks": checks}
+
+
+# --------------------------------------------------------------------------
+# Tokens — ADR-0049
+# --------------------------------------------------------------------------
+@app.post("/auth/refresh", response_model=schemas.TokenPair)
+def refresh_tokens(body: schemas.RefreshRequest):
+    """Exchange a refresh token for a new pair.
+
+    Unauthenticated by necessity: the caller's access token has expired, which
+    is the whole reason they are here. The refresh token IS the credential, and
+    it is checked the same way an access token is -- signature, type, expiry,
+    revocation.
+
+    Single use. The token presented is revoked and a new one returned. Present a
+    refresh token twice and every session for that account is signed out: a
+    second presentation means somebody else has a copy, and that is better
+    resolved by everyone signing in again than by guessing which holder is
+    legitimate.
+    """
+    from app import auth
+
+    with session_scope() as s:
+        try:
+            issued = auth.refresh(s, body.refresh_token)
+        except auth.TokenError as exc:
+            # 401 for all of them. Distinguishing "expired" from "replayed" to
+            # an unauthenticated caller tells somebody holding a stolen token
+            # which of the two they are holding.
+            raise HTTPException(401, {"error": str(exc), "code": exc.code},
+                                headers={"WWW-Authenticate": "Bearer"}) from exc
+        return {"access_token": issued.access_token,
+                "refresh_token": issued.refresh_token,
+                "expires_in": issued.expires_in, "token_type": "Bearer"}
+
+
+@app.post("/auth/sign-out", response_model=schemas.SignOutResult)
+def sign_out(everywhere: bool = False, authorization: str | None = Header(default=None),
+             principal: Principal = Depends(current_principal)):
+    """Stop honouring this token, or all of this account's tokens.
+
+    `everywhere=false` revokes the one token presented, by its `jti`. That is
+    "sign out of this browser".
+
+    `everywhere=true` moves `credentials_valid_from` to now, which refuses every
+    token issued before this moment -- including refresh tokens and including
+    ones this server has never seen. That is "my laptop was stolen", and it is a
+    timestamp rather than a sweep because a self-contained token means there is
+    no list of live sessions to walk.
+    """
+    from app import auth
+
+    raw = (authorization or "")[7:].strip()
+    with session_scope() as s:
+        if everywhere:
+            auth.revoke_all_for(s, principal.user_id)
+            scope = "all_sessions"
+        else:
+            try:
+                auth.revoke(s, auth.parse(raw, expect=auth.ACCESS),
+                            reason="signed_out")
+            except auth.TokenError as exc:
+                # A legacy token has no jti to revoke, and saying so is more
+                # use than a generic failure.
+                raise HTTPException(
+                    422, {"error": f"This token cannot be revoked individually "
+                                   f"({exc.code}). Use ?everywhere=true.",
+                          "code": "not_revocable"}) from exc
+            scope = "this_session"
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "signed_out", {"scope": scope, "by": principal.user_id})
+        return {"signed_out": scope}
+
+
+@app.post("/users/{user_id}/sign-out", response_model=schemas.SignOutResult)
+def sign_out_user(user_id: str, principal: Principal = Depends(current_principal)):
+    """Sign somebody else out of everything. Owner only.
+
+    The response to a stolen laptop when the person whose laptop it was cannot
+    do it themselves, and it is a different act from offboarding: their account
+    still works, they simply have to sign in again.
+    """
+    from app import auth, lifecycle
+
+    _owner_only(principal, "Signing other users out")
+    with session_scope() as s:
+        _lifecycle(lifecycle._user_in_scope, s, principal, user_id)
+        auth.revoke_all_for(s, user_id)
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "user_signed_out", {"user_id": user_id, "by": principal.user_id})
+        return {"signed_out": "all_sessions"}
 
 
 # --------------------------------------------------------------------------

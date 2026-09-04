@@ -121,6 +121,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Tokens
+         * @description Exchange a refresh token for a new pair.
+         *
+         *     Unauthenticated by necessity: the caller's access token has expired, which
+         *     is the whole reason they are here. The refresh token IS the credential, and
+         *     it is checked the same way an access token is -- signature, type, expiry,
+         *     revocation.
+         *
+         *     Single use. The token presented is revoked and a new one returned. Present a
+         *     refresh token twice and every session for that account is signed out: a
+         *     second presentation means somebody else has a copy, and that is better
+         *     resolved by everyone signing in again than by guessing which holder is
+         *     legitimate.
+         */
+        post: operations["refresh_tokens_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign Out
+         * @description Stop honouring this token, or all of this account's tokens.
+         *
+         *     `everywhere=false` revokes the one token presented, by its `jti`. That is
+         *     "sign out of this browser".
+         *
+         *     `everywhere=true` moves `credentials_valid_from` to now, which refuses every
+         *     token issued before this moment -- including refresh tokens and including
+         *     ones this server has never seen. That is "my laptop was stolen", and it is a
+         *     timestamp rather than a sweep because a self-contained token means there is
+         *     no list of live sessions to walk.
+         */
+        post: operations["sign_out_auth_sign_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/campaigns": {
         parameters: {
             query?: never;
@@ -1267,6 +1327,30 @@ export interface paths {
         patch: operations["update_user_users__user_id__patch"];
         trace?: never;
     };
+    "/users/{user_id}/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign Out User
+         * @description Sign somebody else out of everything. Owner only.
+         *
+         *     The response to a stolen laptop when the person whose laptop it was cannot
+         *     do it themselves, and it is a different act from offboarding: their account
+         *     still works, they simply have to sign in again.
+         */
+        post: operations["sign_out_user_users__user_id__sign_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhooks/events": {
         parameters: {
             query?: never;
@@ -1855,6 +1939,10 @@ export interface components {
             agent_execution_mode: string;
             /** Auth */
             auth: string;
+            /** Auth Accepts Legacy Tokens */
+            auth_accepts_legacy_tokens: boolean;
+            /** Auth Access Token Seconds */
+            auth_access_token_seconds: number;
             /** Auth Secret Is Development Default */
             auth_secret_is_development_default: boolean;
             /** Llm Credential Source */
@@ -2443,6 +2531,11 @@ export interface components {
             /** Still Unsettled */
             still_unsettled: number;
         };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /** ReplayResult */
         ReplayResult: {
             /** Divergence */
@@ -2638,6 +2731,11 @@ export interface components {
             /** Rate Limit Scope */
             rate_limit_scope: string;
         };
+        /** SignOutResult */
+        SignOutResult: {
+            /** Signed Out */
+            signed_out: string;
+        };
         /** TaskEvidence */
         TaskEvidence: {
             /** Task Id */
@@ -2724,6 +2822,20 @@ export interface components {
             /** User Id */
             user_id: string;
             versions: components["schemas"]["RunVersions"];
+        };
+        /** TokenPair */
+        TokenPair: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
         };
         /** ToolCallView */
         ToolCallView: {
@@ -3083,6 +3195,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalQueue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_tokens_auth_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_out_auth_sign_out_post: {
+        parameters: {
+            query?: {
+                everywhere?: boolean;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignOutResult"];
                 };
             };
             /** @description Validation Error */
@@ -4624,6 +4802,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_out_user_users__user_id__sign_out_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignOutResult"];
                 };
             };
             /** @description Validation Error */

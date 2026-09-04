@@ -146,7 +146,8 @@ def test_every_scheduled_job_has_a_configured_interval():
 
     s = get_settings()
     names = {j.name for j in worker.build_jobs()}
-    assert names == {"heartbeat", "tasks", "drain", "notify", "reconcile", "detect"}
+    assert names == {"heartbeat", "tasks", "drain", "notify", "reconcile",
+                     "detect", "prune_tokens"}
     for j in worker.build_jobs():
         assert j.interval_seconds > 0, j.name
     assert s.worker_notify_interval_seconds < s.notify_approval_warning_seconds, (

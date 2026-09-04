@@ -401,10 +401,18 @@ class TestDevelopmentSecretIsRefusedOnDeployments:
         The default is a literal in the source. Anyone holding it can produce a
         token the server accepts for any user id.
         """
-        import hashlib
-        import hmac as _hmac
+        self._reload(monkeypatch)
 
-        sec = self._reload(monkeypatch)
-        forged = "USR_A_OWNER." + _hmac.new(
-            sec.DEV_SECRET.encode(), b"USR_A_OWNER", hashlib.sha256).hexdigest()
-        assert sec.verify_token(forged) == "USR_A_OWNER"
+        # Minted with the published default, in the CURRENT format (ADR-0049).
+        # Forging the retired format would demonstrate nothing about the one in
+        # use -- and the retired one is refused outright now, which is not the
+        # same thing as the default being safe.
+        import importlib
+
+        import app.auth as auth_module
+        auth = importlib.reload(auth_module)
+
+        forged = auth.mint("USR_A_OWNER")
+        assert auth.parse(forged).sub == "USR_A_OWNER", (
+            "the development default is a literal in this repository; anyone "
+            "holding it can mint a token the server accepts for any user")

@@ -61,16 +61,29 @@ def test_an_offboarded_account_stops_working_immediately(client, db):
     assert client.get("/me", headers=token).status_code == 401
 
 
-def test_re_enabling_restores_the_same_token(client):
+def test_re_enabling_restores_the_account_but_not_the_old_token(client):
+    """Since ADR-0049 offboarding revokes every token the person held, so
+    re-enabling gives them a working account and not a working credential.
+
+    That is the right way round. A token that was live when somebody was
+    walked out of the building should not come back if they are re-hired six
+    months later -- and by then it has expired anyway.
+    """
+    from app import auth
+
     created = client.post("/users", headers=OWNER,
                           json={"email": "returner@kettle.example", "role": "analyst"})
-    token = {"Authorization": f"Bearer {created.json()['token']}"}
+    old = {"Authorization": f"Bearer {created.json()['token']}"}
     user_id = created.json()["user_id"]
 
     client.patch(f"/users/{user_id}", headers=OWNER, json={"status": "DISABLED"})
-    assert client.get("/me", headers=token).status_code == 401
+    assert client.get("/me", headers=old).status_code == 401
+
     client.patch(f"/users/{user_id}", headers=OWNER, json={"status": "ACTIVE"})
-    assert client.get("/me", headers=token).status_code == 200
+    assert client.get("/me", headers=old).status_code == 401, (
+        "a revoked token must not come back with the account")
+    fresh = {"Authorization": f"Bearer {auth.mint(user_id)}"}
+    assert client.get("/me", headers=fresh).status_code == 200
 
 
 def test_a_disabled_user_is_not_routed_notifications(client, db):

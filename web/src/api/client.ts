@@ -17,6 +17,7 @@ import type {
 
 const BASE = "/api";
 const TOKEN_KEY = "merchantops.token";
+const REFRESH_KEY = "merchantops.refresh";
 
 // In-flight request count, so the progress indicator reflects real work rather
 // than a timer pretending to be one. A bar that finishes before the request
@@ -74,6 +75,23 @@ export function isDemoSession(): boolean {
   }
 }
 
+export function getRefreshToken(): string {
+  try {
+    return localStorage.getItem(REFRESH_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setRefreshToken(token: string): void {
+  try {
+    if (token) localStorage.setItem(REFRESH_KEY, token);
+    else localStorage.removeItem(REFRESH_KEY);
+  } catch {
+    /* private browsing; the session simply will not survive a reload */
+  }
+}
+
 export function setToken(token: string): void {
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token);
@@ -105,10 +123,40 @@ export class ApiError extends Error {
   }
 }
 
+/** Exchange the stored refresh token for a new pair. True if it worked.
+ *
+ *  Both tokens are replaced: refresh is single use, so the response carries a
+ *  new one and keeping the old would guarantee the next attempt is treated as a
+ *  replay -- which signs the account out of everything (ADR-0049). */
+async function tryRefresh(): Promise<boolean> {
+  const refresh = getRefreshToken();
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) {
+      // Expired, revoked, or replayed. All of them mean this session is over,
+      // and keeping a dead refresh token only causes the next request to try
+      // again.
+      setRefreshToken("");
+      return false;
+    }
+    const body = (await res.json()) as { access_token: string; refresh_token: string };
+    setToken(body.access_token);
+    setRefreshToken(body.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
-  { auth = true }: { auth?: boolean } = {},
+  { auth = true, retried = false }: { auth?: boolean; retried?: boolean } = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
@@ -123,6 +171,19 @@ async function request<T>(
   setPending(pending + 1);
   try {
     res = await fetch(`${BASE}${path}`, { ...init, headers });
+    // An access token now expires (ADR-0049), so a 401 on a request that
+    // carried one is ordinarily "it aged out" rather than "sign in again". One
+    // refresh, then one retry: if the refresh also fails the session is
+    // genuinely over and the 401 is the honest answer.
+    //
+    // Once, deliberately. A retry loop around an endpoint that mints
+    // credentials is how a client turns an expired session into a flood.
+    if (res.status === 401 && auth && !retried && getRefreshToken()) {
+      if (await tryRefresh()) {
+        setPending(pending - 1);
+        return request<T>(path, init, { auth, retried: true });
+      }
+    }
   } catch (e) {
     // A network-level failure is almost always "the API is not running", which
     // is worth saying plainly rather than surfacing "Failed to fetch".

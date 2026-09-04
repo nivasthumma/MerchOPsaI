@@ -310,6 +310,24 @@ class Merchant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RevokedToken(Base):
+    """One token that will not be honoured again — ADR-0049.
+
+    By `jti`, so a single session can be signed out without touching the rest.
+    `expires_at` is the token's own expiry, and `prune_revoked` deletes rows past
+    it: once a token has expired the signature check refuses it without ever
+    consulting this table, so keeping the row costs storage and buys nothing.
+    A denylist that only grows eventually costs more than what it protects.
+    """
+    __tablename__ = "revoked_tokens"
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    reason: Mapped[str] = mapped_column(String(64))
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: When this row stops mattering, not when it was written.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Permission(Base):
     """One thing a role may authorise — MerchantOps §66.
 
@@ -409,6 +427,15 @@ class User(Base):
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     deactivated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    #: Every token issued before this moment is refused (ADR-0049).
+    #:
+    #: "Sign out everywhere", as a timestamp rather than a row per live session.
+    #: A self-contained token means the server keeps no list of the ones it has
+    #: issued, so there is nothing to walk -- but there is always a moment to
+    #: compare against. Set when somebody signs out of everything, when a
+    #: refresh token is replayed, and when an account is disabled.
+    credentials_valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
 
     role_ref: Mapped[Role] = relationship()
 

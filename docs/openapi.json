@@ -1540,6 +1540,14 @@
             "title": "Auth",
             "type": "string"
           },
+          "auth_accepts_legacy_tokens": {
+            "title": "Auth Accepts Legacy Tokens",
+            "type": "boolean"
+          },
+          "auth_access_token_seconds": {
+            "title": "Auth Access Token Seconds",
+            "type": "integer"
+          },
           "auth_secret_is_development_default": {
             "title": "Auth Secret Is Development Default",
             "type": "boolean"
@@ -1604,6 +1612,8 @@
           "razorpay_execution_is_real",
           "auth",
           "auth_secret_is_development_default",
+          "auth_accepts_legacy_tokens",
+          "auth_access_token_seconds",
           "webhook_signature_verification",
           "agent_budget",
           "shared_state",
@@ -3215,6 +3225,20 @@
         "title": "ReconcileReport",
         "type": "object"
       },
+      "RefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
       "ReplayResult": {
         "additionalProperties": false,
         "properties": {
@@ -3821,6 +3845,20 @@
         "title": "SharedState",
         "type": "object"
       },
+      "SignOutResult": {
+        "additionalProperties": false,
+        "properties": {
+          "signed_out": {
+            "title": "Signed Out",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_out"
+        ],
+        "title": "SignOutResult",
+        "type": "object"
+      },
       "TaskEvidence": {
         "additionalProperties": false,
         "properties": {
@@ -4185,6 +4223,35 @@
           "actions"
         ],
         "title": "TaskView",
+        "type": "object"
+      },
+      "TokenPair": {
+        "additionalProperties": false,
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "TokenPair",
         "type": "object"
       },
       "ToolCallView": {
@@ -5093,6 +5160,102 @@
           }
         },
         "summary": "List Approvals"
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Exchange a refresh token for a new pair.\n\nUnauthenticated by necessity: the caller's access token has expired, which\nis the whole reason they are here. The refresh token IS the credential, and\nit is checked the same way an access token is -- signature, type, expiry,\nrevocation.\n\nSingle use. The token presented is revoked and a new one returned. Present a\nrefresh token twice and every session for that account is signed out: a\nsecond presentation means somebody else has a copy, and that is better\nresolved by everyone signing in again than by guessing which holder is\nlegitimate.",
+        "operationId": "refresh_tokens_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh Tokens"
+      }
+    },
+    "/auth/sign-out": {
+      "post": {
+        "description": "Stop honouring this token, or all of this account's tokens.\n\n`everywhere=false` revokes the one token presented, by its `jti`. That is\n\"sign out of this browser\".\n\n`everywhere=true` moves `credentials_valid_from` to now, which refuses every\ntoken issued before this moment -- including refresh tokens and including\nones this server has never seen. That is \"my laptop was stolen\", and it is a\ntimestamp rather than a sweep because a self-contained token means there is\nno list of live sessions to walk.",
+        "operationId": "sign_out_auth_sign_out_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "everywhere",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Everywhere",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignOutResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign Out"
       }
     },
     "/campaigns": {
@@ -7622,6 +7785,62 @@
           }
         },
         "summary": "Update User"
+      }
+    },
+    "/users/{user_id}/sign-out": {
+      "post": {
+        "description": "Sign somebody else out of everything. Owner only.\n\nThe response to a stolen laptop when the person whose laptop it was cannot\ndo it themselves, and it is a different act from offboarding: their account\nstill works, they simply have to sign in again.",
+        "operationId": "sign_out_user_users__user_id__sign_out_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignOutResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sign Out User"
       }
     },
     "/webhooks/events": {

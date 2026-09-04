@@ -45,8 +45,9 @@ from dataclasses import dataclass
 from fastapi import Header, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from app import authz, shared_state, tenancy
+from app import auth, authz, shared_state, tenancy
 from app.agent.runtime import Principal
+from app.config import get_settings
 from app.db import session_scope
 from app.observability.logs import get_logger
 
@@ -56,7 +57,9 @@ log = get_logger("merchantops.security")
 # --------------------------------------------------------------------------
 # Tokens
 # --------------------------------------------------------------------------
-DEV_SECRET = "dev-only-insecure-secret"  # noqa: S105 - the placeholder itself
+#: Imported rather than repeated: `app/auth.py` signs with it, and two
+#: copies of a fallback secret is two places to change during a rotation.
+DEV_SECRET = auth.DEV_SECRET
 
 
 def _secret() -> bytes:
@@ -130,12 +133,28 @@ def require_configured_secret() -> None:
 
 
 def issue_token(user_id: str) -> str:
+    """An access token for this user.
+
+    The name is unchanged and the shape is not: since ADR-0049 this mints a
+    `mo1.` token carrying an expiry, a unique id and a key id. Kept under the
+    old name because thirty-seven call sites use it and none of them care what a
+    token looks like -- which is the point of them going through here.
+    """
+    return auth.mint(user_id, typ=auth.ACCESS)
+
+
+def issue_legacy_token(user_id: str) -> str:
+    """The pre-ADR-0049 format: an HMAC of the user id, valid forever.
+
+    Exists so the tests can prove the legacy path is refused by default and
+    accepted while a rollout turns it on. Nothing in the application issues
+    these any more.
+    """
     sig = hmac.new(_secret(), user_id.encode(), hashlib.sha256).hexdigest()
     return f"{user_id}.{sig}"
 
 
-def verify_token(token: str) -> str | None:
-    """Return the user id if the token is authentic, else None."""
+def _verify_legacy(token: str) -> str | None:
     if not token or "." not in token:
         return None
     user_id, _, sig = token.rpartition(".")
@@ -146,6 +165,26 @@ def verify_token(token: str) -> str | None:
     if not hmac.compare_digest(sig, expected):
         return None
     return user_id
+
+
+def verify_token(token: str) -> str | None:
+    """The user id if the token is authentic and current, else None.
+
+    Current format first. A legacy token is accepted only when
+    `AUTH_ACCEPT_LEGACY_TOKENS` says so -- off by default, because a format with
+    no expiry accepted indefinitely makes every property ADR-0049 adds optional
+    for anybody still holding an old one.
+
+    Revocation is NOT checked here: it needs a database session and this is also
+    called where there is none. `current_principal` does both.
+    """
+    try:
+        return auth.parse(token, expect=auth.ACCESS).sub
+    except auth.TokenError:
+        pass
+    if get_settings().auth_accept_legacy_tokens:
+        return _verify_legacy(token)
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -286,12 +325,30 @@ def _authenticate(request: Request, authorization: str | None) -> Principal:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id = verify_token(authorization[7:].strip())
+    raw = authorization[7:].strip()
+    user_id = verify_token(raw)
     if user_id is None:
         raise HTTPException(401, "Invalid token.",
                             headers={"WWW-Authenticate": "Bearer"})
 
     with session_scope() as s:
+        # Revocation, after authenticity. A signature says the token was minted
+        # here; it cannot say the token has not since been taken away, and that
+        # needs a database (ADR-0049). Skipped for a legacy token, which has no
+        # `jti` to revoke -- one of the reasons the legacy path is off by
+        # default.
+        try:
+            claims = auth.parse(raw, expect=auth.ACCESS)
+        except auth.TokenError:
+            claims = None
+        if claims is not None:
+            try:
+                auth.check_not_revoked(s, claims)
+            except auth.TokenError as exc:
+                raise HTTPException(
+                    401, {"error": str(exc), "code": exc.code},
+                    headers={"WWW-Authenticate": "Bearer"}) from exc
+
         row = authz.resolve(s, user_id)
     if row is None:
         # The token is authentic but the subject no longer exists.

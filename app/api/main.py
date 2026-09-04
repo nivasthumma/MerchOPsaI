@@ -91,7 +91,7 @@ require_configured_secret()
 # `email` and has no SMTP host fails here rather than discovering it the first
 # time an approval needs a human.
 notify.register()
-notify_service.configured_channels()
+notify_service.check_configuration()
 
 app = FastAPI(title="MerchantOps Agent", version="0.1.0")
 
@@ -251,6 +251,79 @@ def health():
             "max_llm_turns": s.max_llm_turns_per_task,
         },
     }
+
+
+@app.get("/ready", response_model=schemas.Readiness,
+         response_model_exclude_unset=True)
+def ready(response: Response):
+    """Readiness, which is a different question from `/health`.
+
+    `/health` reports the process's posture -- which provider, which adapter,
+    what budget -- and answers without touching anything. That makes it a
+    liveness probe: if it returns, the process is alive and should not be
+    restarted.
+
+    It is the wrong probe to route traffic on. A container whose database is
+    unreachable, or whose schema is behind the code deployed over it, is alive
+    and cannot serve a request. Sending it traffic produces 500s that look like
+    an application fault.
+
+    So this one asks the two questions that decide whether this instance can do
+    work: can it reach the database, and is the schema at the revision this code
+    expects. Returns 503 when either fails, because an orchestrator reads the
+    status code and not the body.
+
+    Deliberately unauthenticated, like `/health`: a probe cannot hold a bearer
+    token, and what it discloses is whether the service works -- which anyone
+    who can reach it discovers by sending a request anyway. It reports no
+    configuration and no data.
+    """
+    checks: dict[str, dict] = {}
+    ok = True
+
+    at = None
+    try:
+        with session_scope() as s:
+            s.execute(text("SELECT 1"))
+        checks["database"] = {"ok": True}
+    except Exception as exc:
+        ok = False
+        # The type, not the message. A connection error carries the DSN, and a
+        # probe endpoint is the last place to publish credentials.
+        checks["database"] = {"ok": False, "error": type(exc).__name__}
+
+    if checks["database"]["ok"]:
+        # A separate transaction, and a separate failure. Asking both questions
+        # in one `try` made an unmigrated database report as an unreachable one:
+        # `alembic_version` not existing raises, and the handler above blamed
+        # the connection. Two different causes with two different remedies --
+        # one is "the database is down", the other is "run the migrations" --
+        # and a probe that cannot tell them apart sends whoever is paged to the
+        # wrong place.
+        try:
+            with session_scope() as s:
+                at = s.execute(
+                    text("SELECT version_num FROM alembic_version")).scalar()
+        except Exception:
+            at = None
+
+    if at is not None:
+        from scripts.migrate import head_revision
+
+        expected = head_revision()
+        matches = at == expected
+        ok = ok and matches
+        checks["schema"] = {"ok": matches, "at": at, "expected": expected}
+    elif checks["database"]["ok"]:
+        # Reachable, and carrying no version row at all. That is a database
+        # nothing has migrated -- not a transient failure, and not ready.
+        ok = False
+        checks["schema"] = {"ok": False, "at": None,
+                            "expected": None, "error": "unstamped"}
+
+    if not ok:
+        response.status_code = 503
+    return {"ready": ok, "checks": checks}
 
 
 @app.get("/me", response_model=schemas.Me,

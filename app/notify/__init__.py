@@ -27,11 +27,18 @@ What this does not do yet: there is no scheduler, so `sweep` needs a caller
 and it is the same gap detection and reconciliation already have.
 """
 from app.notify.consumers import register
-from app.notify.service import SendReport, notify, pending_notifications, retry_pending
+from app.notify.service import (
+    SendReport,
+    check_configuration,
+    notify,
+    pending_notifications,
+    retry_pending,
+)
 from app.notify.sweep import sweep, sweep_approvals, sweep_escalated
 
 __all__ = [
     "SendReport",
+    "check_configuration",
     "notify",
     "pending_notifications",
     "register",

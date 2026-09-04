@@ -2900,6 +2900,27 @@
         "title": "ProviderRequest",
         "type": "object"
       },
+      "Readiness": {
+        "additionalProperties": false,
+        "description": "`/ready` \u2014 whether this instance can do work, not whether it is alive.",
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "checks"
+        ],
+        "title": "Readiness",
+        "type": "object"
+      },
       "RecommendationView": {
         "additionalProperties": false,
         "properties": {
@@ -5740,6 +5761,25 @@
           }
         },
         "summary": "Sweep Notifications"
+      }
+    },
+    "/ready": {
+      "get": {
+        "description": "Readiness, which is a different question from `/health`.\n\n`/health` reports the process's posture -- which provider, which adapter,\nwhat budget -- and answers without touching anything. That makes it a\nliveness probe: if it returns, the process is alive and should not be\nrestarted.\n\nIt is the wrong probe to route traffic on. A container whose database is\nunreachable, or whose schema is behind the code deployed over it, is alive\nand cannot serve a request. Sending it traffic produces 500s that look like\nan application fault.\n\nSo this one asks the two questions that decide whether this instance can do\nwork: can it reach the database, and is the schema at the revision this code\nexpects. Returns 503 when either fails, because an orchestrator reads the\nstatus code and not the body.\n\nDeliberately unauthenticated, like `/health`: a probe cannot hold a bearer\ntoken, and what it discloses is whether the service works -- which anyone\nwho can reach it discovers by sending a request anyway. It reports no\nconfiguration and no data.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready"
       }
     },
     "/recovery/candidates/{candidate_id}/dispatch": {

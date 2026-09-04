@@ -1,0 +1,27 @@
+# Runtime dependencies for the Vercel Python function.
+#
+# This path is not decorative: @vercel/python installs from the requirements
+# file beside the entrypoint. Named anything else, the root requirements.txt is
+# used instead and the bundle silently gains pytest and Streamlit.
+#
+# Narrower than requirements-runtime.in, which is the container's set: a
+# serverless bundle has a size limit and a cold start, and this path needs
+# neither a server (Vercel provides it) nor alembic (migrations are run
+# separately, never by the function). The reasoning provider on a deployment
+# like this is `deterministic` -- no credential, no outbound call -- so the
+# Anthropic SDK is not here either. Add it back and set ANTHROPIC_API_KEY to
+# use the model path.
+#
+# Pinned at the same versions as the other sets. A deployment resolving to a
+# different SQLAlchemy from the one CI tested is a difference nobody would see
+# until it mattered.
+#
+# Regenerate:
+#   uv pip compile api/requirements.in --generate-hashes --python-version 3.12 \
+#       -o api/requirements.txt
+fastapi==0.141.1
+sqlalchemy==2.0.52
+psycopg2-binary==2.9.12
+pydantic==2.13.4
+pydantic-settings==2.15.0
+pyyaml==6.0.3

@@ -701,6 +701,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description Readiness, which is a different question from `/health`.
+         *
+         *     `/health` reports the process's posture -- which provider, which adapter,
+         *     what budget -- and answers without touching anything. That makes it a
+         *     liveness probe: if it returns, the process is alive and should not be
+         *     restarted.
+         *
+         *     It is the wrong probe to route traffic on. A container whose database is
+         *     unreachable, or whose schema is behind the code deployed over it, is alive
+         *     and cannot serve a request. Sending it traffic produces 500s that look like
+         *     an application fault.
+         *
+         *     So this one asks the two questions that decide whether this instance can do
+         *     work: can it reach the database, and is the schema at the revision this code
+         *     expects. Returns 503 when either fails, because an orchestrator reads the
+         *     status code and not the body.
+         *
+         *     Deliberately unauthenticated, like `/health`: a probe cannot hold a bearer
+         *     token, and what it discloses is whether the service works -- which anyone
+         *     who can reach it discovers by sending a request anyway. It reports no
+         *     configuration and no data.
+         */
+        get: operations["ready_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recovery/candidates/{candidate_id}/dispatch": {
         parameters: {
             query?: never;
@@ -2133,6 +2173,18 @@ export interface components {
             /** Provider */
             provider: string;
         };
+        /**
+         * Readiness
+         * @description `/ready` — whether this instance can do work, not whether it is alive.
+         */
+        Readiness: {
+            /** Checks */
+            checks: {
+                [key: string]: unknown;
+            };
+            /** Ready */
+            ready: boolean;
+        };
         /** RecommendationView */
         RecommendationView: {
             /** Detail */
@@ -3440,6 +3492,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ready_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Readiness"];
                 };
             };
         };

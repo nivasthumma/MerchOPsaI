@@ -1,0 +1,35 @@
+# Everything the image does not run. Each line is also a build-cache line: a
+# change to anything listed here does not invalidate a layer.
+.git
+.github
+.claude
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.vercel
+.vercel_python_packages
+
+# Built inside the image, from source, so a stale host build cannot ship.
+web/node_modules
+web/dist
+web/.vite
+
+# Not installed in the runtime image -- see requirements-runtime.in.
+tests
+ui
+docs
+data
+
+# Secrets. `.env` is gitignored and would otherwise be copied by a broad COPY.
+.env
+.env.*
+!.env.example
+
+*.md
+!README.md
+Dockerfile
+docker-compose*.yml
+.mutation-in-progress

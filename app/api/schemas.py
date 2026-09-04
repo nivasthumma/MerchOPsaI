@@ -913,3 +913,12 @@ class NotificationList(Contract):
     #: is emailing and is only writing to a log should be able to find that out
     #: without sending a test approval.
     channels: list[str]
+
+
+class Readiness(Contract):
+    """`/ready` — whether this instance can do work, not whether it is alive."""
+    ready: bool
+    #: {"database": {"ok": ...}, "schema": {"ok": ..., "at": ..., "expected": ...}}
+    #: Shaped as a dict rather than modelled per check so a new check does not
+    #: need a schema change and a frontend regeneration to be reportable.
+    checks: dict

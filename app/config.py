@@ -183,6 +183,27 @@ class Settings(BaseSettings):
     notify_webhook_url: str | None = None
     notify_webhook_secret: str | None = None
 
+    # --- Worker cadence (app/worker.py) --------------------------------
+    # How often each sweep runs. These are the numbers that decide how quickly
+    # the system reacts to anything nobody is watching, and each one is a
+    # trade-off against database load rather than a default worth copying.
+    #
+    # drain: events sit PENDING until delivered, and the notification consumers
+    # hang off that delivery -- so this is the latency between an approval being
+    # raised and the approver hearing about it. Cheap: one indexed query.
+    worker_drain_interval_seconds: int = 5
+    # notify: MUST be well under `notify_approval_warning_seconds` (300), or the
+    # chase for an expiring approval is delivered after the window it was
+    # warning about has closed. Sending is deduplicated by a UNIQUE constraint,
+    # so running this more often costs queries and sends nothing twice.
+    worker_notify_interval_seconds: int = 60
+    # reconcile: re-reads provider state for unsettled actions. Bounded by an
+    # outbound call per action, so it is the expensive one.
+    worker_reconcile_interval_seconds: int = 300
+    # detect: incidents appear at this cadence and no faster. The README states
+    # that trade-off; this is the number behind it.
+    worker_detect_interval_seconds: int = 300
+
     agent_version: str = "merchantops-agent/0.1.0"
     prompt_version: str = "investigator-v1"
     # MerchantOps §41. The shape of the loop the agent runs inside: gather,

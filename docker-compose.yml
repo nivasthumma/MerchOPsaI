@@ -1,0 +1,127 @@
+# The whole system, locally, in the shape it deploys in.
+#
+#   docker compose up --build
+#   open http://localhost:8000
+#
+# Four services and one image. `api` and `worker` are the same build with
+# different commands, because they are the same code differing only in what
+# they call.
+#
+# `migrate` is a one-shot the others wait on, rather than something the API does
+# on boot. An entrypoint that migrates on start races itself the moment there is
+# more than one replica, and makes a schema change something that happens
+# implicitly during a rollout instead of a step somebody ran.
+#
+# THIS FILE IS FOR DEVELOPMENT. It ships a known database password and lets the
+# application fall back to its development token secret. Both are stated here
+# rather than hidden: see the comment on API_TOKEN_SECRET below.
+
+x-app: &app
+  build:
+    context: .
+  image: merchantops:dev
+  environment: &app-env
+    DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@db:5432/merchantops
+
+    # Deterministic planner and mock payments unless told otherwise. A local
+    # stack that quietly reached a real payment provider because a credential
+    # was in the environment would be the worst kind of surprise.
+    LLM_PROVIDER: ${LLM_PROVIDER:-deterministic}
+    RAZORPAY_MODE: ${RAZORPAY_MODE:-mock}
+
+    # Passed through when set, absent when not. `/health` reports which
+    # provider and adapter were actually resolved.
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+    RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+    RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+
+    # Unset here on purpose. The application falls back to a development
+    # default and `/health` reports auth_secret_is_development_default: true,
+    # which is correct for a laptop and NOT correct for anything reachable --
+    # anyone who can read this repository could mint a token for any user.
+    #
+    # For anything beyond localhost, set it in a .env beside this file:
+    #     API_TOKEN_SECRET=$(openssl rand -hex 32)
+    # and set MERCHANTOPS_ENV=production, which makes the application refuse to
+    # start without one rather than trusting whoever deployed it to remember.
+    API_TOKEN_SECRET: ${API_TOKEN_SECRET:-}
+    MERCHANTOPS_ENV: ${MERCHANTOPS_ENV:-}
+
+    # Notifications go to the log by default: every one is written in full,
+    # greppable, with no SMTP to configure. Set NOTIFY_CHANNELS=log,email and
+    # the SMTP_* variables to send real mail. Naming a channel that is not
+    # configured fails at startup rather than falling back silently.
+    NOTIFY_CHANNELS: ${NOTIFY_CHANNELS:-log}
+    NOTIFY_BASE_URL: ${NOTIFY_BASE_URL:-http://localhost:8000}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_USERNAME: ${SMTP_USERNAME:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    NOTIFY_EMAIL_FROM: ${NOTIFY_EMAIL_FROM:-}
+    SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  depends_on:
+    db:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: merchantops
+      POSTGRES_PASSWORD: merchantops
+      POSTGRES_DB: merchantops
+    # 5433 on the host, 5432 in the container. Deliberately not 5432:5432 --
+    # anybody running this already has PostgreSQL on 5432 as often as not (a
+    # system install, or another project's stack), and `docker compose up`
+    # failing to bind a port is a confusing first experience of a tool that is
+    # supposed to remove exactly that problem. Published at all so `psql` and
+    # the host test suite can reach the same database the stack is using:
+    #
+    #   DATABASE_URL=postgresql+psycopg2://merchantops:merchantops@127.0.0.1:5433/merchantops
+    #
+    # Bound to loopback, because the credentials above are a known pair.
+    # Override when 5433 is taken too: DB_PORT=55432 docker compose up -d
+    ports: ["127.0.0.1:${DB_PORT:-5433}:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      # `-U merchantops` matters: without it pg_isready asks about the `root`
+      # user, which does not exist here, and reports healthy anyway.
+      test: ["CMD-SHELL", "pg_isready -U merchantops -d merchantops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot. Runs to completion, then the services that depend on it start.
+  migrate:
+    build:
+      context: .
+    image: merchantops:dev
+    environment:
+      <<: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    # `scripts/migrate.py` handles all four states a database can be in --
+    # empty, unstamped-legacy, built-from-models, already stamped -- which a
+    # bare `alembic upgrade head` does not. It also verifies that the audit-log
+    # immutability triggers actually fire, and exits non-zero if they do not,
+    # which is what makes this a gate rather than a formality.
+    command: ["python", "scripts/migrate.py"]
+
+  api:
+    <<: *app
+    ports: ["${API_PORT:-8000}:8000"]
+
+  # The same image, running the sweeps nothing else calls. Detection,
+  # reconciliation and the notification sweep are all cadence-driven, and
+  # before this there was no cadence -- they ran when somebody remembered.
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+
+volumes:
+  pgdata:

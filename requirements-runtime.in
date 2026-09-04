@@ -1,0 +1,37 @@
+# What a deployed container runs. Nothing else.
+#
+# Three requirement sets exist and the boundary between them is what each one
+# is FOR, not taste:
+#
+#   requirements.in          development and CI -- adds pytest and Streamlit
+#   requirements-dev.in      the linter and the dependency auditor
+#   requirements-runtime.in  this one: the API and the worker, in a container
+#   api/requirements.txt     the Vercel function, which is narrower again
+#                            because @vercel/python installs from the file
+#                            beside the entrypoint and a serverless bundle has
+#                            a size limit
+#
+# Streamlit is the reason this file exists rather than reusing requirements.in.
+# It pulls pandas, numpy, pyarrow and altair -- hundreds of megabytes into every
+# image layer, every pull and every cold start, to ship an MVP UI that the
+# React SPA replaced (ADR-0015). pytest is the other: shipping the test runner
+# to production is how a slow start and a wider attack surface both happen.
+#
+# Regenerate:
+#   uv pip compile requirements-runtime.in --generate-hashes --python-version 3.12 \
+#       -o requirements-runtime.txt
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+sqlalchemy==2.0.52
+alembic==1.19.1
+psycopg2-binary==2.9.12
+pydantic==2.13.4
+pydantic-settings==2.15.0
+pyyaml==6.0.3
+python-dotenv==1.2.3
+httpx==0.28.1
+# The reasoning provider. A container with no ANTHROPIC_* credential runs the
+# deterministic planner and never imports this -- but the image should be able
+# to do either, since which one is chosen is a runtime decision (`/health`
+# reports which), not a build-time one.
+anthropic==1.0.0

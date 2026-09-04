@@ -224,3 +224,38 @@ def retry_pending(session, *, limit: int = 200) -> SendReport:
         suppressed += outcome == NotificationStatus.SUPPRESSED
     session.flush()
     return SendReport(0, sent, failed, suppressed, 0)
+
+
+class MisconfiguredNotifications(ValueError):
+    """Settings that would produce a notification system that appears to work."""
+
+
+def check_configuration() -> None:
+    """Refuse settings whose only symptom is a notification arriving too late.
+
+    `configured_channels` already catches naming a channel that does not exist.
+    This catches the quieter one: a warning window wider than the thing it warns
+    about. With `notify_approval_warning_seconds` >= `approval_ttl_seconds`,
+    every approval is inside the window from the instant it is created, so the
+    chase fires immediately alongside the request -- two notifications saying
+    different things about the same approval in the same second, and no warning
+    when the deadline actually approaches.
+
+    Raised at startup rather than logged, because the failure it prevents is
+    silent by construction: everything sends, nothing errors, and the only
+    evidence is a chase that arrives at the wrong moment.
+    """
+    s = get_settings()
+    if s.notify_approval_warning_seconds >= s.approval_ttl_seconds:
+        raise MisconfiguredNotifications(
+            f"NOTIFY_APPROVAL_WARNING_SECONDS ({s.notify_approval_warning_seconds}) "
+            f"must be less than APPROVAL_TTL_SECONDS ({s.approval_ttl_seconds}). "
+            f"As set, every approval is 'expiring' from the moment it is raised."
+        )
+    if s.notify_min_severity not in _SEVERITY_ORDER:
+        raise MisconfiguredNotifications(
+            f"NOTIFY_MIN_SEVERITY={s.notify_min_severity!r} is not one of "
+            f"{sorted(_SEVERITY_ORDER)}. As set, nothing matches it and no "
+            f"notification is ever sent."
+        )
+    configured_channels()

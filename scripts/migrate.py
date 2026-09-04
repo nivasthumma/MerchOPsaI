@@ -41,6 +41,25 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = "dfdcbe8c6ce5"
 
 
+def head_revision() -> str | None:
+    """The revision this checkout's migrations end at.
+
+    Read from the script directory rather than hardcoded, so it cannot disagree
+    with the migrations actually present. `/ready` compares it against what the
+    database is stamped at: a container running code whose schema is ahead of
+    the database it was pointed at is alive and unable to serve, which is the
+    distinction a readiness probe exists to make.
+
+    Returns None if there is more than one head -- which is what a merge of two
+    branches that both added migrations produces (ADR-0041). Reported rather
+    than guessed at: with two heads there is no single revision to be at.
+    """
+    from alembic.script import ScriptDirectory
+
+    heads = ScriptDirectory.from_config(_config()).get_heads()
+    return heads[0] if len(heads) == 1 else None
+
+
 def _config() -> Config:
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))

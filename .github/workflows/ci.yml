@@ -161,6 +161,60 @@ jobs:
           pip-audit -r requirements.txt --progress-spinner off
           pip-audit -r requirements-dev.txt --progress-spinner off
 
+  # ---------------------------------------------------------------- container
+  image:
+    name: Container image builds and comes up ready
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        # The image builds the SPA inside itself (`tsc && vite build`), installs
+        # from the runtime lock with --require-hashes, and runs as non-root. A
+        # Dockerfile nothing builds is a Dockerfile that stops working, and the
+        # way that is discovered is during an incident.
+        run: docker build -t merchantops:ci .
+
+      - name: It comes up, migrates, and reports ready
+        # Building proves it compiles. This proves it runs -- which is a
+        # different claim, and the one that matters. `--wait` fails if any
+        # service's healthcheck does not pass, and the healthcheck is /ready,
+        # so this covers the database connection and the schema revision too.
+        env:
+          DB_PORT: "55432"      # 5432 is taken by other jobs' services
+        run: |
+          docker compose up -d --wait --wait-timeout 180
+          docker compose ps
+
+      - name: Readiness reports the schema it is actually at
+        run: |
+          body=$(curl -fsS http://localhost:8000/api/ready)
+          echo "$body"
+          echo "$body" | grep -q '"ready":true' \
+            || { echo "::error::container came up but is not ready"; exit 1; }
+
+      - name: The worker runs its cadence
+        # Seeding gives detection something to find. The worker should open
+        # incidents with nobody driving it, which is the whole point of it.
+        run: |
+          docker compose exec -T api python scripts/seed_data.py > /dev/null
+          docker compose restart worker
+          for _ in $(seq 1 30); do
+            if docker compose logs worker | grep -q '"event":"worker_job"'; then
+              docker compose logs worker | grep '"event":"worker_job"' | tail -3
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::the worker logged no completed job in 60s"
+          docker compose logs worker | tail -30
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   # ---------------------------------------------------------------- api contract
   contract:
     name: API contract (backend ↔ frontend)

@@ -33,6 +33,25 @@ reconcile:  ; $(PY) scripts/reconcile.py
 # Drain the event spine and send the time-based notifications. Wants a
 # cadence of a couple of minutes -- see the module docstring.
 notify:     ; PYTHONPATH=. $(PY) scripts/notify_sweep.py
+# The cadence for everything that has one: drain, notify, reconcile, detect.
+# `worker-once` runs each exactly once, which is what a platform scheduler wants.
+worker:      ; PYTHONPATH=. $(PY) -m app.worker
+worker-once: ; PYTHONPATH=. $(PY) -m app.worker --once
+
+# --- containers -------------------------------------------------------------
+# The stack is api + worker + postgres, with migrations as a one-shot the other
+# two wait on. `up` builds; the database is published on 5433 to stay out of the
+# way of a PostgreSQL already on 5432.
+image:      ; docker build -t merchantops:dev .
+up:         ; docker compose up -d --build
+down:       ; docker compose down
+# -v drops the volume too: the database and everything seeded into it.
+clean:      ; docker compose down -v --remove-orphans
+logs:       ; docker compose logs -f api worker
+ps:         ; docker compose ps
+# Seed the containerised database. Runs inside the api container, so it uses
+# the same DATABASE_URL the application does rather than one typed twice.
+seed-docker: ; docker compose exec api python scripts/seed_data.py
 mutants:    ; $(PY) scripts/mutation_test.py
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
@@ -84,7 +103,8 @@ serve: web-build
 	fi
 	PYTHONPATH=. .venv/bin/uvicorn api.index:app --host $(HOST) --port $(PORT)
 
-.PHONY: setup setup-dev lock seed spike api ui test eval reconcile notify mutants compare harden token ci demo \
+.PHONY: setup setup-dev lock seed spike api ui test eval reconcile notify \
+        worker worker-once image up down clean logs ps seed-docker mutants compare harden token ci demo \
         lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \
         web-setup web web-build web-test serve

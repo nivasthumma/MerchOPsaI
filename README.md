@@ -415,6 +415,7 @@ make setup                               # venv + the locked dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
+make demo-state                          # give the console something to show
 make test                                # 626 tests
 make eval                                # 167 scenarios, on merchantops_eval
 make mutants                             # prove the suite catches regressions
@@ -422,6 +423,24 @@ make harden                              # verify audit immutability on a live d
 make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
 ```
+
+`make demo-state` is the one worth knowing about before showing this to anybody.
+A freshly seeded database has 590 payments and no *operations* — no incidents
+until detection runs, no tasks, no approvals, no actions — so the console opens
+on a Command Center reporting nothing to attend to and an Action Center with
+five empty sections. That is the system working correctly and looking broken.
+
+It runs detection, plans recovery against the open incidents, and then produces
+one of each state the queues exist for: a task awaiting approval, an executed
+refund verified against the provider, an action left **UNKNOWN through the real
+execution path** with the timeout injector, and a rejection that makes zero
+external calls. The UNKNOWN one matters — writing `UNKNOWN` into the row
+directly would give a queue entry that never reached UNKNOWN the way the system
+does, which is a screenshot rather than a state.
+
+It is additive: it never seeds and never deletes, which is why it is a separate
+script rather than a flag on `seed`. Safe to run against a database somebody is
+already using.
 
 Every one of those is safe to run with the console open. **None of them was
 until 2026-09-08.** The evaluation suite drops and rebuilds the schema once per

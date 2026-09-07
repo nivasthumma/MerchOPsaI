@@ -116,6 +116,12 @@ ci:
 	DATABASE_URL=$(CI_DB) $(MAKE) counts
 	DATABASE_URL=$(CI_DB) $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
+# Bring a database somebody is going to LOOK at to a state where every
+# console screen has something on it: incidents, a recovery plan with
+# candidates, a task awaiting approval, an executed refund, an action left
+# UNKNOWN through the real path, and a rejection. Additive -- it never
+# seeds and never deletes, which is why it is not a flag on `seed`.
+demo-state: ; $(PY) scripts/demo_state.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------
 web-setup:  ; cd web && npm install

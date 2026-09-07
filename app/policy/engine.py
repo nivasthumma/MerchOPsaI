@@ -298,7 +298,7 @@ def _evaluate(session, ctx: PolicyContext) -> PolicyResult:
         )
 
     return PolicyResult(
-        Decision.REQUIRE_APPROVAL,
+        Decision.ALLOW,  # MUTANT
         "Financial state-changing action requires human approval.",
         "high_risk_requires_approval", assessment.level,
         approval_required=True, risk=assessment,

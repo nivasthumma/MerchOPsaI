@@ -817,6 +817,19 @@ def main() -> int:
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
     _write_report(rows, caught_n, mutations)
+
+    # The evaluation report on disk now describes the LAST MUTANT's run -- a
+    # deliberately broken tree. `run_suite` already deletes it before each
+    # mutant so a stale file can never be misread as that mutant's result; the
+    # same argument applies at the end, and did not used to. Left behind, it
+    # makes `scripts/check_counts.py` report "scenarios-passed is published as
+    # 167, measured 166" with nothing on screen explaining that the 166 came
+    # from code somebody deliberately broke two hours ago.
+    stale = ROOT / "data" / "evaluation_report.json"
+    if stale.exists():
+        stale.unlink()
+        print(f"removed {stale.relative_to(ROOT)} -- it described a mutant, "
+              f"not this tree. Re-run `make eval` for a real one.")
     print(f"RESULT: {caught_n}/{len(mutations)} mutations caught")
     if survivors:
         print("\nSURVIVING MUTATIONS — these are gaps in the suite:")

@@ -463,6 +463,49 @@ class CommandCenter(Contract):
 
 
 # --- Global search (P1-06) -------------------------------------------------
+class LifecycleEvent(Contract):
+    """One link in §7's chain. Every entry is a row that exists, with its own
+    timestamp — never an inferred step."""
+    stage: str
+    at: str | None = None
+    id: str
+    label: str
+    detail: str = ""
+    correlation_id: str | None = None
+
+
+class LifecyclePayment(Contract):
+    id: str
+    merchant_id: str
+    order_id: str | None = None
+    customer_id: str | None = None
+    customer_name: str | None = None
+    amount_minor: int
+    currency: str
+    method: str
+    status: str
+    error_reason: str | None = None
+    amount_refunded_minor: int
+    refund_status: str | None = None
+    created_at: str | None = None
+
+
+class PaymentLifecycle(Contract):
+    """MerchantOps §7 — a payment traceable through its complete lifecycle."""
+    payment: LifecyclePayment
+    external_payment_id: str | None = None
+    provider: str | None = None
+    environment: str | None = None
+    events: list[LifecycleEvent]
+    stages: list[str]
+    # More than one, which is the whole reason this endpoint exists.
+    correlation_ids: list[str] = []
+    incident_ids: list[str] = []
+    task_ids: list[str] = []
+    action_ids: list[str] = []
+    generated_at: str
+
+
 class SearchHit(Contract):
     kind: str
     id: str

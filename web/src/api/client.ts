@@ -14,6 +14,7 @@ import type {
   IncidentList,
   IncidentQuery,
   EscalatedAction, Health, Metrics, ReconcileReport, Readiness, ReplayResult, Scenario,
+  PaymentLifecycle,
   Principal, ProviderChange, ScenarioResult, SearchResults, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
@@ -272,6 +273,14 @@ export const api = {
 
   /** The home screen — plan P0-05. */
   commandCenter: () => request<CommandCenter>("/command-center"),
+
+  /** MerchantOps §7 — one payment, end to end.
+   *
+   *  Deliberately not assembled from `/trace/{correlation_id}`: a payment's
+   *  life spans several correlation ids, and a client stitching them would be
+   *  guessing at which ones belong together. */
+  paymentLifecycle: (id: string) =>
+    request<PaymentLifecycle>(`/payments/${encodeURIComponent(id)}/lifecycle`),
 
   /** One box, every identifier — plan P1-06. Exact match, server-side. */
   search: (q: string) =>

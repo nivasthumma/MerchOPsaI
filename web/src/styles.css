@@ -1419,3 +1419,35 @@ tr.is-stale td { opacity: 0.62; }
   width: 1px; align-self: stretch; margin: 0 4px;
   background: var(--border);
 }
+
+/* --- MerchantOps §7: the payment lifecycle chain ------------------------
+   A list of facts in time order. Deliberately not a decorated timeline with a
+   connecting spine: a spine implies each step caused the next, and an
+   out-of-order provider event is precisely the case where that is false. */
+.chain { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.chain li {
+  display: grid; gap: 2px 10px; align-items: baseline;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.chain li:last-child { border-bottom: 0; }
+.chain-mark { text-align: center; color: var(--text-dim); }
+.chain-body { min-width: 0; }
+.chain-label { display: block; }
+.chain-detail { display: block; font-size: 12px; word-break: break-word; }
+.chain-when { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* The stages that assert something about money get a tone; the rest stay
+   neutral. Colour is never the only signal — each stage also has its own
+   glyph, and the stage name is in the accessible name. */
+.chain li[data-stage="verification"] .chain-mark { color: var(--ok); }
+.chain li[data-stage="incident"]     .chain-mark { color: var(--danger); }
+.chain li[data-stage="approval"]     .chain-mark { color: var(--warn); }
+.chain li[data-stage="action"]       .chain-mark { color: var(--accent); }
+.chain li[data-stage="refund"]       .chain-mark { color: var(--warn); }
+
+@media (max-width: 640px) {
+  /* P1-11: the timestamp drops under the label rather than squeezing it. */
+  .chain li { grid-template-columns: 18px minmax(0, 1fr); }
+  .chain-when { grid-column: 2; }
+}

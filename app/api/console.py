@@ -293,17 +293,30 @@ def command_center(session, merchant_id: str) -> dict:
 # data so adding an identifier type is one row, not a new branch in a chain of
 # ifs that each have to remember the merchant scope.
 _SEARCHES: tuple[tuple[str, str, str], ...] = (
-    ("payment", "/incidents", """
+    # A payment resolves to its own lifecycle (§7), not to the incidents list.
+    # Routing it there was a dead end: an operator pasting a payment id lands on
+    # a page that does not contain it and has to start again.
+    ("payment", "/payments/{id}", """
         SELECT id, id AS label, method AS detail, created_at
           FROM payments
          WHERE merchant_id = :m AND (id = :q OR external_payment_id = :q)
          LIMIT 5"""),
-    ("order", "/incidents", """
-        SELECT id, id AS label, status AS detail, created_at
-          FROM orders WHERE merchant_id = :m AND id = :q LIMIT 5"""),
-    ("customer", "/incidents", """
-        SELECT id, name AS label, email AS detail, NULL::timestamptz AS created_at
-          FROM customers WHERE merchant_id = :m AND id = :q LIMIT 5"""),
+    # An order and a customer resolve THROUGH their payments, because the
+    # lifecycle is what somebody searching an order id actually wants -- "what
+    # happened to this order" is a question about its payment. Ordered newest
+    # first: an order with two attempts is asked about because of the last one.
+    ("order", "/payments/{id}", """
+        SELECT p.id, o.id AS label,
+               o.status || ' · payment ' || p.status AS detail, p.created_at
+          FROM orders o JOIN payments p ON p.order_id = o.id
+         WHERE o.merchant_id = :m AND o.id = :q
+         ORDER BY p.created_at DESC LIMIT 5"""),
+    ("customer", "/payments/{id}", """
+        SELECT p.id, c.name AS label,
+               c.email || ' · ' || p.status AS detail, p.created_at
+          FROM customers c JOIN payments p ON p.customer_id = c.id
+         WHERE c.merchant_id = :m AND c.id = :q
+         ORDER BY p.created_at DESC LIMIT 5"""),
     ("incident", "/incidents/{id}", """
         SELECT id, title AS label, status AS detail, detected_at AS created_at
           FROM incidents WHERE merchant_id = :m AND id = :q LIMIT 5"""),
@@ -318,9 +331,13 @@ _SEARCHES: tuple[tuple[str, str, str], ...] = (
     # A provider reference is the identifier an operator arrives with when they
     # are looking at the provider's dashboard rather than at ours, which is
     # exactly the moment a search box earns its place.
-    ("provider_reference", "/actions", """
-        SELECT a.id, a.external_reference AS label, a.action_type AS detail,
-               a.created_at
+    # The identifier an operator arrives with when they are looking at the
+    # provider's dashboard rather than ours -- which is exactly the moment a
+    # search box earns its place. It resolves to the payment's lifecycle, since
+    # that is what a provider reference is a reference TO.
+    ("provider_reference", "/payments/{id}", """
+        SELECT a.target_payment_id AS id, a.external_reference AS label,
+               a.action_type AS detail, a.created_at
           FROM agent_actions a
          WHERE a.merchant_id = :m
            AND (a.external_reference = :q OR a.external_payment_id = :q)

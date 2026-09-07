@@ -406,6 +406,42 @@ export interface CommandCenter {
               created_at: string; payload: Record<string, unknown> }[];
 }
 
+/** One link in §7's chain. Every entry is a row that exists, with its own
+ *  timestamp — never an inferred step. */
+export interface LifecycleEvent {
+  stage: string;
+  at: string | null;
+  id: string;
+  label: string;
+  detail: string;
+  correlation_id: string | null;
+}
+
+/** MerchantOps §7 — a payment traceable through its complete lifecycle.
+ *
+ *  Distinct from `/trace/{correlation_id}`, which answers "everything one
+ *  OPERATION touched". A payment's life spans several operations, which is why
+ *  `correlation_ids` is a list. */
+export interface PaymentLifecycle {
+  payment: {
+    id: string; merchant_id: string; order_id: string | null;
+    customer_id: string | null; customer_name: string | null;
+    amount_minor: number; currency: string; method: string; status: string;
+    error_reason: string | null; amount_refunded_minor: number;
+    refund_status: string | null; created_at: string | null;
+  };
+  external_payment_id: string | null;
+  provider: string | null;
+  environment: string | null;
+  events: LifecycleEvent[];
+  stages: string[];
+  correlation_ids: string[];
+  incident_ids: string[];
+  task_ids: string[];
+  action_ids: string[];
+  generated_at: string;
+}
+
 export interface SearchHit {
   kind: string;
   id: string;

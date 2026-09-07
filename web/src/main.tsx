@@ -12,6 +12,7 @@ import Investigate from "./routes/Investigate";
 import TaskDetail from "./routes/TaskDetail";
 import Scenarios from "./routes/Scenarios";
 import Operations from "./routes/Operations";
+import PaymentLifecycle from "./routes/PaymentLifecycle";
 import Recovery from "./routes/Recovery";
 import Settings from "./routes/Settings";
 import "./styles.css";
@@ -33,6 +34,10 @@ const router = createBrowserRouter([
       { path: "incidents", element: <Incidents /> },
       { path: "incidents/:incidentId", element: <IncidentDetail /> },
       { path: "tasks/:taskId", element: <TaskDetail /> },
+      // MerchantOps §7. Where a searched payment, order, customer or
+      // provider reference lands — the one page that answers "what
+      // happened to this payment".
+      { path: "payments/:paymentId", element: <PaymentLifecycle /> },
       { path: "scenarios", element: <Scenarios /> },
       { path: "operations", element: <Operations /> },
       { path: "settings", element: <Settings /> },

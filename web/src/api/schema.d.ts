@@ -541,6 +541,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/{payment_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payment Lifecycle
+         * @description One payment, end to end — MerchantOps §7.
+         *
+         *     `/trace/{correlation_id}` answers "everything one OPERATION touched". This
+         *     answers "everything that ever touched this PAYMENT", which is a different
+         *     question and the one an operator has when a customer is on the phone: a
+         *     payment's life spans several operations with several correlation ids, and
+         *     nothing joined them.
+         *
+         *     404 rather than 403 for another merchant's payment: existence is not leaked.
+         */
+        get: operations["get_payment_lifecycle_payments__payment_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/readiness": {
         parameters: {
             query?: never;
@@ -1777,6 +1805,57 @@ export interface components {
             /** Unknown Minor */
             unknown_minor: number;
         };
+        /**
+         * LifecycleEvent
+         * @description One link in §7's chain. Every entry is a row that exists, with its own
+         *     timestamp — never an inferred step.
+         */
+        LifecycleEvent: {
+            /** At */
+            at?: string | null;
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Stage */
+            stage: string;
+        };
+        /** LifecyclePayment */
+        LifecyclePayment: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Amount Refunded Minor */
+            amount_refunded_minor: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Currency */
+            currency: string;
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Error Reason */
+            error_reason?: string | null;
+            /** Id */
+            id: string;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Method */
+            method: string;
+            /** Order Id */
+            order_id?: string | null;
+            /** Refund Status */
+            refund_status?: string | null;
+            /** Status */
+            status: string;
+        };
         /** Liveness */
         Liveness: {
             /** Checked At */
@@ -1889,6 +1968,45 @@ export interface components {
             note: string;
             /** Unavailable */
             unavailable: components["schemas"]["MetricView"][];
+        };
+        /**
+         * PaymentLifecycle
+         * @description MerchantOps §7 — a payment traceable through its complete lifecycle.
+         */
+        PaymentLifecycle: {
+            /**
+             * Action Ids
+             * @default []
+             */
+            action_ids: string[];
+            /**
+             * Correlation Ids
+             * @default []
+             */
+            correlation_ids: string[];
+            /** Environment */
+            environment?: string | null;
+            /** Events */
+            events: components["schemas"]["LifecycleEvent"][];
+            /** External Payment Id */
+            external_payment_id?: string | null;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Incident Ids
+             * @default []
+             */
+            incident_ids: string[];
+            payment: components["schemas"]["LifecyclePayment"];
+            /** Provider */
+            provider?: string | null;
+            /** Stages */
+            stages: string[];
+            /**
+             * Task Ids
+             * @default []
+             */
+            task_ids: string[];
         };
         /**
          * PendingApprovalRow
@@ -3183,6 +3301,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payment_lifecycle_payments__payment_id__lifecycle_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentLifecycle"];
                 };
             };
             /** @description Validation Error */

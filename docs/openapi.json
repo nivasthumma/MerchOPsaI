@@ -2392,6 +2392,168 @@
         "title": "LedgerView",
         "type": "object"
       },
+      "LifecycleEvent": {
+        "additionalProperties": false,
+        "description": "One link in \u00a77's chain. Every entry is a row that exists, with its own\ntimestamp \u2014 never an inferred step.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "id",
+          "label"
+        ],
+        "title": "LifecycleEvent",
+        "type": "object"
+      },
+      "LifecyclePayment": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "amount_refunded_minor": {
+            "title": "Amount Refunded Minor",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "error_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "refund_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Status"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchant_id",
+          "amount_minor",
+          "currency",
+          "method",
+          "status",
+          "amount_refunded_minor"
+        ],
+        "title": "LifecyclePayment",
+        "type": "object"
+      },
       "Liveness": {
         "additionalProperties": false,
         "properties": {
@@ -2729,6 +2891,106 @@
           "note"
         ],
         "title": "OperationalMetrics",
+        "type": "object"
+      },
+      "PaymentLifecycle": {
+        "additionalProperties": false,
+        "description": "MerchantOps \u00a77 \u2014 a payment traceable through its complete lifecycle.",
+        "properties": {
+          "action_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Action Ids",
+            "type": "array"
+          },
+          "correlation_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Correlation Ids",
+            "type": "array"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "incident_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Incident Ids",
+            "type": "array"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/LifecyclePayment"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "task_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "payment",
+          "events",
+          "stages",
+          "generated_at"
+        ],
+        "title": "PaymentLifecycle",
         "type": "object"
       },
       "PendingApprovalRow": {
@@ -5891,6 +6153,62 @@
           }
         },
         "summary": "Prometheus"
+      }
+    },
+    "/payments/{payment_id}/lifecycle": {
+      "get": {
+        "description": "One payment, end to end \u2014 MerchantOps \u00a77.\n\n`/trace/{correlation_id}` answers \"everything one OPERATION touched\". This\nanswers \"everything that ever touched this PAYMENT\", which is a different\nquestion and the one an operator has when a customer is on the phone: a\npayment's life spans several operations with several correlation ids, and\nnothing joined them.\n\n404 rather than 403 for another merchant's payment: existence is not leaked.",
+        "operationId": "get_payment_lifecycle_payments__payment_id__lifecycle_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_id",
+            "required": true,
+            "schema": {
+              "title": "Payment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentLifecycle"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Payment Lifecycle"
       }
     },
     "/readiness": {

@@ -35,6 +35,7 @@ from app.api.security import (
     require_configured_secret,
     verify_token,
 )
+from app.audit.lifecycle import payment_lifecycle
 from app.audit.trace import (
     record,
     trace_by_correlation,
@@ -1049,6 +1050,27 @@ def command_center_view(principal: Principal = Depends(current_principal)):
     """
     with session_scope() as s:
         return command_center(s, principal.merchant_id)
+
+
+@app.get("/payments/{payment_id}/lifecycle", response_model=schemas.PaymentLifecycle,
+          response_model_exclude_unset=True)
+def get_payment_lifecycle(payment_id: str,
+                          principal: Principal = Depends(current_principal)):
+    """One payment, end to end — MerchantOps §7.
+
+    `/trace/{correlation_id}` answers "everything one OPERATION touched". This
+    answers "everything that ever touched this PAYMENT", which is a different
+    question and the one an operator has when a customer is on the phone: a
+    payment's life spans several operations with several correlation ids, and
+    nothing joined them.
+
+    404 rather than 403 for another merchant's payment: existence is not leaked.
+    """
+    with session_scope() as s:
+        report = payment_lifecycle(s, principal.merchant_id, payment_id)
+    if report is None:
+        raise HTTPException(404, "Unknown payment.")
+    return report
 
 
 @app.get("/search", response_model=schemas.SearchResults,

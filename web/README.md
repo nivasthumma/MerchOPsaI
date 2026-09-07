@@ -52,7 +52,8 @@ src/
     CommandCenter   home: what needs attention, revenue health, the funnel
     Actions         the Action Center — five sections, UNKNOWN as work
     Recovery        the revenue ledger: at risk → recoverable → attempted → recovered
-    Incidents       open incidents, ordered by revenue at risk
+    PaymentLifecycle  §7 — one payment end to end; where a searched id lands
+    Incidents       open incidents, filtered and saved-view
     IncidentDetail  the decision workspace (what happened → ... → verification)
     Investigate     ask a question, read findings and grounding
     TaskDetail      approval gate, actions, verification, replay, audit trace
@@ -86,7 +87,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 230 Vitest tests, jsdom, no API required
+npm test             # 253 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -115,6 +116,7 @@ rather than merely look wrong:
 | Live refresh | A failed poll keeps the data and does not advance the freshness stamp; a hidden tab pauses and refreshes on return; two requests never overlap; a changed filter refetches at once |
 | Funnel | A later stage never draws wider than an earlier one, even when handed figures that invert |
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
+| Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
 

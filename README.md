@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-594%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-615%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 594 tests · 167/167 scenarios · 77/78 mutations |
+| [📊 Measured results](#-measured-results) | 615 tests · 167/167 scenarios · 77/78 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -421,7 +421,7 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `GET /metrics/operational` · `GET /metrics/objectives` | §59 metrics and §60 SLOs |
 | `GET /approvals` · `GET /actions/{id}` | The approval queue, and one action |
 | `GET /tasks/{id}/messages` | The conversation the model actually saw |
-| `GET /trace/{correlation_id}` | §58 — everything one operation touched, in one ordering |
+| `GET /trace/{correlation_id}` | §58 — everything one **operation** touched, in one ordering |
 | `GET /failures/taxonomy` | §56/§57 — what each failure means and whether to retry it |
 | `GET /dashboard` | §50 — revenue at risk, recovery, incidents, agent activity |
 | `GET /recovery/ledger` | §49 — the six figures, and whether they nest |
@@ -448,6 +448,7 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `GET /actions` | **The Action Center** — the queue in five sections, one read |
 | `GET /command-center` | **What needs attention** — revenue health, funnel, live activity |
 | `GET /search?q=` | One box, every identifier. Exact match, merchant-scoped in SQL |
+| `GET /payments/{id}/lifecycle` | **§7 — one payment, end to end**, across every correlation id it spans |
 | `GET /scenarios` · `POST /scenarios/{id}/run` | Evaluation suite |
 | `GET /health` | Reports active LLM provider and payment adapter |
 | `GET /liveness` | The process is running. No I/O, no dependencies |
@@ -698,7 +699,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 182 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (594 tests)
+tests/          unit · security · integration  (615 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 33 ADRs

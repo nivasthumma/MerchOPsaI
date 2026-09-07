@@ -1700,6 +1700,16 @@ export interface components {
             applied_view?: string | null;
             /** Incidents */
             incidents: components["schemas"]["IncidentSummary"][];
+            /**
+             * Matched
+             * @default 0
+             */
+            matched: number;
+            /**
+             * Shown
+             * @default 0
+             */
+            shown: number;
             /** Total Revenue At Risk Minor */
             total_revenue_at_risk_minor: number;
             /**

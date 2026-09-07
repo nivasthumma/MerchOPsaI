@@ -716,7 +716,12 @@ class SavedView(Contract):
 
 class IncidentList(Contract):
     incidents: list[IncidentSummary]
+    # Summed over the WHOLE match in SQL, never across the returned page.
     total_revenue_at_risk_minor: int
+    # How many matched, and how many are in `incidents`. A client showing the
+    # total beside a shorter list is showing a number it cannot substantiate.
+    matched: int = 0
+    shown: int = 0
     # Plan P1-05. Served with the list so five view counts come from one read
     # at one instant rather than five requests at five.
     views: list[SavedView] = []

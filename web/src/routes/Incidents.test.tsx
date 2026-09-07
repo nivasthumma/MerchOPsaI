@@ -170,4 +170,28 @@ describe("filtering and saved views", () => {
     expect(await screen.findByText(/Detection is a sweep, not a daemon/))
       .toBeInTheDocument();
   });
+
+  it("shows the matched total, not the length of the page", async () => {
+    // `total_revenue_at_risk_minor` is counted in SQL over the whole match.
+    // A count taken from `incidents.length` would disagree with it the moment
+    // the list is capped, and the money figure would be the one telling the
+    // truth.
+    vi.mocked(api.incidents).mockResolvedValue({
+      ...data, matched: 40, shown: data.incidents.length });
+    render(<MemoryRouter initialEntries={["/?unresolved=true"]}>
+             <Incidents />
+           </MemoryRouter>);
+    await screen.findByRole("table", { name: "Open incidents" });
+
+    expect(screen.getByText(new RegExp(`Showing ${data.incidents.length} of 40`)))
+      .toBeInTheDocument();
+    expect(screen.getByText(/counted in SQL, not summed across this page/))
+      .toBeInTheDocument();
+  });
+
+  it("says nothing when the whole match fits", async () => {
+    vi.mocked(api.incidents).mockResolvedValue(data);
+    await renderPage();
+    expect(screen.queryByText(/Showing \d+ of/)).toBeNull();
+  });
 });

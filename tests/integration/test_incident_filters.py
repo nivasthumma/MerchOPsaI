@@ -216,6 +216,72 @@ def test_the_applied_view_is_echoed_back(client, db, incidents):
     assert body["applied_view"] == "critical"
 
 
+def test_the_at_risk_total_is_over_the_whole_match_not_the_page(client, db, incidents):
+    """The defect this pins.
+
+    `search_incidents` pages at 200 and the total used to be summed across the
+    rows it had just paged, so past that size the headline exposure understated
+    — and only under a filter, because the unfiltered branch has no limit. Two
+    branches, two answers, about money.
+    """
+    from app.incidents.filters import IncidentFilter, search_incidents, totals
+
+    f = IncidentFilter(unresolved=True)
+    agg = totals(db, "MERCH_A", f)
+
+    # The aggregate is computed in SQL over the predicate, so a page of one
+    # cannot change it.
+    one_page = search_incidents(db, "MERCH_A", f, limit=1)
+    assert len(one_page) == 1
+    assert agg["matched"] > 1, "the fixture needs more than one match"
+    assert totals(db, "MERCH_A", f) == agg
+
+    body = client.get("/incidents?unresolved=true", headers=token()).json()
+    assert body["total_revenue_at_risk_minor"] == agg["at_risk_minor"]
+    assert body["matched"] == agg["matched"]
+    assert body["shown"] == len(body["incidents"])
+
+    # And it equals the sum over every matching row, which is the claim the
+    # figure makes.
+    from sqlalchemy import text as sql
+    expected = db.execute(sql(
+        "SELECT COALESCE(SUM(revenue_at_risk_minor), 0) FROM incidents "
+        "WHERE merchant_id = 'MERCH_A' "
+        "  AND status NOT IN ('RESOLVED','CLOSED','CANCELLED')")).scalar()
+    assert body["total_revenue_at_risk_minor"] == int(expected)
+
+
+def test_the_view_counts_are_computed_once(client, db, incidents):
+    """They were computed inside the generator that renders them: five views
+    meant five full computations of all five counts, twenty-five COUNT queries
+    to produce five numbers.
+
+    Counted rather than timed — a performance assertion on a clock is a flaky
+    test, and the number of queries is the actual claim.
+    """
+    from sqlalchemy import event
+
+    from app.db import get_engine
+
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, params, context, executemany):
+        if "FROM incidents i" in statement and "COUNT(*)" in statement:
+            seen.append(statement)
+
+    event.listen(get_engine(), "before_cursor_execute", record)
+    try:
+        client.get("/incidents", headers=token())
+    finally:
+        event.remove(get_engine(), "before_cursor_execute", record)
+
+    # One per saved view, plus the one that totals the current filter.
+    from app.incidents.filters import SAVED_VIEWS
+    assert len(seen) <= len(SAVED_VIEWS) + 1, (
+        f"{len(seen)} count queries for {len(SAVED_VIEWS)} views — "
+        f"the counts are being recomputed per view again")
+
+
 def test_filters_cannot_reach_another_merchant(client, db, incidents):
     """Merchant scope is the first clause of every query here, never a filter
     applied afterwards."""

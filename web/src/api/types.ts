@@ -648,7 +648,12 @@ export interface SavedView {
 
 export interface IncidentList {
   incidents: IncidentSummary[];
+  /** Summed over the WHOLE match in SQL, never across the returned page. */
   total_revenue_at_risk_minor: number;
+  /** How many matched, and how many are in `incidents`. Showing the total
+   *  beside a shorter list is showing a number you cannot substantiate. */
+  matched: number;
+  shown: number;
   views: SavedView[];
   applied_view: string | null;
 }

@@ -231,6 +231,27 @@ def search_incidents(session, merchant_id: str, f: IncidentFilter,
     return list(session.execute(text(sql), {**params, "lim": limit}).scalars())
 
 
+def totals(session, merchant_id: str, f: IncidentFilter) -> dict:
+    """How many incidents match, and what they carry — over the WHOLE match,
+    not the page.
+
+    Separate from `search_incidents` for the reason `_count` is separate from
+    `_rows` in `app.api.console`, and for a sharper one: the caller was summing
+    `revenue_at_risk_minor` across the rows it had just *paged*. Past the page
+    size that headline understates a merchant's exposure — and it understated
+    it only under a filter, because the unfiltered path takes `open_incidents`
+    and has no limit. Two paths, two answers, about money.
+    """
+    where, params = build_query(f, merchant_id)
+    row = session.execute(text(f"""
+        SELECT COUNT(*) AS matched,
+               COALESCE(SUM(i.revenue_at_risk_minor), 0) AS at_risk
+          FROM incidents i
+         WHERE {where}
+    """), params).mappings().one()  # noqa: S608 - as above
+    return {"matched": int(row["matched"]), "at_risk_minor": int(row["at_risk"])}
+
+
 def view_counts(session, merchant_id: str) -> dict[str, int]:
     """How many incidents each saved view holds.
 

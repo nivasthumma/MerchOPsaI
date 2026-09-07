@@ -55,6 +55,7 @@ from app.incidents.filters import (
     search_incidents,
     view_counts,
 )
+from app.incidents.filters import totals as incident_totals
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
 from app.metrics import objectives, operational_metrics
@@ -946,13 +947,28 @@ def list_incidents(include_closed: bool = False,
                      .filter(Incident.id.in_(ids)).all()} if ids else {}
             rows = [by_id[i] for i in ids if i in by_id]
 
+        # Counted over the whole match, never summed across the page.
+        #
+        # `search_incidents` pages at 200, and this used to sum
+        # `revenue_at_risk_minor` across the rows it had just paged — so past
+        # that size the headline exposure understated, and understated it only
+        # under a filter, because the unfiltered branch above has no limit. Two
+        # branches, two answers, about money.
+        agg = incident_totals(s, principal.merchant_id, filters)
+
+        # Computed ONCE. This was inside the generator below, so five views
+        # meant five full computations of all five counts -- twenty-five COUNT
+        # queries to render five numbers.
+        counts = view_counts(s, principal.merchant_id)
+
         return {"incidents": [_incident_view(s, i) for i in rows],
-                "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows),
+                "total_revenue_at_risk_minor": agg["at_risk_minor"],
+                "matched": agg["matched"],
+                "shown": len(rows),
                 # The views and their counts, so a client renders five numbers
                 # from one read rather than five requests at five instants.
-                "views": [{**v, "count": c}
-                          for v, c in ((v, view_counts(s, principal.merchant_id)
-                                        .get(v["key"], 0)) for v in SAVED_VIEWS)],
+                "views": [{**v, "count": counts.get(v["key"], 0)}
+                          for v in SAVED_VIEWS],
                 "applied_view": view}
 
 

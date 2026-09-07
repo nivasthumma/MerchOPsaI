@@ -55,6 +55,8 @@ export default function Incidents() {
   const rows = live.data?.incidents ?? null;
   const atRisk = live.data?.total_revenue_at_risk_minor ?? 0;
   const views = live.data?.views ?? [];
+  const matched = live.data?.matched ?? rows?.length ?? 0;
+  const shown = live.data?.shown ?? rows?.length ?? 0;
   const load = live.refresh;
 
   /** Replace, never push: filtering is not navigation, and a back button that
@@ -128,9 +130,19 @@ export default function Incidents() {
                filtered={filtered} />
 
       <StatStrip items={[
-        [filtered ? "Matching" : "Open", rows.length],
+        // The server's count over the whole match, not `rows.length`, which is
+        // the size of this page.
+        [filtered ? "Matching" : "Open", matched],
         ["Revenue at risk", <Money key="r" minor={atRisk} />],
       ]} />
+
+      {matched > shown ? (
+        <p className="sub">
+          <strong>Showing {shown} of {matched}.</strong> The revenue figure
+          above covers all {matched} — it is counted in SQL, not summed across
+          this page.
+        </p>
+      ) : null}
 
       {rows.length === 0 ? (
         <Empty>

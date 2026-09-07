@@ -204,15 +204,30 @@ function Section({ k, d, onOpen, reverify }: {
 }) {
   const meta = TITLES[k];
   const rows = d[k];
+  const total = d.counts[k];
+  const shown = d.shown?.[k] ?? rows.length;
+  const truncated = total > shown;
 
   return (
     <section className="card">
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h3 className="card-title" style={{ margin: 0 }}>
-          {meta.title} <span className="count">{rows.length}</span>
+          {/* The TOTAL, from the server's own COUNT — not `rows.length`, which
+              is the size of this page. */}
+          {meta.title} <span className="count">{total}</span>
         </h3>
       </div>
       <p className="sub">{meta.sub}</p>
+
+      {truncated ? (
+        // Said plainly rather than left to be inferred from a count that does
+        // not match the list under it. A queue that silently shows a fraction
+        // of itself is a queue an operator will believe they have cleared.
+        <p className="sub">
+          <strong>Showing {shown} of {total}.</strong> Raise the limit or work
+          through these first — the rest are still here.
+        </p>
+      ) : null}
 
       {rows.length === 0 ? (
         <Empty>{emptyCopy(k)}</Empty>

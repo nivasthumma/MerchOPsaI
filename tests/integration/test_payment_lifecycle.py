@@ -141,6 +141,48 @@ def test_an_unknown_action_shows_its_attempts_and_who_owns_it(db, owner):
                for e in report["events"] if e["stage"] == "verification")
 
 
+def test_ordering_survives_timestamps_in_different_offsets(db, refunded):
+    """The bug the previous implementation had, made unmissable.
+
+    Events were sorted by the ISO STRING, which equals chronological order only
+    while every value carries the same UTC offset. Postgres renders its reads
+    in the session timezone; a value written in Python carries +00:00. Compare
+    those as text and an earlier instant can sort after a later one.
+
+    The pair below inverts. `01:00-05:00` is 06:00Z — four hours AFTER
+    `02:00+00:00` — but as text "01:00" sorts before "02:00". Text order and
+    time order are opposite, which is the whole failure in two values.
+    """
+    from datetime import timedelta, timezone
+
+    from app.audit.lifecycle import _key
+
+    earlier = datetime(2026, 9, 7, 2, 0, tzinfo=UTC)                    # 02:00Z
+    later = datetime(2026, 9, 7, 1, 0,
+                     tzinfo=timezone(timedelta(hours=-5)))              # 06:00Z
+
+    as_text = sorted([later, earlier], key=lambda d: d.isoformat())
+    as_instants = sorted([later, earlier], key=_key)
+
+    # The fixture has to actually distinguish the two, or this passes without
+    # testing anything — which is how the first version of it was written.
+    assert as_text != as_instants
+    assert as_text == [later, earlier], "text order puts the later instant first"
+    assert as_instants == [earlier, later]
+
+
+def test_an_event_with_no_timestamp_leads_rather_than_being_dropped(db, refunded):
+    """Several steps are derived from a state rather than an event and have no
+    honest time. They must still appear, and must not be given an invented one."""
+    report = payment_lifecycle(db, "MERCH_A", PAYMENT)
+    assert report["events"], "the fixture must produce events"
+    # Every event survives the sort, timestamped or not.
+    assert all("stage" in e for e in report["events"])
+    # And `at` is a string or null on the wire — never a datetime.
+    assert all(e["at"] is None or isinstance(e["at"], str)
+               for e in report["events"])
+
+
 def test_a_policy_gated_tool_call_is_not_reported_as_failed(db, refunded):
     """`request_refund` records success=False with no error code when the
     control plane holds it for a human. Rendering that as "failed" next to a

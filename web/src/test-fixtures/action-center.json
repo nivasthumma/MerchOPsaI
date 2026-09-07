@@ -59,5 +59,13 @@
     "unknown",
     "escalated",
     "recently_completed"
-  ]
+  ],
+  "shown": {
+    "awaiting_approval": 0,
+    "executing": 0,
+    "unknown": 1,
+    "escalated": 0,
+    "recently_completed": 0
+  },
+  "limit": 50
 }

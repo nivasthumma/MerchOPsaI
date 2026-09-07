@@ -173,6 +173,57 @@ def test_the_action_center_is_merchant_scoped(client, db, owner):
     assert body["counts"]["unknown"] == 0
 
 
+def test_the_count_is_a_total_not_the_length_of_the_page(client, db, owner):
+    """The defect this pins, in full.
+
+    Every section is capped at `limit`, and the count used to be `len(page)`.
+    `command_center` counts the same quantities in SQL, so with more unresolved
+    actions than fit on a page the two screens disagreed — and the SMALLER
+    number was on the Action Center, the page an operator acts from.
+    """
+    from sqlalchemy import text as sql
+
+    action = _unknown_action(db, owner)
+    # Clone the unsettled action past the page size. Cloned in SQL rather than
+    # executed for real: what is under test is counting, not execution, and
+    # eight more refunds would need eight more mapped payments.
+    for i in range(8):
+        db.execute(sql("""
+            INSERT INTO agent_actions
+                (id, task_id, merchant_id, action_type, target_payment_id,
+                 external_payment_id, amount_minor, idempotency_key, status,
+                 verification_state, verify_attempts, escalated,
+                 created_at, updated_at)
+            SELECT :id, task_id, merchant_id, action_type, target_payment_id,
+                   external_payment_id, amount_minor, :key, status,
+                   verification_state, verify_attempts, escalated,
+                   created_at, updated_at
+              FROM agent_actions WHERE id = :src
+        """), {"id": f"ACT_CLONE{i:04d}", "key": f"clone-{i}", "src": action.id})
+    db.flush()
+
+    body = client.get("/actions?limit=3", headers=token("USR_A_OWNER")).json()
+
+    assert len(body["unknown"]) == 3, "the page is capped"
+    assert body["shown"]["unknown"] == 3
+    assert body["counts"]["unknown"] == 9, "the count is the total, not the page"
+    assert body["limit"] == 3
+
+    # And the two screens now agree, which is the property that actually
+    # matters: they are read minutes apart by the same person.
+    cc = client.get("/command-center", headers=token("USR_A_OWNER")).json()
+    assert cc["attention"]["unknown_actions"] == body["counts"]["unknown"]
+
+
+def test_a_section_that_fits_reports_the_same_number_twice(client, db, owner):
+    """The ordinary case must not have become subtler: when nothing is
+    truncated, `counts` and `shown` agree and a client rendering either is
+    right."""
+    _unknown_action(db, owner)
+    body = client.get("/actions", headers=token("USR_A_OWNER")).json()
+    assert body["counts"] == body["shown"]
+
+
 def test_the_reconciliation_policy_is_published_not_copied(client, db):
     """The UI renders "gives up after N attempts" from the system's own rule
     rather than a second copy of it."""

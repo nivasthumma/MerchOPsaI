@@ -82,6 +82,26 @@ def _rows(session, where: str, params: dict, order: str, limit: int) -> list[dic
         text(sql), {**params, "lim": limit}).mappings().all()]
 
 
+def _count(session, where: str, params: dict) -> int:
+    """How many rows the same predicate matches, ignoring the page size.
+
+    A separate query rather than `len(rows)`, and that distinction is the whole
+    point of this function existing. Every section is capped at `limit`, so
+    `len(rows)` is the size of the PAGE. Reporting it as the count meant that
+    with sixty unresolved actions the Command Center said sixty (it counts with
+    SQL) and the Action Center said fifty — two screens disagreeing about how
+    much unresolved financial work exists, with the smaller number on the page
+    an operator acts from.
+
+    `where` and `order` are composed from string literals written in this
+    module; every caller-supplied value is bound. Nothing that reaches these
+    f-strings came from a request.
+    """
+    sql = (f"SELECT COUNT(*) {_ACTION_JOINS} "
+           f"WHERE a.merchant_id = :m AND ({where})")
+    return int(session.execute(text(sql), params).scalar() or 0)
+
+
 def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
     """The financial operations queue, in five sections.
 
@@ -100,6 +120,21 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
     misreport this section exists to prevent.
     """
     params = {"m": merchant_id}
+
+    # One predicate per section, named once. The page and the count are two
+    # queries over the same clause, and two copies of a clause is how a queue
+    # comes to show rows its own count says are not there.
+    escalated_where = ("a.escalated = true AND (a.verification_state IS NULL "
+                       "OR a.verification_state IN ('UNKNOWN', 'PARTIAL'))")
+    unknown_where = (
+        "a.escalated = false AND (a.verification_state IN ('UNKNOWN', 'PARTIAL') "
+        "OR (a.verification_state IS NULL AND a.status = 'PENDING' "
+        "    AND a.created_at < now() - interval '2 minutes'))")
+    executing_where = (
+        "a.escalated = false AND a.verification_state IS NULL "
+        "AND a.status IN ('PENDING', 'SUBMITTED') "
+        "AND a.created_at >= now() - interval '2 minutes'")
+    completed_where = "a.verification_state IN ('SUCCESS', 'FAILED')"
 
     # Approvals that no action has been claimed for yet. These are the rows the
     # plan cares most about — the human is the gate and the money has not moved
@@ -131,32 +166,25 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
     # "recently completed", and the sections stop partitioning: an operator
     # picks up something already done, in the one place where doing something
     # twice moves money twice.
-    escalated = _rows(
-        session,
-        "a.escalated = true AND (a.verification_state IS NULL "
-        "OR a.verification_state IN ('UNKNOWN', 'PARTIAL'))",
-        params, "a.escalated_at NULLS LAST, a.created_at", limit)
+    escalated = _rows(session, escalated_where, params,
+                      "a.escalated_at NULLS LAST, a.created_at", limit)
+    # Soonest next check first, so the queue reads as a schedule.
+    unknown = _rows(session, unknown_where, params,
+                    "a.next_verify_at NULLS FIRST, a.created_at", limit)
+    executing = _rows(session, executing_where, params, "a.created_at DESC", limit)
+    completed = _rows(session, completed_where, params, "a.updated_at DESC", limit)
 
-    unknown = _rows(
-        session,
-        "a.escalated = false AND (a.verification_state IN ('UNKNOWN', 'PARTIAL') "
-        "OR (a.verification_state IS NULL AND a.status = 'PENDING' "
-        "    AND a.created_at < now() - interval '2 minutes'))",
-        params,
-        # Soonest next check first, so the queue reads as a schedule.
-        "a.next_verify_at NULLS FIRST, a.created_at", limit)
-
-    executing = _rows(
-        session,
-        "a.escalated = false AND a.verification_state IS NULL "
-        "AND a.status IN ('PENDING', 'SUBMITTED') "
-        "AND a.created_at >= now() - interval '2 minutes'",
-        params, "a.created_at DESC", limit)
-
-    completed = _rows(
-        session,
-        "a.verification_state IN ('SUCCESS', 'FAILED')",
-        params, "a.updated_at DESC", limit)
+    # True totals, not page lengths. See `_count`.
+    counts = {
+        "awaiting_approval": int(session.execute(text("""
+            SELECT COUNT(*) FROM approvals
+             WHERE merchant_id = :m AND decision = 'PENDING'
+        """), params).scalar() or 0),
+        "executing": _count(session, executing_where, params),
+        "unknown": _count(session, unknown_where, params),
+        "escalated": _count(session, escalated_where, params),
+        "recently_completed": _count(session, completed_where, params),
+    }
 
     return {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -166,13 +194,19 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
         "unknown": unknown,
         "escalated": escalated,
         "recently_completed": completed,
-        "counts": {
+        "counts": counts,
+        # How many rows each section actually returned. A client showing
+        # `counts` beside a shorter list is showing a number it cannot
+        # substantiate, so it is told both and can say "50 of 60" rather than
+        # dropping ten silently.
+        "shown": {
             "awaiting_approval": len(pending_approvals),
             "executing": len(executing),
             "unknown": len(unknown),
             "escalated": len(escalated),
             "recently_completed": len(completed),
         },
+        "limit": limit,
         # Published so the UI can render "next check in 4m" and "gives up after
         # 5 attempts" from the system's own rule rather than a copy of it.
         "reconciliation_policy": {

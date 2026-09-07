@@ -62,6 +62,34 @@ def _at(value: Any) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+# Sorts before every real timestamp, so an event with no honest time to give
+# leads rather than being dropped or given an invented one.
+_EPOCH = datetime.min.replace(tzinfo=UTC)
+
+
+def _key(value: Any) -> datetime:
+    """The sort key for one event: a real instant, never its rendering.
+
+    Sorting on the ISO STRING is what this replaced, and it is correct only
+    while every value carries the same UTC offset. Every timestamp here is read
+    back from Postgres over one connection, so today they do — but
+    `escalated_at` is written in Python as `datetime.now(UTC)` (+00:00) while
+    Postgres renders its own reads in the session timezone, and the first event
+    sourced from Python rather than re-read from the database would invert the
+    ordering. Silently, on the one page whose entire promise is "chronological,
+    never tidied".
+
+    A naive datetime is assumed UTC rather than rejected: it can only arrive
+    from a column somebody declared without a timezone, and refusing to draw
+    the page over it would be worse than ordering it.
+    """
+    if value is None:
+        return _EPOCH
+    if not isinstance(value, datetime):
+        return _EPOCH
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None:
     """Everything that ever touched one payment. `None` if it is not this
     merchant's — the caller turns that into a 404 rather than leaking existence.
@@ -86,7 +114,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
 
     events: list[dict] = [{
         "stage": "payment",
-        "at": _at(payment["created_at"]),
+        "at": payment["created_at"],
         "id": payment["id"],
         "label": f"Payment {payment['status']}",
         "detail": (f"{payment['method']} · "
@@ -108,7 +136,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
         external_ids.add(mapping["external_payment_id"])
         events.append({
             "stage": "mapping",
-            "at": _at(mapping["created_at"]),
+            "at": mapping["created_at"],
             "id": mapping["id"],
             "label": f"Mapped to {mapping['provider']} ({mapping['environment']})",
             "detail": mapping["external_payment_id"]
@@ -198,7 +226,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
 
     for i in incidents:
         events.append({
-            "stage": "incident", "at": _at(i["detected_at"]), "id": i["id"],
+            "stage": "incident", "at": i["detected_at"], "id": i["id"],
             "label": f"{i['incident_type'].replace('_', ' ').title()} detected",
             "detail": f"{i['severity']} · {i['detection_rule']}",
             "correlation_id": i["correlation_id"],
@@ -206,7 +234,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
 
     for t in tasks:
         events.append({
-            "stage": "investigation", "at": _at(t["created_at"]), "id": t["id"],
+            "stage": "investigation", "at": t["created_at"], "id": t["id"],
             "label": "Replay" if t["is_replay"] else "Investigation started",
             "detail": f"{t['request'][:120]} · {t['tool_call_count']} tool calls "
                       f"· {t['model_provider'] or 'deterministic'}",
@@ -244,7 +272,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
             else:
                 outcome = "failed"
             events.append({
-                "stage": "tool_call", "at": _at(r["created_at"]), "id": r["id"],
+                "stage": "tool_call", "at": r["created_at"], "id": r["id"],
                 "label": f"{r['tool_name']}",
                 "detail": outcome,
                 "correlation_id": None,
@@ -262,7 +290,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
         """), {"m": merchant_id, "ids": list(approval_ids)}).mappings():
             events.append({
                 "stage": "approval",
-                "at": _at(r["decided_at"] or r["created_at"]), "id": r["id"],
+                "at": r["decided_at"] or r["created_at"], "id": r["id"],
                 "label": f"Approval {r['decision'].lower()}",
                 "detail": (f"{r['risk_level']} risk · "
                            + (f"by {r['decided_by']}" if r["decided_by"]
@@ -272,7 +300,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
 
     for a in actions:
         events.append({
-            "stage": "action", "at": _at(a["created_at"]), "id": a["id"],
+            "stage": "action", "at": a["created_at"], "id": a["id"],
             "label": f"{a['action_type'].replace('_', ' ').title()} sent to provider",
             "detail": (f"{a['amount_minor'] / 100:,.2f} · "
                        + (a["external_reference"] or "no reference issued")),
@@ -284,7 +312,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
         if a["verification_state"]:
             events.append({
                 "stage": "verification",
-                "at": _at(a["last_verified_at"] or a["updated_at"]),
+                "at": a["last_verified_at"] or a["updated_at"],
                 "id": a["id"],
                 "label": f"Verification: {a['verification_state']}",
                 "detail": ((a["verification_detail"] or {}).get("reason") or "")[:160]
@@ -294,7 +322,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
             })
         if a["escalated"]:
             events.append({
-                "stage": "verification", "at": _at(a["escalated_at"]), "id": a["id"],
+                "stage": "verification", "at": a["escalated_at"], "id": a["id"],
                 "label": "Escalated to a person",
                 "detail": "Automatic reconciliation exhausted.",
                 "correlation_id": None,
@@ -313,7 +341,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
             if r["correlation_id"]:
                 correlations.add(r["correlation_id"])
             events.append({
-                "stage": "provider_event", "at": _at(r["received_at"]),
+                "stage": "provider_event", "at": r["received_at"],
                 "id": r["event_id"],
                 "label": f"Provider event: {r['event_type']}",
                 "detail": (f"{r['status']}"
@@ -330,7 +358,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
          ORDER BY created_at
     """), {"m": merchant_id, "p": payment_id}).mappings():
         events.append({
-            "stage": "refund", "at": _at(r["created_at"]), "id": r["id"],
+            "stage": "refund", "at": r["created_at"], "id": r["id"],
             "label": f"Refund {r['status']}",
             "detail": f"{r['amount_minor'] / 100:,.2f} · "
                       + (r["external_reference"] or "no provider reference"),
@@ -341,7 +369,14 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
     # into the order the stages "should" occur: an out-of-order webhook really
     # did arrive out of order, and tidying it into place hides the one thing
     # worth seeing.
-    events.sort(key=lambda e: (e["at"] or "", STAGES.index(e["stage"])))
+    #
+    # Sorted on the INSTANT, not on its rendering — see `_key`. Events carry the
+    # raw value until here and are stringified below, so there is one place that
+    # decides the ordering and one place that decides the format, rather than
+    # eleven construction sites that have to agree about both.
+    events.sort(key=lambda e: (_key(e["at"]), STAGES.index(e["stage"])))
+    for e in events:
+        e["at"] = _at(e["at"])
 
     return {
         "payment": {

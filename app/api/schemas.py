@@ -404,7 +404,14 @@ class ActionCenter(Contract):
     unknown: list[ActionRow]
     escalated: list[ActionRow]
     recently_completed: list[ActionRow]
+    # TRUE totals, counted in SQL — not the length of the page. The two
+    # disagreed once, and the smaller number was on the screen an operator
+    # acts from.
     counts: ActionCenterCounts
+    # How many rows each section actually returned, so a client can say
+    # "50 of 60" rather than presenting a page length as a total.
+    shown: ActionCenterCounts
+    limit: int
     reconciliation_policy: ReconciliationPolicy
     sections: list[str]
 

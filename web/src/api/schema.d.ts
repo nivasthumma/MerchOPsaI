@@ -1045,6 +1045,8 @@ export interface components {
             executing: components["schemas"]["ActionRow"][];
             /** Generated At */
             generated_at: string;
+            /** Limit */
+            limit: number;
             /** Merchant Id */
             merchant_id: string;
             /** Recently Completed */
@@ -1052,6 +1054,7 @@ export interface components {
             reconciliation_policy: components["schemas"]["ReconciliationPolicy"];
             /** Sections */
             sections: string[];
+            shown: components["schemas"]["ActionCenterCounts"];
             /** Unknown */
             unknown: components["schemas"]["ActionRow"][];
         };

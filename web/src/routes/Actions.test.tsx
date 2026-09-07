@@ -329,3 +329,31 @@ describe("re-verification reports what it found, not that it ran", () => {
     expect(toasts[0].title).toMatch(/failed/);
   });
 });
+
+
+describe("a truncated section says so", () => {
+  beforeEach(() => { vi.clearAllMocks(); toasts.length = 0; });
+
+  it("shows the total, not the length of the page", async () => {
+    // The defect: `counts` used to BE the page length, so a capped section
+    // reported the cap and the Command Center reported the truth.
+    mocked.actionCenter.mockResolvedValue({
+      ...UNKNOWN,
+      counts: { ...UNKNOWN.counts, unknown: 60 },
+      shown: { ...UNKNOWN.shown, unknown: 1 },
+      limit: 1,
+    });
+    renderActions("/actions?section=unknown");
+
+    expect(await screen.findByText(/Showing 1 of 60/)).toBeInTheDocument();
+    const heading = screen.getAllByRole("heading", { level: 3 })[0];
+    expect(heading).toHaveTextContent("60");
+  });
+
+  it("says nothing when the whole section fits", async () => {
+    mocked.actionCenter.mockResolvedValue(UNKNOWN);
+    renderActions();
+    await screen.findByText(UNKNOWN.unknown[0].id);
+    expect(screen.queryByText(/Showing \d+ of/)).toBeNull();
+  });
+});

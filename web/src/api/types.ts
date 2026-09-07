@@ -359,6 +359,14 @@ export interface PendingApprovalRow {
   expired: boolean;
 }
 
+export interface ActionCenterCounts {
+  awaiting_approval: number;
+  executing: number;
+  unknown: number;
+  escalated: number;
+  recently_completed: number;
+}
+
 export interface ActionCenter {
   generated_at: string;
   merchant_id: string;
@@ -367,10 +375,14 @@ export interface ActionCenter {
   unknown: ActionRow[];
   escalated: ActionRow[];
   recently_completed: ActionRow[];
-  counts: {
-    awaiting_approval: number; executing: number; unknown: number;
-    escalated: number; recently_completed: number;
-  };
+  /** TRUE totals, counted in SQL — not the length of the page. The two
+   *  disagreed once, and the smaller number was on the screen an operator
+   *  acts from. */
+  counts: ActionCenterCounts;
+  /** How many rows each section actually returned. Render `counts` beside a
+   *  shorter list and you are showing a number you cannot substantiate. */
+  shown: ActionCenterCounts;
+  limit: number;
   /** The system's own stopping rule, so the UI renders it rather than keeping
    *  a second copy that can drift. */
   reconciliation_policy: { max_attempts: number; on_exhaustion: string };

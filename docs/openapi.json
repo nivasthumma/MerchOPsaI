@@ -32,6 +32,10 @@
             "title": "Generated At",
             "type": "string"
           },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
           "merchant_id": {
             "title": "Merchant Id",
             "type": "string"
@@ -53,6 +57,9 @@
             "title": "Sections",
             "type": "array"
           },
+          "shown": {
+            "$ref": "#/components/schemas/ActionCenterCounts"
+          },
           "unknown": {
             "items": {
               "$ref": "#/components/schemas/ActionRow"
@@ -70,6 +77,8 @@
           "escalated",
           "recently_completed",
           "counts",
+          "shown",
+          "limit",
           "reconciliation_policy",
           "sections"
         ],

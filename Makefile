@@ -43,6 +43,23 @@ token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
 lint:       ; $(PY) -m ruff check .
 lint-fix:   ; $(PY) -m ruff check . --fix
 audit:      ; $(PY) -m pip_audit -r requirements.txt --progress-spinner off
+
+# The npm half, which did not exist. `make audit` has always checked the Python
+# dependencies and nothing ever checked the ones that reach a browser — which is
+# the half an attacker can read.
+#
+# Gated on what SHIPS (`--omit=dev`) and on high or above. Two deliberate
+# choices:
+#
+#   --omit=dev      a dev-server advisory is a real finding and a different
+#                   risk from one in the bundle a merchant loads. Both are
+#                   reported by `make web-audit-all`; only one blocks.
+#   --audit-level   high. The two moderates open today are assessed in the
+#                   README rather than waved through by a threshold that
+#                   happens to sit above them — the level says which findings
+#                   stop a build, not which ones are acceptable.
+web-audit:  ; cd web && npm audit --omit=dev --audit-level=high
+web-audit-all: ; cd web && npm audit
 # The tracked tree, and nothing else, must import. This is the check that
 # catches a file somebody wrote and never `git add`-ed -- the working directory
 # hides it, a fresh clone does not.

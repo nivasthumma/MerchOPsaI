@@ -11,6 +11,27 @@ import { useModalFocus } from "../hooks/useModalFocus";
 import { api } from "../api/client";
 import type { SearchHit } from "../api/types";
 
+/** The one place in this application where a WHOLE path comes from data.
+ *
+ *  Everywhere else interpolates a database id into a fixed template —
+ *  `/tasks/${id}` — so the shape of the destination is decided in the source.
+ *  Search hits carry a complete `route` the server built, which is a different
+ *  thing even though the server builds it from its own templates.
+ *
+ *  React Router 6 carries an open-redirect advisory for backslashes reaching
+ *  `<Link>` and `useNavigate` (GHSA-wrjc-x8rr-h8h6). The fix upstream is a
+ *  breaking major, and the exposure here is one function wide, so it is closed
+ *  here: a route must be a single-slash-rooted internal path with no backslash
+ *  and no scheme. Anything else goes nowhere rather than somewhere.
+ *
+ *  Defence in depth rather than a claim the server is untrustworthy — it is
+ *  trusted, and it is still the wrong place to decide that a navigation is
+ *  safe. */
+export function internalRoute(route: string): string {
+  const ok = /^\/(?!\/)[A-Za-z0-9\-._~/?#[\]@!$&'()*+,;=%]*$/.test(route);
+  return ok ? route : "/";
+}
+
 export interface Command {
   id: string;
   label: string;
@@ -110,7 +131,7 @@ export function CommandPalette({ extra = [] }: { extra?: Command[] }) {
       id: `hit-${h.kind}-${h.id}`,
       label: `${h.label ?? h.id}`,
       hint: `${h.kind}${h.detail ? ` · ${h.detail}` : ""}`,
-      run: () => nav(h.route),
+      run: () => nav(internalRoute(h.route)),
     })),
     ...matches,
   ], [hits, matches, nav]);

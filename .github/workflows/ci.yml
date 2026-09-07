@@ -188,6 +188,20 @@ jobs:
       - name: Frontend tests
         run: cd web && npm test
 
+      - name: Frontend dependency vulnerabilities
+        # Blocking, unlike `pip-audit` above, and the difference is the
+        # threshold rather than a difference of opinion about noise. pip-audit
+        # reports every advisory at any severity, so failing on it would fail
+        # unrelated pull requests for a low-severity transitive finding. This
+        # gate fires only on HIGH or CRITICAL in a dependency that ships to the
+        # browser, which is small enough a set to be worth stopping for.
+        #
+        # The two moderate `react-router` advisories currently open are
+        # deliberately below this line -- they are assessed and documented in
+        # the README's known limitations rather than silenced here. `make
+        # web-audit-all` prints everything, including dev dependencies.
+        run: cd web && npm audit --omit=dev --audit-level=high
+
   # ---------------------------------------------------------------- scenario suite
   evaluate:
     name: Evaluation suite (167 scenarios)

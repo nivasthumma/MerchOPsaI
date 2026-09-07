@@ -9,7 +9,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { DensityToggle } from "./Chrome";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette, internalRoute } from "./CommandPalette";
 import { Stepper } from "./Stepper";
 import { ThemeToggle } from "./Theme";
 import { ToastHost, useToast } from "./Toast";
@@ -185,5 +185,32 @@ describe("density", () => {
     render(<DensityToggle />);
     expect(screen.getByRole("button"))
       .toHaveAccessibleName(/Density: comfortable\. Switch to compact\./);
+  });
+});
+
+describe("a search hit cannot navigate off-site", () => {
+  // React Router 6 carries an open-redirect advisory for backslashes reaching
+  // `<Link>` and `useNavigate`. The upstream fix is a breaking major; the
+  // exposure here is one function wide, so it is closed here.
+  it("accepts the routes the server actually builds", () => {
+    for (const route of ["/payments/SYN_PAY_0002", "/incidents/INC_1",
+                         "/tasks/TASK_A", "/actions", "/actions?section=unknown"]) {
+      expect(internalRoute(route)).toBe(route);
+    }
+  });
+
+  it("refuses anything that could leave the origin", () => {
+    for (const hostile of [
+      "//evil.example.com",          // protocol-relative
+      "https://evil.example.com",    // absolute
+      "\\\\evil.example.com",            // backslashes — the advisory's vector
+      "/\\evil.example.com",
+      "javascript:alert(1)",
+      "",
+    ]) {
+      // Nowhere, rather than somewhere. A refused route lands on the home
+      // screen, which is a place the operator can see they are.
+      expect(internalRoute(hostile), hostile).toBe("/");
+    }
   });
 });

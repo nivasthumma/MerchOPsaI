@@ -13,3 +13,8 @@ data/evaluation_report.json
 
 # Vite's local transform cache.
 web/.vite/
+
+# Running vitest or npm from the repository root instead of `web/` leaves a
+# stray cache here. There is no npm project at the root; anything under this
+# name is an accident, and one that would otherwise be offered for commit.
+node_modules/

@@ -669,6 +669,29 @@ are different claims.
     `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
     all of them.
 
+### Supply-chain limits
+
+23. **Two moderate npm advisories are open in a production dependency**, assessed
+    rather than waved through. Both are in `react-router` 6, and neither has a fix
+    available on the 6 line. `GHSA-337j-9hxr-rhxg` is an SSR hydration issue and is
+    not reachable here — this is a pure SPA mounted with `createRoot`, and there is
+    no server renderer. `GHSA-wrjc-x8rr-h8h6` is an open redirect: a path beginning
+    with a backslash is treated as same-origin by `<Link>` and `useNavigate` and
+    then followed off-site. That one *is* reachable in principle, so it is closed
+    locally rather than argued away — `internalRoute()` in `CommandPalette.tsx`
+    admits only a path that starts with a single `/` and falls back to `/`. The
+    palette is the only place a whole route arrives as data; everywhere else
+    interpolates an id into a fixed template. Upgrading to `react-router` 7 is the
+    real fix and is a routing-API change, not a version bump.
+24. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
+    CI since the start; the web half had no equivalent, which means the two moderate
+    advisories above had been open and unread rather than open and accepted. `make
+    web-audit` now fails on a high or critical advisory in production dependencies,
+    and `make web-audit-all` prints everything including dev. The gate deliberately
+    stops at `--audit-level=high`: the two moderate ones are documented above, and a
+    gate that fires on findings nobody has agreed to is a gate people learn to pass
+    with `--force`.
+
 ---
 
 ## 🗺️ Roadmap

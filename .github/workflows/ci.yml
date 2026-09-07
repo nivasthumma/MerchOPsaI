@@ -64,9 +64,14 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
       - name: Install dependencies
-        run: pip install -q -r requirements.txt
+        # From the lock, with hashes. `requirements.txt` is a set of `>=`
+        # constraints -- installing from it resolves to whatever PyPI has
+        # that morning, so two runs of the SAME COMMIT could run different
+        # code. For a repository whose evaluation suite publishes a number,
+        # that is not a detail.
+        run: pip install -q --require-hashes -r requirements.lock
       - name: Seed dataset
         run: python scripts/seed_data.py
       - name: Migrations bring an existing database to head
@@ -127,10 +132,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
 
       - name: Install dependencies
-        run: pip install -q -r requirements.txt ruff pip-audit
+        run: |
+          pip install -q --require-hashes -r requirements.lock
+          pip install -q ruff pip-audit uv
 
       - name: Lint
         # The rule set is curated in pyproject.toml rather than "everything
@@ -168,13 +175,38 @@ jobs:
           print("Every entrypoint imports from the tracked tree alone.")
           EOF
 
-      - name: Dependency vulnerabilities
-        # Advisory rather than blocking: a CVE published against a transitive
-        # dependency should reach whoever is on call, not fail an unrelated
-        # pull request at 3am. The nightly schedule is what makes it useful --
-        # it catches an advisory filed after the last commit.
+      - name: The lock is current
+        # `uv pip compile` prefers the pins already in the output file, so
+        # recompiling is a no-op unless `requirements.txt` changed. That makes
+        # this a real check rather than a race against PyPI: it fails when
+        # somebody adds a dependency and does not regenerate, and stays quiet
+        # when an unrelated package publishes a release.
+        run: |
+          uv pip compile requirements.txt --generate-hashes \
+            --python-version 3.12 -o requirements.lock -q
+          git diff --exit-code -- requirements.lock \
+            || { echo "::error::requirements.lock is stale. Run 'make lock'."; exit 1; }
+
+      - name: Dependency vulnerabilities (what ships)
+        # BLOCKING, and only defensible because the set is pinned. It used to
+        # audit `requirements.txt`, whose `>=` constraints resolve to whatever
+        # PyPI has that morning -- so failing on it really would have failed
+        # unrelated pull requests at 3am, and it was left advisory for that
+        # reason and then never read. A locked set only changes when somebody
+        # changes it, so a finding here is either a new advisory against a
+        # version we chose (which the nightly schedule surfaces, and which
+        # somebody should look at) or a regression somebody just introduced.
+        run: pip-audit -r requirements.lock --progress-spinner off
+
+      - name: Dependency vulnerabilities (the whole environment)
+        # Advisory, and a different question: `-r` audits the packages the
+        # application declares, and this audits everything actually installed
+        # -- including `pip` itself, which carried seven advisories when this
+        # was written and which no requirements-file audit can ever see.
+        # Not blocking, because the runner's own toolchain is not something a
+        # pull request can fix.
         continue-on-error: true
-        run: pip-audit -r requirements.txt --progress-spinner off
+        run: pip-audit --progress-spinner off
 
   # ---------------------------------------------------------------- api contract
   contract:
@@ -187,7 +219,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
       - uses: actions/setup-node@v5
         with:
           # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
@@ -198,7 +230,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: |
-          pip install -q -r requirements.txt
+          pip install -q --require-hashes -r requirements.lock
           cd web && npm ci
 
       - name: OpenAPI document is current
@@ -275,7 +307,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
       - uses: actions/setup-node@v5
         with:
           # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
@@ -286,7 +318,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
         run: |
-          pip install -q -r requirements.txt
+          pip install -q --require-hashes -r requirements.lock
           cd web && npm ci
 
       - name: Install the browser
@@ -345,9 +377,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
       - name: Install dependencies
-        run: pip install -q -r requirements.txt
+        run: pip install -q --require-hashes -r requirements.lock
 
       - name: Dataset is deterministic
         run: |
@@ -467,9 +499,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: requirements.lock
       - name: Install dependencies
-        run: pip install -q -r requirements.txt
+        run: pip install -q --require-hashes -r requirements.lock
       - name: Seed dataset
         run: python scripts/seed_data.py
       - name: Run mutation test

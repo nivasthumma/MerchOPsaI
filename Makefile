@@ -13,7 +13,13 @@ PY=.venv/bin/python
 HOST ?= 127.0.0.1
 PORT ?= 8000
 
-setup:      ; python3 -m venv .venv && $(PY) -m pip install -q -r requirements.txt
+# From the lock, not from `requirements.txt`. Development installing a
+# different resolution from CI is how a suite passes on one machine and
+# fails on the other, and it had already happened here -- nine packages
+# differed between this venv and what CI would have installed.
+# `make lock-upgrade` is the deliberate way to take newer versions.
+setup:      ; python3 -m venv .venv \
+                && $(PY) -m pip install -q --require-hashes -r requirements.lock
 seed:       ; $(PY) scripts/seed_data.py
 spike:      ; $(PY) scripts/razorpay_spike.py
 api:        ; PYTHONPATH=. .venv/bin/uvicorn app.api.main:app --reload --port 8000
@@ -24,6 +30,17 @@ reconcile:  ; $(PY) scripts/reconcile.py
 mutants:    ; $(PY) scripts/mutation_test.py
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
+# Regenerate the pinned, hashed dependency set CI installs from.
+# `requirements.txt` is the human declaration (`>=` constraints);
+# `requirements.lock` is what actually gets installed, so two runs of the
+# same commit run the same code. `--upgrade` to take new versions
+# deliberately; without it, uv keeps the pins that are already there.
+lock:       ; @$(PY) -m uv --version >/dev/null 2>&1 || $(PY) -m pip install -q uv
+	$(PY) -m uv pip compile requirements.txt --generate-hashes \
+                --python-version 3.12 -o requirements.lock
+lock-upgrade: ; @$(PY) -m uv --version >/dev/null 2>&1 || $(PY) -m pip install -q uv
+	$(PY) -m uv pip compile requirements.txt --generate-hashes \
+                --python-version 3.12 --upgrade -o requirements.lock
 # Bring a real database to the current schema. Handles the three states a
 # database can be in -- empty, existing-but-unstamped, already stamped -- which
 # a bare `alembic upgrade head` does not. See ADR-0030.

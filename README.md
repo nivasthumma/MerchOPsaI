@@ -411,7 +411,7 @@ Requires Python 3.12+ and PostgreSQL.
 ```bash
 createdb merchantops                     # or use the DATABASE_URL of your choice
 cp .env.example .env                     # optional; defaults work locally
-make setup                               # venv + dependencies
+make setup                               # venv + the locked dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
@@ -747,7 +747,32 @@ are different claims.
     is gone — v7 merged it back into `react-router`, and the imports now say so.
     It costs 28 kB raw / 9 kB gzipped in the bundle, which is recorded rather than
     discovered later.
-25. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
+25. **The Python dependencies were unpinned until 2026-09-08, so CI and
+    development ran different code.** `requirements.txt` is thirteen `>=`
+    constraints, and CI installed straight from it — resolving to whatever PyPI
+    had that morning. Two runs of the *same commit* could therefore run different
+    versions, which is a strange property for a repository whose evaluation suite
+    publishes a number and whose CI asserts that number is reproducible. It was
+    not hypothetical: when the lock was first generated, **nine packages differed**
+    between the development venv and what CI would have installed, `anthropic` by
+    four minor versions.
+
+    `requirements.lock` is now the installed set — fully pinned, hashed,
+    `--require-hashes` in every CI job and in `make setup`. `requirements.txt`
+    remains the human declaration. `make lock` regenerates it and keeps existing
+    pins; `make lock-upgrade` takes newer versions deliberately. Because uv
+    prefers the pins already in the file, recompiling is a no-op unless
+    `requirements.txt` changed — which is what makes "the lock is current" a real
+    CI check rather than a race against PyPI. The locked set was verified before
+    it was adopted: 626 tests and 167/167 scenarios against a scratch venv built
+    from it.
+
+    `pip-audit` is now blocking, which it could not honestly have been before —
+    failing on a resolution that moves every morning really would have failed
+    unrelated pull requests. A second, advisory audit covers the whole installed
+    environment rather than the declared set; that one is what surfaced seven
+    advisories in `pip` itself, which no requirements-file audit can ever see.
+26. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
     CI since the start; the web half had no equivalent, which means every advisory
     above had been open and unread rather than open and accepted. `make web-audit`
     now fails on a high or critical advisory in production dependencies, and `make

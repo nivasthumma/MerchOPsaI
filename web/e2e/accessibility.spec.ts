@@ -1,0 +1,119 @@
+// Accessibility, in a real browser — P1-12.
+//
+// The Vitest suite already pins the parts jsdom can see: that a status carries
+// a shape and not only a colour, that a dialog keeps the promise `aria-modal`
+// makes, that a stacked table labels every cell. None of that is checkable
+// here and none of it is repeated.
+//
+// What jsdom CANNOT check is anything that needs layout or paint, and P1-12
+// names one of those explicitly: **contrast**. jsdom has no colours, no
+// computed styles worth the name, and no viewport. A real browser has all
+// three, so this is where that requirement is actually tested — and where a
+// palette change that makes a failure state unreadable gets caught before an
+// operator squints at it during an incident.
+//
+// ## Both themes, deliberately
+//
+// The app follows the viewer's theme, and a token redefined under
+// `prefers-color-scheme: dark` is a token nobody checked in light. Every screen
+// is scanned twice.
+//
+// ## Why the rule set is narrowed rather than "everything axe knows"
+//
+// Same argument the ruff configuration makes: a gate that fires on things
+// nobody agreed to is a gate people learn to bypass. These are the WCAG A and
+// AA rules, which is the bar the plan implies by naming contrast, keyboard
+// navigation, semantic controls and accessible state updates. Best-practice
+// rules are excluded because they encode opinions this project has not adopted.
+
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "@playwright/test";
+
+const TOKEN = process.env.E2E_TOKEN ?? "";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript((t) => {
+    window.localStorage.setItem("merchantops.token", t);
+  }, TOKEN);
+});
+
+/** Scan whatever is currently rendered, and report every violation rather than
+ *  the first — a list of one is a list somebody fixes one at a time. */
+async function scan(page: Page, label: string) {
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+
+  // axe's own `failureSummary` names the measured ratio and the two colours it
+  // measured. Without it a contrast failure reports a selector and leaves the
+  // reader to guess which of foreground, background or opacity moved — and the
+  // usual answer is opacity, which is invisible in the palette.
+  const summary = results.violations.map((v) =>
+    `  ${v.id} (${v.impact}) — ${v.help}\n`
+    + v.nodes.slice(0, 3).map((n) =>
+        `      ${n.target.join(" ")}\n`
+        + `        ${(n.failureSummary ?? "").split("\n").join("\n        ")}`,
+      ).join("\n"),
+  ).join("\n");
+
+  expect(results.violations, `${label}\n${summary}`).toEqual([]);
+}
+
+/** The theme is the viewer's, and a token redefined for dark is a token nobody
+ *  checked in light. Emulated rather than toggled through the UI so the scan
+ *  does not depend on the toggle working. */
+async function inBothThemes(page: Page, url: string, ready: RegExp | string) {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto(url);
+    await expect(page.getByText(ready).first()).toBeVisible();
+    await scan(page, `${url} (${scheme})`);
+  }
+}
+
+test("the Command Center is accessible in both themes", async ({ page }) => {
+  await inBothThemes(page, "/", "Needs attention");
+});
+
+test("the Action Center is accessible in both themes", async ({ page }) => {
+  // The densest screen in the application, and the one an operator reads under
+  // time pressure.
+  await inBothThemes(page, "/actions", /Every financial action/);
+});
+
+test("the incident workspace is accessible in both themes", async ({ page, request }) => {
+  const res = await request.get("http://127.0.0.1:8100/incidents", {
+    headers: { Authorization: `Bearer ${TOKEN}` },
+  });
+  const { incidents } = await res.json();
+  // Asserted, not skipped: `scripts/run_e2e.sh` runs detection during setup, so
+  // an empty list means the fixture is broken rather than absent. A scan that
+  // silently does not run is a scan nobody notices has stopped.
+  expect(incidents.length, "run via scripts/run_e2e.sh, which runs detection")
+    .toBeGreaterThan(0);
+
+  await inBothThemes(page, `/incidents/${incidents[0].id}`, "What happened");
+});
+
+test("the payment lifecycle is accessible in both themes", async ({ page }) => {
+  await inBothThemes(page, "/payments/SYN_PAY_0002", "The payment");
+});
+
+test("the recovery ledger is accessible in both themes", async ({ page }) => {
+  await inBothThemes(page, "/recovery", "Exposure");
+});
+
+test("a failure state stays readable", async ({ page }) => {
+  // The one worth having most. A palette change that leaves an error banner
+  // unreadable is discovered, otherwise, by somebody trying to read it during
+  // an incident — which is the worst possible moment and the least likely to
+  // be reported as a contrast bug.
+  await page.route("**/api/**", (route) => route.abort());
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/actions");
+  // `.first()`: the message appears in the banner heading, in its detail line
+  // and in the freshness bar, which is the LiveBar and ErrorBanner both doing
+  // their job rather than a duplicate.
+  await expect(page.getByText(/Cannot reach the API/).first()).toBeVisible();
+  await scan(page, "the error state (dark)");
+});

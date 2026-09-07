@@ -35,6 +35,14 @@
   --text: #0f1f1a;               /* 17.1:1 on surface */
   --text-2: #46584f;             /*  7.6:1 on surface */
   --text-dim: #64766d;           /*  4.9:1 on surface — labels, keys, timestamps */
+  /* The same grey on a TINTED background is a different measurement, and the
+     ops strip tints its own cells: `--text-dim` on `--danger-soft` at 9.5px
+     came out at 4.17:1, below AA. Nothing in the palette was wrong — 4.9:1 is
+     true, on `--surface`, which is where it was measured. The class that
+     changed the background did not change the text.
+     Only findable by measuring what was actually painted, which is what
+     `e2e/accessibility.spec.ts` now does. */
+  --text-dim-on-tint: #4d5b54;   /*  6.2:1 on --danger-soft and --warn-soft */
 
   --accent: #175e4c;             /*  7.7:1 on surface */
   --accent-hover: #12503f;
@@ -82,6 +90,10 @@
     --text: #e3ebe6;             /* 14.9:1 on surface */
     --text-2: #9bafa6;           /*  7.7:1 on surface */
     --text-dim: #7b8f86;         /*  5.2:1 on surface — was the weakest value */
+    /* Already 5.1:1 and 5.3:1 on the dark tints, so it needs no darker
+       sibling — the failure was light-theme only. Defined anyway so the rule
+       below has one meaning in both themes rather than a fallback in one. */
+    --text-dim-on-tint: #7b8f86;
 
     --accent: #6fc3a3;           /*  8.5:1 on surface */
     --accent-hover: #8ad4b8;
@@ -195,6 +207,10 @@ pre {
 }
 .strip-cell b { font-size: 11.5px; letter-spacing: -0.02em; color: var(--text);
                 font-weight: 600; text-transform: none; }
+/* A tinted cell needs a label colour measured against the tint, not against
+   the surface it no longer sits on. */
+.strip-cell.warn,
+.strip-cell.danger { color: var(--text-dim-on-tint); }
 .strip-cell.warn { background: var(--warn-soft); }
 .strip-cell.warn b { color: var(--warn-ink); }
 .strip-cell.danger { background: var(--danger-soft); }
@@ -1506,4 +1522,22 @@ tr.is-stale td { opacity: 0.62; }
    expand it is the operator most likely to press the button again. */
 .banner-consequence {
   margin-top: 6px; font-size: 12px; opacity: 0.9; max-width: 78ch;
+}
+
+/* --- P1-12: a link in prose must not rely on colour ---------------------
+   axe measured the accent against the muted text around it at 1.58:1, where
+   3:1 is the floor for distinguishing a link by colour alone. Underlining is
+   the fix the rule expects and the one this design should have had anyway:
+   "no colour-only meaning" is already the rule for every status in this
+   application, and a link is not an exception to it.
+
+   Scoped to prose. Links that are already unambiguous by position — a nav
+   tab, a table cell that is nothing but an identifier, a chip — are left
+   alone, because underlining everything is how underlining stops meaning
+   anything. */
+.empty a,
+.sub a,
+p a:not(.linkish) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

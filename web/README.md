@@ -243,6 +243,35 @@ relabels itself "Confirm — this moves money"); the replay controls are behind 
 `external_calls`. That last one is the exact failure this suite is for — caught
 in the test rather than the product, which is the same lesson either way.
 
+## Accessibility, measured — P1-12
+
+The Vitest suite pins what jsdom can see: a status carries a shape and not only
+a colour, a dialog keeps the promise `aria-modal` makes, a stacked table labels
+every cell. What jsdom cannot see is anything needing layout or paint, and P1-12
+names one of those outright: **contrast**.
+
+`e2e/accessibility.spec.ts` scans five screens plus the error state with axe, in
+**both themes**, against the WCAG A and AA rules. Narrowed to those rather than
+everything axe knows, for the reason the ruff config gives: a gate that fires on
+things nobody agreed to is a gate people learn to bypass.
+
+It found three real defects on its first run, none of which any jsdom test could
+have reached:
+
+- **`--text-dim` at 4.17:1 on a tinted strip cell.** Nothing in the palette was
+  wrong — its comment says 4.9:1 and that is true, *on `--surface`*. The class
+  that tints the background did not change the text colour, so the ratio was
+  measured against a surface the text no longer sits on. Fixed with
+  `--text-dim-on-tint`.
+- **A link distinguishable only by colour** (1.58:1 against the prose around
+  it). "No colour-only meaning" was already this application's rule for every
+  status; a link was not an exception to it, it had just never been checked.
+  Links in prose are underlined.
+- **A skeleton that promised a name it could not have.** `aria-label` on a bare
+  `<div>` is prohibited by ARIA — an element with no role cannot take an
+  accessible name — so the label was ignored and every loading state was silent
+  to a screen reader. Now `role="status"` with the bars marked decorative.
+
 ## Build
 
 ```bash

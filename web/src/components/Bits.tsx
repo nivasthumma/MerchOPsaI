@@ -153,9 +153,19 @@ export function SectionHead(
  *  jump when it arrives. */
 export function Skeleton({ rows = 3 }: { rows?: number }) {
   return (
-    <div aria-busy="true" aria-label="loading">
+    // `role="status"` is what lets this carry a name at all. It had
+    // `aria-label` on a bare <div>, which ARIA prohibits — an element with no
+    // role cannot take an accessible name, so the label was ignored and the
+    // loading state was silent to a screen reader. Found by scanning a real
+    // browser; no amount of reading the markup makes it obvious.
+    //
+    // The bars themselves are decoration and say so, or a reader announces
+    // four empty groups before reaching the word "Loading".
+    <div role="status" aria-busy="true">
+      <span className="sr-only">Loading</span>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skel" style={{ width: `${100 - i * 12}%` }} />
+        <div key={i} className="skel" aria-hidden="true"
+             style={{ width: `${100 - i * 12}%` }} />
       ))}
     </div>
   );

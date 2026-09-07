@@ -173,6 +173,13 @@ browser download, and CI here has none of the last (ADR-0015 already keeps the
 frontend suite out for the same reason). Where it is *gated* is a deployment
 decision; this records which one was taken rather than implying otherwise.
 
+**Accessibility is measured, not asserted.** The same suite scans five screens
+and the error state with axe in both themes, and found three real defects on its
+first run — a contrast ratio measured against a surface the text no longer sat
+on, a link distinguishable only by colour, and a loading skeleton that was
+silent to screen readers because ARIA prohibits `aria-label` on a bare `<div>`.
+None was reachable from jsdom.
+
 **§20's twenty mandatory adversarial scenarios are audited rather than assumed**
 — [`docs/adversarial-coverage.md`](docs/adversarial-coverage.md) counts what the
 suite covers and names the one real gap: an out-of-order webhook is nothing the

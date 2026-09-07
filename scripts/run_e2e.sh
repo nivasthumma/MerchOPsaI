@@ -62,6 +62,22 @@ DATABASE_URL="$DB" SEED_FORCE=1 "$PY" scripts/seed_data.py >/dev/null
 # Planted rather than mocked. A journey that asserts how UNKNOWN is presented,
 # against a fixture that did not reach UNKNOWN the way the system does, is
 # asserting the presentation of something that never happened.
+# Detection runs here rather than being left to whichever spec happens to go
+# first. Playwright orders files alphabetically, so `accessibility.spec.ts` ran
+# before `journeys.spec.ts` created any incident and the incident-workspace scan
+# skipped — a test that silently does not run because of a filename.
+echo "==> running detection"
+DATABASE_URL="$DB" PYTHONPATH=. "$PY" - <<'PYEOF'
+from app.db import session_scope
+from app.detection.engine import detect
+
+with session_scope() as s:
+    report = detect(s, "MERCH_A")
+    print(f"    {report.incidents_created} incident(s)")
+    if report.incidents_created == 0:
+        raise SystemExit("the seeded data should raise incidents; the fixture is wrong")
+PYEOF
+
 echo "==> planting one unsettled action for journey D"
 DATABASE_URL="$DB" PYTHONPATH=. "$PY" - <<'PYEOF'
 from app.agent.approval import approve_and_execute

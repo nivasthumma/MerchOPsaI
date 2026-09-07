@@ -12,7 +12,7 @@
 // that is a *verified fact* (recovered). §49 keeps them in different columns
 // for that reason and nothing here merges them.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api } from "../api/client";
 import type { Dashboard } from "../api/types";
 import {

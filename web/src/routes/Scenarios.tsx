@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { Scenario, ScenarioResult } from "../api/types";
 import { Busy, ErrorBanner, SectionHead, Skeleton, StatStrip } from "../components/Bits";

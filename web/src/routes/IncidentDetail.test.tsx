@@ -8,14 +8,14 @@
 // nothing was dropped because a heading moved.
 
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IncidentDetail as Detail } from "../api/types";
 import IncidentDetail from "./IncidentDetail";
 import fixture from "../test-fixtures/incident.json";
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return { ...actual, useParams: () => ({ incidentId: "INC_TEST" }) };
 });
 vi.mock("../api/client", async (importOriginal) => {

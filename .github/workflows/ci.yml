@@ -81,7 +81,27 @@ jobs:
         # the separate `harden_db.py` step used to do here.
         run: PYTHONPATH=. python scripts/migrate.py
       - name: Run tests
-        run: pytest tests -q
+        # `--no-skips`, effectively. The one legitimate skip in this suite is
+        # the migration tests' "the role cannot create databases", which is a
+        # property of somebody's local Postgres and never of CI -- the service
+        # container's role owns the database. So a skip here means a test
+        # stopped running for a reason nobody chose, and `pytest -q` reports
+        # that as a quiet "N passed, 2 skipped" that reads like success.
+        #
+        # This was not hypothetical: a local run said "624 passed, 2 skipped"
+        # where every previous run said 626, and the summary named neither
+        # which two nor why.
+        run: |
+          # pipefail, or `tee` decides the exit code and a RED suite reports
+          # success. Actions' default shell is `bash -e`, which does not set it.
+          set -o pipefail
+          pytest tests -q | tee /tmp/pytest.txt
+          if grep -qE '[0-9]+ skipped' /tmp/pytest.txt; then
+            echo "::error::Tests were skipped in CI. A skipped test is a test that did not run:"
+            grep -E '[0-9]+ skipped' /tmp/pytest.txt
+            echo "Re-run with -rs to see which and why."
+            exit 1
+          fi
 
       - name: Published numbers match the tree
         # The README is the only thing most readers check, and a repository

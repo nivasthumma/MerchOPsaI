@@ -11,7 +11,7 @@
 // figure nobody can audit, and the four fetches it would take to assemble it
 // would each be from a different instant.
 
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api } from "../api/client";
 import type { CommandCenter as CommandCenterData, FunnelStage } from "../api/types";
 import { Empty, ErrorBanner, Money, SectionHead, Skeleton } from "../components/Bits";

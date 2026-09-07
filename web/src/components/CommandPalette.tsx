@@ -6,7 +6,7 @@
 // on the task page, next to the evidence, or it does not happen.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useModalFocus } from "../hooks/useModalFocus";
 import { api } from "../api/client";
 import type { SearchHit } from "../api/types";

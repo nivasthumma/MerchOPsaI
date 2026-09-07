@@ -10,7 +10,7 @@
 // they "should" have happened in, and does not summarise. An out-of-order
 // provider event is shown out of order, because that is the fact.
 
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { api } from "../api/client";
 import type { LifecycleEvent, PaymentLifecycle as Data } from "../api/types";
 import {

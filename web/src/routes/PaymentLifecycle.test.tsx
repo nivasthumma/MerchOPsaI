@@ -5,14 +5,14 @@
 // gate, approval, execution, verification and a provider event.
 
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PaymentLifecycle as Data } from "../api/types";
 import PaymentLifecycle from "./PaymentLifecycle";
 import fixture from "../test-fixtures/payment-lifecycle.json";
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return { ...actual, useParams: () => ({ paymentId: "SYN_PAY_0002" }) };
 });
 vi.mock("../api/client", async (importOriginal) => {

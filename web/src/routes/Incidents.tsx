@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { IncidentList, IncidentQuery, SavedView } from "../api/types";
 import {

@@ -23,7 +23,7 @@
 // is not one of those, and `/tasks/{id}` shows the tool calls and the
 // transcript for anyone who needs to audit how a conclusion was reached.
 
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { api } from "../api/client";
 import type { ActionRow, IncidentDetail as Detail } from "../api/types";
 import {

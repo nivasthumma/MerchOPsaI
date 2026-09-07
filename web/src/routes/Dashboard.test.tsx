@@ -5,7 +5,7 @@
 // ends by warning against.
 
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Dashboard as DashboardData } from "../api/types";
 import Dashboard from "./Dashboard";

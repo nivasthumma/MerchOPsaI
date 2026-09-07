@@ -712,18 +712,19 @@ are different claims.
 
 ### Supply-chain limits
 
-23. **Two moderate npm advisories are open in a production dependency**, assessed
-    rather than waved through. Both are in `react-router` 6, and neither has a fix
-    available on the 6 line. `GHSA-337j-9hxr-rhxg` is an SSR hydration issue and is
-    not reachable here — this is a pure SPA mounted with `createRoot`, and there is
-    no server renderer. `GHSA-wrjc-x8rr-h8h6` is an open redirect: a path beginning
-    with a backslash is treated as same-origin by `<Link>` and `useNavigate` and
-    then followed off-site. That one *is* reachable in principle, so it is closed
-    locally rather than argued away — `internalRoute()` in `CommandPalette.tsx`
-    admits only a path that starts with a single `/` and falls back to `/`. The
-    palette is the only place a whole route arrives as data; everywhere else
-    interpolates an id into a fixed template. Upgrading to `react-router` 7 is the
-    real fix and is a routing-API change, not a version bump.
+23. **`npm audit` reports zero, and that is a recent state rather than a standing
+    property.** On 2026-09-07 it reported eight. Two were in a dependency that ships
+    to the browser: `react-router` 6 carried `GHSA-337j-9hxr-rhxg` (SSR hydration,
+    unreachable here — pure SPA, `createRoot`, no server renderer) and
+    `GHSA-wrjc-x8rr-h8h6` (open redirect: a path beginning with a backslash treated
+    as same-origin by `<Link>` and `useNavigate`, then followed off-site). The second
+    was reachable in principle. Both are gone at `react-router` 7.18.3.
+
+    `internalRoute()` in `CommandPalette.tsx` stays. It was written to close the open
+    redirect locally when no upstream fix existed, and it is worth keeping now that
+    one does: the palette is the only place a *whole* route arrives as data rather
+    than as an id interpolated into a fixed template, and a guard on that input
+    should not depend on which version of a router is installed. Two tests hold it.
 24. **Six advisories in the build and test tooling were closed by upgrading it,
     not by widening the gate.** Before 2026-09-08 `npm audit` reported eight: the
     two above plus `vite` 5.4.21 (high, path traversal in optimized-deps `.map`
@@ -738,6 +739,14 @@ are different claims.
     seconds into a test run. Verified by the full suite: 295 Vitest tests, the build,
     and all eleven browser journeys and accessibility scans against `vite preview`,
     which is the part a Vite major could have broken silently.
+
+    The router went the same way for the same reason, and stopped one major short of
+    the newest on purpose: `react-router` 8 requires React ≥ 19.2.7, and folding a
+    React major into an advisory fix would be smuggling a much larger decision
+    through a security patch. 7.18.3 clears both advisories on React 18. `react-router-dom`
+    is gone — v7 merged it back into `react-router`, and the imports now say so.
+    It costs 28 kB raw / 9 kB gzipped in the bundle, which is recorded rather than
+    discovered later.
 25. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
     CI since the start; the web half had no equivalent, which means every advisory
     above had been open and unread rather than open and accepted. `make web-audit`

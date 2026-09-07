@@ -17,7 +17,7 @@
 // (P1-14).
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type {
   ActionCenter as ActionCenterData, ActionRow, PendingApprovalRow,

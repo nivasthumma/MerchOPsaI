@@ -7,7 +7,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { DensityToggle } from "./Chrome";
 import { CommandPalette, internalRoute } from "./CommandPalette";
 import { Stepper } from "./Stepper";

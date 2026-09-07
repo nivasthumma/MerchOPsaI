@@ -17,7 +17,7 @@
 // refund queue with no amounts in it and nothing on screen says so.
 
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionCenter, IncidentDetail as Detail } from "../api/types";
 import Actions from "./Actions";

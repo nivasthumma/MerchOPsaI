@@ -15,6 +15,7 @@ from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 
 SPEC_RECOVERY_CANDIDATES = ToolSpec(
     name="calculate_recovery_candidates",
+    activity_label="Recovery candidates calculated",
     description=(
         "For an incident, compute which transactions could be recovered, which "
         "are eligible, what intervention fits, and what recovery is expected to "

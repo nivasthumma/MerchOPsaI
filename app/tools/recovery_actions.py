@@ -47,6 +47,7 @@ from app.verification.schedule import record_attempt
 
 SPEC_PAYMENT_LINK = ToolSpec(
     name="generate_payment_link",
+    activity_label="Payment link created",
     description=(
         "Create a payment link so a customer can complete a payment that failed. "
         "This CONTACTS THE CUSTOMER and requires human approval; it can never "
@@ -75,6 +76,7 @@ SPEC_PAYMENT_LINK = ToolSpec(
 
 SPEC_NOTIFICATION = ToolSpec(
     name="send_customer_notification",
+    activity_label="Customer contacted",
     description=(
         "Send a customer a message from a fixed template. This CONTACTS THE "
         "CUSTOMER, cannot be unsent, and requires human approval. Refuses if the "

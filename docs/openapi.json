@@ -780,6 +780,54 @@
         "title": "ActivityEvent",
         "type": "object"
       },
+      "ActivityStep": {
+        "additionalProperties": false,
+        "description": "One step of the agent's operational progress \u2014 plan P0-08.\n\n`state` is the claim: `done` happened and worked, `failed` happened and did\nnot, `blocked` is waiting on a person, `running` is in flight, `pending` was\nexpected and not reached. A UI narrows on these.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "done",
+              "failed",
+              "blocked",
+              "running",
+              "pending"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "state"
+        ],
+        "title": "ActivityStep",
+        "type": "object"
+      },
       "AgentActivity": {
         "additionalProperties": false,
         "properties": {
@@ -1984,6 +2032,17 @@
       "IncidentList": {
         "additionalProperties": false,
         "properties": {
+          "applied_view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied View"
+          },
           "incidents": {
             "items": {
               "$ref": "#/components/schemas/IncidentSummary"
@@ -1994,6 +2053,14 @@
           "total_revenue_at_risk_minor": {
             "title": "Total Revenue At Risk Minor",
             "type": "integer"
+          },
+          "views": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedView"
+            },
+            "title": "Views",
+            "type": "array"
           }
         },
         "required": [
@@ -3439,6 +3506,42 @@
         "title": "RunVersions",
         "type": "object"
       },
+      "SavedView": {
+        "additionalProperties": false,
+        "description": "One saved view \u2014 plan P1-05. Declared server-side so that \"My attention\"\ncannot mean one thing in a pasted link and another in the sidebar.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "hint",
+          "filter",
+          "count"
+        ],
+        "title": "SavedView",
+        "type": "object"
+      },
       "ScenarioCheck": {
         "additionalProperties": false,
         "properties": {
@@ -3781,6 +3884,14 @@
               "$ref": "#/components/schemas/ActionView"
             },
             "title": "Actions",
+            "type": "array"
+          },
+          "activity": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ActivityStep"
+            },
+            "title": "Activity",
             "type": "array"
           },
           "agent_confidence": {
@@ -5031,7 +5142,7 @@
     },
     "/incidents": {
       "get": {
-        "description": "The operations console. Scoped to the caller's merchant, ordered by\nrevenue at risk \u2014 the largest problem is the one to open first.",
+        "description": "The operations console \u2014 plan P1-05. Scoped to the caller's merchant,\nordered by revenue at risk: the largest problem is the one to open first.\n\nFiltering happens in SQL. A console that fetches every incident and filters\nin the browser gets slower as the merchant gets busier, and puts the\nmerchant scope and the filter in two different places.\n\n`view` names one of the saved views, which are declared server-side\n(`app.incidents.filters.SAVED_VIEWS`) so that \"My attention\" cannot mean one\nthing in a pasted link and another in the sidebar. A view a client asks for\nand nobody declares is a 422 rather than an unfiltered list \u2014 silently\nshowing everything would read as though the view matched every incident.\n\nThe unfiltered call is unchanged and still takes the fast path, so nothing\nthat used this endpoint before pays for the filtering it does not use.",
         "operationId": "list_incidents_incidents_get",
         "parameters": [
           {
@@ -5041,6 +5152,170 @@
             "schema": {
               "default": false,
               "title": "Include Closed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "View"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "incident_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Incident Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "payment_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Method"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_amount_minor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Amount Minor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_age_hours",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Age Hours"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unresolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unresolved",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approval_required",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Approval Required",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_unknown",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Has Unknown",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "escalated",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Escalated",
               "type": "boolean"
             }
           },

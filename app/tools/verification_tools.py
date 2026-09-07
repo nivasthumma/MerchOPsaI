@@ -23,6 +23,7 @@ from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 
 SPEC_PAYMENT_STATUS = ToolSpec(
     name="get_payment_status",
+    activity_label="Provider payment state read",
     description=(
         "Read a payment's CURRENT state from the payment provider, not from our "
         "records. Use this to check what actually happened externally, and to "
@@ -100,6 +101,7 @@ def get_payment_status(session, merchant_id: str, payment_id: str, *, adapter=No
 
 SPEC_PROVIDER_EVENT = ToolSpec(
     name="get_provider_event",
+    activity_label="Provider event read",
     description=(
         "Provider webhook events recorded for an entity: what the provider told "
         "us, when, and whether we acted on it. This is evidence of what was "
@@ -144,6 +146,7 @@ def get_provider_event(session, merchant_id: str, entity_id: str, limit: int = 1
 
 SPEC_RECONCILE = ToolSpec(
     name="reconcile_transaction",
+    activity_label="Internal and provider state reconciled",
     description=(
         "Re-read the provider's state for a previously executed action and "
         "record what was found. Use this to resolve an action whose outcome is "

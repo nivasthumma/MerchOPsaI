@@ -9,12 +9,14 @@ import hmac
 import os
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select, text
 
+from app.agent.activity import build as agent_activity
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
@@ -45,6 +47,13 @@ from app.detection import detect
 from app.detection.engine import open_incidents
 from app.eval.runner import load_scenarios, run_scenario
 from app.failures import TAXONOMY, describe
+from app.incidents.filters import (
+    SAVED_VIEWS,
+    IncidentFilter,
+    from_view,
+    search_incidents,
+    view_counts,
+)
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
 from app.metrics import objectives, operational_metrics
@@ -185,6 +194,11 @@ def _task_view(s, task: AgentTask) -> dict:
             "required_signatures": a.required_signatures,
             "signed_by": [s.user_id for s in a.signatures if s.decision == "APPROVED"],
         } for a in approvals],
+        # Plan P0-08. Operational progress, built from rows this application
+        # wrote -- tool calls, policy decisions, approvals, actions -- and never
+        # from model-authored text. A progress list assembled from prose is one
+        # the model can write steps into that never happened.
+        "activity": agent_activity(s, task),
         "actions": [{
             "id": a.id, "action_type": a.action_type, "status": a.status.value,
             "target_payment_id": a.target_payment_id,
@@ -872,19 +886,73 @@ def _owned_incident(s, incident_id: str, principal: Principal) -> Incident:
 @app.get("/incidents", response_model=schemas.IncidentList,
           response_model_exclude_unset=True)
 def list_incidents(include_closed: bool = False,
+                   view: str | None = None,
+                   severity: Annotated[list[str] | None, Query()] = None,
+                   status: Annotated[list[str] | None, Query()] = None,
+                   incident_type: Annotated[list[str] | None, Query()] = None,
+                   payment_method: Annotated[list[str] | None, Query()] = None,
+                   min_amount_minor: int | None = None,
+                   max_age_hours: int | None = None,
+                   unresolved: bool = False,
+                   approval_required: bool = False,
+                   has_unknown: bool = False,
+                   escalated: bool = False,
                    principal: Principal = Depends(current_principal)):
-    """The operations console. Scoped to the caller's merchant, ordered by
-    revenue at risk — the largest problem is the one to open first."""
+    """The operations console — plan P1-05. Scoped to the caller's merchant,
+    ordered by revenue at risk: the largest problem is the one to open first.
+
+    Filtering happens in SQL. A console that fetches every incident and filters
+    in the browser gets slower as the merchant gets busier, and puts the
+    merchant scope and the filter in two different places.
+
+    `view` names one of the saved views, which are declared server-side
+    (`app.incidents.filters.SAVED_VIEWS`) so that "My attention" cannot mean one
+    thing in a pasted link and another in the sidebar. A view a client asks for
+    and nobody declares is a 422 rather than an unfiltered list — silently
+    showing everything would read as though the view matched every incident.
+
+    The unfiltered call is unchanged and still takes the fast path, so nothing
+    that used this endpoint before pays for the filtering it does not use.
+    """
+    filters = IncidentFilter(
+        severity=severity or [], status=status or [],
+        incident_type=incident_type or [], payment_method=payment_method or [],
+        min_amount_minor=min_amount_minor, max_age_hours=max_age_hours,
+        unresolved=unresolved, approval_required=approval_required,
+        has_unknown=has_unknown, escalated=escalated,
+        include_closed=include_closed,
+    )
+    if view is not None:
+        resolved = from_view(view)
+        if resolved is None:
+            raise HTTPException(422, {
+                "error": f"Unknown saved view '{view}'.",
+                "code": "unknown_view",
+                "known": [v["key"] for v in SAVED_VIEWS]})
+        filters = resolved
+
     with session_scope() as s:
-        if include_closed:
+        if filters == IncidentFilter() and view is None:
+            rows = open_incidents(s, principal.merchant_id)
+        elif include_closed and filters == IncidentFilter(include_closed=True):
             rows = (s.query(Incident)
                     .filter(Incident.merchant_id == principal.merchant_id)
                     .order_by(Incident.revenue_at_risk_minor.desc(),
                               Incident.detected_at.desc()).all())
         else:
-            rows = open_incidents(s, principal.merchant_id)
+            ids = search_incidents(s, principal.merchant_id, filters)
+            by_id = {i.id: i for i in s.query(Incident)
+                     .filter(Incident.id.in_(ids)).all()} if ids else {}
+            rows = [by_id[i] for i in ids if i in by_id]
+
         return {"incidents": [_incident_view(s, i) for i in rows],
-                "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows)}
+                "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows),
+                # The views and their counts, so a client renders five numbers
+                # from one read rather than five requests at five instants.
+                "views": [{**v, "count": c}
+                          for v, c in ((v, view_counts(s, principal.merchant_id)
+                                        .get(v["key"], 0)) for v in SAVED_VIEWS)],
+                "applied_view": view}
 
 
 @app.get("/incidents/{incident_id}", response_model=schemas.IncidentSummary,

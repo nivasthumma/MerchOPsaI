@@ -109,6 +109,20 @@ class ToolSpec(BaseModel):
     # money out; a notification cannot be unsent.
     reversible: bool = True
 
+    # MerchantOps §26 / plan P0-08: what this tool DOING reads as to an
+    # operator, in business language and past tense.
+    #
+    # It lives on the spec because the registry is already the single
+    # declaration of everything else about a tool -- its risk class, its
+    # permissions, its reversibility. A separate name-to-label mapping
+    # somewhere else would be a second list to keep in step, and the failure
+    # mode of forgetting it is a screen that reads `get_failure_breakdown` at
+    # the merchant.
+    #
+    # `description` cannot do this job: that is written for the model, in the
+    # imperative, and says what the tool is FOR. This says what just happened.
+    activity_label: str = ""
+
     def to_anthropic_tool(self) -> dict:
         """Anthropic tool definition. strict=True + additionalProperties:false
         so tool inputs validate exactly (CONTRACT §13 argument validation)."""

@@ -13,6 +13,7 @@ import {
 import { EvidencePanel } from "../components/Evidence";
 import { forgetOne } from "../recent";
 import { PolicyOutcome, policyDecisions } from "../components/PolicyOutcome";
+import { AgentActivity } from "../components/AgentActivity";
 import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
@@ -175,6 +176,14 @@ export default function TaskDetail() {
       </div>
 
       <Stepper task={task} />
+
+      {/* P0-08. What actually ran, in the order it ran, from rows the server
+          recorded. The stepper above says how far the loop got; this says what
+          it did on the way — two different questions, so two components. */}
+      <details className="activity-wrap" open>
+        <summary>Agent activity <span className="count">{task.activity?.length ?? 0}</span></summary>
+        <AgentActivity steps={task.activity ?? []} />
+      </details>
 
       <StatStrip items={[
         ["Tool calls", task.tool_calls ?? 0],

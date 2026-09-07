@@ -188,6 +188,8 @@ class TaskView(Contract):
     replayed_from: str | None
     approvals: list[ApprovalView]
     actions: list[ActionView]
+    # Plan P0-08. Derived from recorded rows, never from model prose.
+    activity: list[ActivityStep] = []
     # Present only when a CRITICAL action is waiting on a second signature.
     # `exclude_unset` keeps them absent otherwise rather than null.
     awaiting_signatures: int | None = None
@@ -506,6 +508,20 @@ class Readiness(Contract):
     degraded: list[str]
 
 
+class ActivityStep(Contract):
+    """One step of the agent's operational progress — plan P0-08.
+
+    `state` is the claim: `done` happened and worked, `failed` happened and did
+    not, `blocked` is waiting on a person, `running` is in flight, `pending` was
+    expected and not reached. A UI narrows on these.
+    """
+    key: str
+    label: str
+    state: Literal["done", "failed", "blocked", "running", "pending"]
+    at: str | None = None
+    detail: str = ""
+
+
 class ActionDetail(Contract):
     id: str
     task_id: str
@@ -638,9 +654,23 @@ class IncidentSummary(Contract):
     legal_transitions: list[str] | None = None
 
 
+class SavedView(Contract):
+    """One saved view — plan P1-05. Declared server-side so that "My attention"
+    cannot mean one thing in a pasted link and another in the sidebar."""
+    key: str
+    label: str
+    hint: str
+    filter: dict
+    count: int
+
+
 class IncidentList(Contract):
     incidents: list[IncidentSummary]
     total_revenue_at_risk_minor: int
+    # Plan P1-05. Served with the list so five view counts come from one read
+    # at one instant rather than five requests at five.
+    views: list[SavedView] = []
+    applied_view: str | None = None
 
 
 class IncidentTrace(Contract):

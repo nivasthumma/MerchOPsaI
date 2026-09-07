@@ -31,6 +31,7 @@ from app.verification.schedule import record_attempt
 
 SPEC_REQUEST_REFUND = ToolSpec(
     name="request_refund",
+    activity_label="Refund requested",
     description=(
         "Request a refund for a captured payment. This is a HIGH-risk financial "
         "action: it always requires human approval and can never execute directly "
@@ -64,6 +65,7 @@ SPEC_REQUEST_REFUND = ToolSpec(
 
 SPEC_REFUND_STATUS = ToolSpec(
     name="get_refund_status",
+    activity_label="Refund state read",
     description="Read the current state of a refund action previously created for this task.",
     input_schema={
         "type": "object",

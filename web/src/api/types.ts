@@ -91,6 +91,22 @@ export interface RunVersions {
   workflow: string | null;
 }
 
+/** One step of the agent's operational progress — plan P0-08.
+ *
+ *  `state` is the claim being made: `done` happened and worked, `failed`
+ *  happened and did not, `blocked` waits on a person, `running` is in flight,
+ *  `pending` was expected and not reached. */
+export interface ActivityStep {
+  key: string;
+  label: string;
+  state: "done" | "failed" | "blocked" | "running" | "pending";
+  /** Optional because the server omits it: several steps are derived from a
+   *  state rather than from an event, and those have no honest timestamp to
+   *  give. Invented ones would be worse than absent. */
+  at?: string | null;
+  detail: string;
+}
+
 export interface Task {
   id: string;
   tenant_id: string | null;
@@ -113,6 +129,10 @@ export interface Task {
   replayed_from: string | null;
   approvals: Approval[];
   actions: AgentAction[];
+  /** Operational progress — plan P0-08. Built server-side from recorded rows
+   *  (tool calls, policy decisions, approvals, actions), never from
+   *  model-authored text, so a step exists because something happened. */
+  activity: ActivityStep[];
 
   /** MerchantOps §37. The model's own typed output. `agent_confidence` is
    *  displayed and consulted by nothing; `requires_human` is the OR of policy
@@ -565,6 +585,40 @@ export interface IncidentSummary {
   title: string; summary: string; revenue_at_risk_minor: number;
   detection_rule: string; detection_version: string; correlation_id: string;
   started_at: string; detected_at: string; resolved_at: string | null;
+}
+
+/** One saved view — plan P1-05. Declared server-side and served with the list,
+ *  so "My attention" cannot mean one thing in a pasted link and another in the
+ *  sidebar, and five counts come from one read rather than five requests. */
+export interface SavedView {
+  key: string;
+  label: string;
+  hint: string;
+  filter: Record<string, unknown>;
+  count: number;
+}
+
+export interface IncidentList {
+  incidents: IncidentSummary[];
+  total_revenue_at_risk_minor: number;
+  views: SavedView[];
+  applied_view: string | null;
+}
+
+/** The eleven filters P1-05 names. Every one is applied in SQL server-side. */
+export interface IncidentQuery {
+  view?: string;
+  severity?: string[];
+  status?: string[];
+  incident_type?: string[];
+  payment_method?: string[];
+  min_amount_minor?: number;
+  max_age_hours?: number;
+  unresolved?: boolean;
+  approval_required?: boolean;
+  has_unknown?: boolean;
+  escalated?: boolean;
+  include_closed?: boolean;
 }
 
 export interface IncidentDetail extends IncidentSummary {

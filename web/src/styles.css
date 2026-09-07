@@ -1377,3 +1377,45 @@ tr.is-stale td { opacity: 0.62; }
 @media (prefers-reduced-motion: reduce) {
   .funnel-fill, .tile, a.tile { transition: none; }
 }
+
+/* --- P0-08: agent activity ---------------------------------------------
+   Operational progress, built server-side from recorded rows. Restrained
+   deliberately: this is a list of things that happened, and animating it
+   would make a completed run look like a running one. */
+.activity-wrap { margin: 0 0 14px; }
+.activity-wrap > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); padding: 4px 0;
+}
+.activity-wrap > summary .count { margin-left: 6px; font-family: var(--mono); }
+
+.activity { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.activity li {
+  display: grid; gap: 4px 10px; align-items: baseline;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.activity li:last-child { border-bottom: 0; }
+.act-glyph { text-align: center; font-size: 11px; }
+.act-label { min-width: 0; }
+/* Wraps under the label rather than beside it: a reason an operator cannot
+   read is a reason that is not there. */
+.act-detail { grid-column: 2 / -1; font-size: 12px; }
+.act-at { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* Colour is on the glyph, never on the label alone — the glyph is already a
+   distinct shape per state, so meaning survives greyscale (P1-12). */
+.activity li[data-state="done"]    .act-glyph { color: var(--ok); }
+.activity li[data-state="failed"]  .act-glyph { color: var(--danger); }
+.activity li[data-state="blocked"] .act-glyph { color: var(--warn); }
+.activity li[data-state="running"] .act-glyph { color: var(--accent); }
+.activity li[data-state="pending"] .act-glyph { color: var(--text-dim); }
+
+/* A visual break inside the filter row, between the state filters and the
+   severity ones. Presentational only — the group's aria-label already says
+   what the row is, and a separator that announced itself would be noise. */
+.filter-sep {
+  width: 1px; align-self: stretch; margin: 0 4px;
+  background: var(--border);
+}

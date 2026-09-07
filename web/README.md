@@ -90,6 +90,16 @@ npm test             # 230 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
+> **One fixture is not a live response, despite the header above saying they are.**
+> `task.json` carries `intent: duplicate_payment` *and* a completed, approved,
+> verified refund. No single request produces both: the deterministic planner sets
+> `intent`/`recommendation`/`agent_confidence` only on the revenue-investigation path,
+> and that path proposes no refund. It is a composite, assembled or captured under
+> older behaviour, and three test files read it. Splitting it into two genuinely
+> captured fixtures — one completed-with-conclusion, one completed-refund — is real
+> work and is not done. Found 2026-09-07 while adding P0-08; left as it was rather
+> than reshaped, because reshaping it silently changes what those three files cover.
+
 The tests cover the places where a frontend bug would misrepresent a financial state
 rather than merely look wrong:
 

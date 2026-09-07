@@ -11,7 +11,8 @@ import type {
   CommandCenter,
   Dashboard,
   IncidentDetail,
-  IncidentSummary,
+  IncidentList,
+  IncidentQuery,
   EscalatedAction, Health, Metrics, ReconcileReport, Readiness, ReplayResult, Scenario,
   Principal, ProviderChange, ScenarioResult, SearchResults, Task, TaskEvidence, TraceEvent,
 } from "./types";
@@ -171,9 +172,28 @@ export const api = {
    *  one counts operations, the other reports money. */
   dashboard: () => request<Dashboard>("/dashboard"),
 
-  incidents: () =>
-    request<{ incidents: IncidentSummary[]; total_revenue_at_risk_minor: number }>(
-      "/incidents"),
+  /** Plan P1-05. Filtering happens server-side, in SQL: the derived filters
+   *  (approval required, UNKNOWN, escalated) are facts about the actions an
+   *  incident produced, which this client cannot compute without fetching the
+   *  whole action table.
+   *
+   *  Array values repeat the key (`?severity=HIGH&severity=CRITICAL`), which is
+   *  what FastAPI's `Query()` reads as a list. */
+  incidents: (q: IncidentQuery = {}) => {
+    const p = new URLSearchParams();
+    if (q.view) p.set("view", q.view);
+    for (const k of ["severity", "status", "incident_type", "payment_method"] as const) {
+      for (const v of q[k] ?? []) p.append(k, v);
+    }
+    if (q.min_amount_minor != null) p.set("min_amount_minor", String(q.min_amount_minor));
+    if (q.max_age_hours != null) p.set("max_age_hours", String(q.max_age_hours));
+    for (const k of ["unresolved", "approval_required", "has_unknown",
+                     "escalated", "include_closed"] as const) {
+      if (q[k]) p.set(k, "true");
+    }
+    const suffix = p.toString() ? `?${p}` : "";
+    return request<IncidentList>(`/incidents${suffix}`);
+  },
 
   /** Idempotent: a second sweep over the same window reports `already_known`
    *  rather than raising a second incident for one anomaly. */

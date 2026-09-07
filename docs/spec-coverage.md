@@ -1,7 +1,9 @@
 # MerchantOps.md coverage — what is closed and what is not
 
 **Audited:** 2026-09-01, against `feat/incident-spine`.
-**Updated:** 2026-09-01 — the closable items below are now closed.
+**Updated:** 2026-09-07 — see *What changed on 2026-09-07* at the end. One row
+of the §66 table below is now wrong in the other direction: `provider_mappings`
+is a table.
 
 `docs/gap-closure-plan.md` reports all eight phases delivered, and it is. That is not the
 same claim as "every section of the specification is closed", and this file exists so the
@@ -51,7 +53,7 @@ Not a defect today. A modelling gap that gets more expensive the longer it is le
 | `roles`, `permissions` | permissions are a JSON list on `users`. Works; not a table, so not queryable or auditable as a set. |
 | `agent_messages` | **CLOSED.** One row per message as it is appended, including the final answer, with untrusted content flagged and secrets redacted. `GET /tasks/{id}/messages`. |
 | `policies`, `policy_decisions` | policy is code, decisions live in `audit_logs`. Deliberate — per-merchant configurable policy is explicitly future work. |
-| `provider_mappings` | columns on `payments`. Deliberate, documented in ADR-0002. |
+| `provider_mappings` | **CLOSED (ADR-0033).** Was two columns on `payments`; now a table with provider and environment on the row and both directions UNIQUE. The columns remain as the mock provider's own store, and `check_consistency` asserts the two agree. |
 | `evaluation_scenarios`, `evaluation_runs` | a YAML file and a run id on `evaluation_results`. Deliberate. |
 
 The remaining six are deliberate and documented. `roles`/`permissions` as tables is the only
@@ -130,3 +132,34 @@ mutants.
 The standing limitations in the README are a different list: those are honest properties of
 what was built (a sweep rather than a daemon, confidence as a display value, 21 of 589 payments
 externally mapped), not gaps against the specification.
+
+---
+
+## What changed on 2026-09-07
+
+Work against the enterprise production plan. Listed by which specification
+section it moves, because "closed" above was a claim made before several of
+these existed.
+
+| § | Was | Now |
+|---|---|---|
+| §6 | Two nullable columns on `payments`, no provider, no environment, no uniqueness in either direction | `provider_mappings`, a table, with both directions UNIQUE and one resolver (ADR-0033) |
+| §7 | `/trace/{correlation_id}` — everything one **operation** touched | `GET /payments/{id}/lifecycle` — everything that touched one **payment**, across every correlation id it spans |
+| §11 | `/health` reported configuration and was used as a liveness *and* readiness probe | `/liveness` (no I/O) and `/readiness` (per-component verdicts, 503 on a required failure), with operational detail gated behind a token |
+| §12 | Three rules: baseline deviation, duplicates, provider burst | Five. Added failure-code spikes (diagnostic, claims no revenue) and unusual refund activity (claims the excess only) |
+| §26 | Escalation re-derived from `verify_attempts >= 5` at two call sites | A recorded decision with a timestamp, a stored backoff schedule, and a repair pass that guarantees it is made |
+
+The operations console the plan asks for in P0-03 through P0-08 — Action
+Center, Command Center, the incident decision workspace, agent activity built
+from recorded rows — did not exist and now does. That is product surface rather
+than a specification section, so it is not in the table.
+
+### Still not closed, and why
+
+- **§14, §30, §42** — unchanged. Blocked on credentials, as above.
+- **§20 out-of-order webhooks** — the one gap
+  [`docs/adversarial-coverage.md`](adversarial-coverage.md) found. The behaviour
+  is right by construction; nothing tests it.
+- **§8's worker topology** — still a cron sweep, still a deliberate scope
+  decision. `/readiness` now reports when the sweep has stopped running, which
+  makes the trade-off visible rather than silent.

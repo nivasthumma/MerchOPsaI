@@ -43,6 +43,7 @@ from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 from app.verification.engine import VerificationResult
+from app.verification.schedule import record_attempt
 
 SPEC_PAYMENT_LINK = ToolSpec(
     name="generate_payment_link",
@@ -200,7 +201,7 @@ def execute_payment_link(session, adapter, *, task_id: str, merchant_id: str,
         action.verification_state = VerificationState.UNKNOWN
         action.verification_detail = {"reason": str(e)}
         action.verify_attempts += 1
-        session.flush()
+        record_attempt(session, action, VerificationState.UNKNOWN)
         return ActionOutcome(action, ToolResult(
             success=False, error_code="EXTERNAL_STATE_UNKNOWN",
             data={"action_id": action.id, "error": str(e)}, risk_level="MEDIUM"))
@@ -208,7 +209,7 @@ def execute_payment_link(session, adapter, *, task_id: str, merchant_id: str,
         action.status = ActionStatus.FAILED
         action.verification_state = VerificationState.FAILED
         action.verification_detail = {"reason": str(e)}
-        session.flush()
+        record_attempt(session, action, VerificationState.FAILED)
         return ActionOutcome(action, ToolResult(
             success=False, error_code=e.code, data={"error": str(e)}, risk_level="MEDIUM"))
 
@@ -223,7 +224,7 @@ def execute_payment_link(session, adapter, *, task_id: str, merchant_id: str,
     action.status = (ActionStatus.CONFIRMED if vr.state is VerificationState.SUCCESS
                      else ActionStatus.UNKNOWN if vr.state is VerificationState.UNKNOWN
                      else ActionStatus.FAILED)
-    session.flush()
+    record_attempt(session, action, vr.state)
 
     return ActionOutcome(action, ToolResult(
         success=vr.state is VerificationState.SUCCESS,
@@ -276,7 +277,7 @@ def execute_notification(session, adapter, *, task_id: str, merchant_id: str,
         action.verification_state = VerificationState.UNKNOWN
         action.verification_detail = {"reason": str(e)}
         action.verify_attempts += 1
-        session.flush()
+        record_attempt(session, action, VerificationState.UNKNOWN)
         return ActionOutcome(action, ToolResult(
             success=False, error_code="EXTERNAL_STATE_UNKNOWN",
             data={"action_id": action.id, "error": str(e)}, risk_level="MEDIUM"))
@@ -284,7 +285,7 @@ def execute_notification(session, adapter, *, task_id: str, merchant_id: str,
         action.status = ActionStatus.FAILED
         action.verification_state = VerificationState.FAILED
         action.verification_detail = {"reason": str(e)}
-        session.flush()
+        record_attempt(session, action, VerificationState.FAILED)
         return ActionOutcome(action, ToolResult(
             success=False, error_code=e.code, data={"error": str(e)}, risk_level="MEDIUM"))
 
@@ -299,7 +300,7 @@ def execute_notification(session, adapter, *, task_id: str, merchant_id: str,
     action.status = (ActionStatus.CONFIRMED if vr.state is VerificationState.SUCCESS
                      else ActionStatus.UNKNOWN if vr.state is VerificationState.UNKNOWN
                      else ActionStatus.FAILED)
-    session.flush()
+    record_attempt(session, action, vr.state)
 
     return ActionOutcome(action, ToolResult(
         success=vr.state is VerificationState.SUCCESS,

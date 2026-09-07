@@ -1,6 +1,115 @@
 {
   "components": {
     "schemas": {
+      "ActionCenter": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalRow"
+            },
+            "title": "Awaiting Approval",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ActionCenterCounts"
+          },
+          "escalated": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Escalated",
+            "type": "array"
+          },
+          "executing": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Executing",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "recently_completed": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Recently Completed",
+            "type": "array"
+          },
+          "reconciliation_policy": {
+            "$ref": "#/components/schemas/ReconciliationPolicy"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "unknown": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Unknown",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "merchant_id",
+          "awaiting_approval",
+          "executing",
+          "unknown",
+          "escalated",
+          "recently_completed",
+          "counts",
+          "reconciliation_policy",
+          "sections"
+        ],
+        "title": "ActionCenter",
+        "type": "object"
+      },
+      "ActionCenterCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "title": "Awaiting Approval",
+            "type": "integer"
+          },
+          "escalated": {
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "executing": {
+            "title": "Executing",
+            "type": "integer"
+          },
+          "recently_completed": {
+            "title": "Recently Completed",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "awaiting_approval",
+          "executing",
+          "unknown",
+          "escalated",
+          "recently_completed"
+        ],
+        "title": "ActionCenterCounts",
+        "type": "object"
+      },
       "ActionDetail": {
         "additionalProperties": false,
         "properties": {
@@ -177,6 +286,331 @@
         "title": "ActionDetail",
         "type": "object"
       },
+      "ActionRow": {
+        "additionalProperties": false,
+        "description": "One action in the Action Center, in every section that lists actions.\n\nDeliberately one shape for all four action sections. A per-section model is\nhow \"amount_minor\" comes to mean the requested amount in one column and the\nverified amount in another.",
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "approval_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Decision"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "escalated": {
+            "default": false,
+            "title": "Escalated",
+            "type": "boolean"
+          },
+          "escalated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Escalated At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Expires At"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Last Verified At"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "next_verify_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Next Verify At"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Latency Ms"
+          },
+          "recovery_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Candidate Id"
+          },
+          "required_signatures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Signatures"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Payment Id"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Request"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Updated At"
+          },
+          "verification_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Latency Ms"
+          },
+          "verification_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification State"
+          },
+          "verify_attempts": {
+            "title": "Verify Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "merchant_id",
+          "action_type",
+          "status",
+          "verify_attempts"
+        ],
+        "title": "ActionRow",
+        "type": "object"
+      },
       "ActionView": {
         "additionalProperties": false,
         "description": "The action as it appears inside a task.",
@@ -282,6 +716,68 @@
           "verify_attempts"
         ],
         "title": "ActionView",
+        "type": "object"
+      },
+      "ActivityEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "event_type",
+          "payload"
+        ],
+        "title": "ActivityEvent",
         "type": "object"
       },
       "AgentActivity": {
@@ -524,6 +1020,50 @@
         "title": "ApprovalView",
         "type": "object"
       },
+      "AttentionCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals_expired": {
+            "title": "Approvals Expired",
+            "type": "integer"
+          },
+          "approvals_pending": {
+            "title": "Approvals Pending",
+            "type": "integer"
+          },
+          "critical_incidents": {
+            "title": "Critical Incidents",
+            "type": "integer"
+          },
+          "escalated_actions": {
+            "title": "Escalated Actions",
+            "type": "integer"
+          },
+          "open_incidents": {
+            "title": "Open Incidents",
+            "type": "integer"
+          },
+          "running_tasks": {
+            "title": "Running Tasks",
+            "type": "integer"
+          },
+          "unknown_actions": {
+            "title": "Unknown Actions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approvals_pending",
+          "approvals_expired",
+          "unknown_actions",
+          "escalated_actions",
+          "open_incidents",
+          "critical_incidents",
+          "running_tasks"
+        ],
+        "title": "AttentionCounts",
+        "type": "object"
+      },
       "CandidateView": {
         "additionalProperties": false,
         "properties": {
@@ -626,6 +1166,104 @@
           "attempts"
         ],
         "title": "CandidateView",
+        "type": "object"
+      },
+      "CommandCenter": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEvent"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "attention": {
+            "$ref": "#/components/schemas/AttentionCounts"
+          },
+          "by_incident": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Incident",
+            "type": "array"
+          },
+          "by_method": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "By Method",
+            "type": "array"
+          },
+          "funnel": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStage"
+            },
+            "title": "Funnel",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "revenue": {
+            "$ref": "#/components/schemas/RevenueHealth"
+          }
+        },
+        "required": [
+          "generated_at",
+          "merchant_id",
+          "revenue",
+          "funnel",
+          "attention",
+          "by_incident",
+          "by_method",
+          "activity"
+        ],
+        "title": "CommandCenter",
+        "type": "object"
+      },
+      "ComponentHealth": {
+        "additionalProperties": true,
+        "description": "One dependency's verdict.\n\n`extra=\"forbid\"` is relaxed here alone: each check attaches the facts that\nmake its own verdict actionable \u2014 mapping coverage, webhook counts, the\nreconciliation backlog \u2014 and a fixed union of every check's extras would be\na model that has to be edited every time a check learns something new.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "detail",
+          "required",
+          "latency_ms"
+        ],
+        "title": "ComponentHealth",
         "type": "object"
       },
       "CorrelationTrace": {
@@ -754,7 +1392,19 @@
       },
       "EscalatedAction": {
         "additionalProperties": false,
+        "description": "One row of the reconciliation work queue \u2014 plan P0-04.\n\nEvery field the plan names is here, because a queue that lists identifiers\nis not a work queue: age (`created_at`), amount, provider, external\nreference, last known state, attempts, last check, next retry, escalation,\nowner, and the incident and task it came from.\n\nTimestamps are `object` rather than `str` on the fields that come straight\nout of a `text()` query: those arrive as `datetime` and are serialised by\nFastAPI. Declaring them `str` would coerce and change the wire format of a\nresponse the frontend already parses.",
         "properties": {
+          "action_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Type"
+          },
           "amount_minor": {
             "anyOf": [
               {
@@ -765,6 +1415,40 @@
               }
             ],
             "title": "Amount Minor"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "escalated": {
+            "default": false,
+            "title": "Escalated",
+            "type": "boolean"
+          },
+          "escalated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Escalated At"
           },
           "external_payment_id": {
             "anyOf": [
@@ -792,9 +1476,71 @@
             "title": "Id",
             "type": "string"
           },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Last Verified At"
+          },
           "merchant_id": {
             "title": "Merchant Id",
             "type": "string"
+          },
+          "next_verify_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Next Verify At"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "target_payment_id": {
             "anyOf": [
@@ -1056,6 +1802,31 @@
         "title": "FindingView",
         "type": "object"
       },
+      "FunnelStage": {
+        "additionalProperties": false,
+        "description": "One stage of the recovery funnel \u2014 P1-03.\n\nOrdered and named server-side so at-risk can never be rendered as\nrecovered by a client that arranged six loose numbers itself.",
+        "properties": {
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "amount_minor"
+        ],
+        "title": "FunnelStage",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1235,6 +2006,20 @@
       "IncidentSummary": {
         "additionalProperties": false,
         "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ActionRow"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
           "correlation_id": {
             "anyOf": [
               {
@@ -1538,6 +2323,25 @@
           "invariants_broken"
         ],
         "title": "LedgerView",
+        "type": "object"
+      },
+      "Liveness": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checked_at"
+        ],
+        "title": "Liveness",
         "type": "object"
       },
       "Me": {
@@ -1860,6 +2664,119 @@
         "title": "OperationalMetrics",
         "type": "object"
       },
+      "PendingApprovalRow": {
+        "additionalProperties": false,
+        "description": "An approval no action exists for yet \u2014 the money has not moved.\n\nSeparate from `ActionRow` because there is genuinely no action row to\ndescribe: the claim is not made until the approval clears. Modelling it as\nan action with null everything would tell an operator an action exists.",
+        "properties": {
+          "action_payload": {
+            "additionalProperties": true,
+            "title": "Action Payload",
+            "type": "object"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "evidence": {
+            "default": [],
+            "items": {},
+            "title": "Evidence",
+            "type": "array"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Expires At"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "required_signatures": {
+            "title": "Required Signatures",
+            "type": "integer"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "signatures": {
+            "title": "Signatures",
+            "type": "integer"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Request"
+          }
+        },
+        "required": [
+          "approval_id",
+          "task_id",
+          "action_type",
+          "action_payload",
+          "risk_level",
+          "decision",
+          "required_signatures",
+          "signatures",
+          "expired"
+        ],
+        "title": "PendingApprovalRow",
+        "type": "object"
+      },
       "PlanBudget": {
         "additionalProperties": false,
         "properties": {
@@ -2058,6 +2975,49 @@
         "title": "ProviderRequest",
         "type": "object"
       },
+      "Readiness": {
+        "additionalProperties": false,
+        "properties": {
+          "blocking": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking",
+            "type": "array"
+          },
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "components": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ComponentHealth"
+            },
+            "title": "Components",
+            "type": "object"
+          },
+          "degraded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Degraded",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checked_at",
+          "components",
+          "blocking",
+          "degraded"
+        ],
+        "title": "Readiness",
+        "type": "object"
+      },
       "RecommendationView": {
         "additionalProperties": false,
         "properties": {
@@ -2125,6 +3085,25 @@
           "details"
         ],
         "title": "ReconcileReport",
+        "type": "object"
+      },
+      "ReconciliationPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "on_exhaustion": {
+            "title": "On Exhaustion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_attempts",
+          "on_exhaustion"
+        ],
+        "title": "ReconciliationPolicy",
         "type": "object"
       },
       "ReplayResult": {
@@ -2300,6 +3279,58 @@
           "success"
         ],
         "title": "ReplayStep",
+        "type": "object"
+      },
+      "RevenueHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "at_risk_minor": {
+            "title": "At Risk Minor",
+            "type": "integer"
+          },
+          "attempted_minor": {
+            "title": "Attempted Minor",
+            "type": "integer"
+          },
+          "failed_minor": {
+            "title": "Failed Minor",
+            "type": "integer"
+          },
+          "invariants_broken": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Invariants Broken",
+            "type": "array"
+          },
+          "outstanding_minor": {
+            "title": "Outstanding Minor",
+            "type": "integer"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "unknown_minor": {
+            "title": "Unknown Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "at_risk_minor",
+          "recoverable_minor",
+          "attempted_minor",
+          "recovered_minor",
+          "failed_minor",
+          "unknown_minor",
+          "outstanding_minor",
+          "invariants_broken"
+        ],
+        "title": "RevenueHealth",
         "type": "object"
       },
       "ReverifyResult": {
@@ -2535,6 +3566,90 @@
           "setup"
         ],
         "title": "ScenarioView",
+        "type": "object"
+      },
+      "SearchHit": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "route"
+        ],
+        "title": "SearchHit",
+        "type": "object"
+      },
+      "SearchResults": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query",
+          "results",
+          "truncated"
+        ],
+        "title": "SearchResults",
         "type": "object"
       },
       "SettleReport": {
@@ -3400,6 +4515,63 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/actions": {
+      "get": {
+        "description": "The Action Center \u2014 plan P0-03.\n\nOne read, five sections, one instant. A browser that assembled this from\n`/approvals`, `/actions/escalated` and `/incidents` would be showing counts\nfrom three different moments, and the moments diverge exactly when the\nnumbers are moving.\n\nDeclared above `/actions/{action_id}`: FastAPI matches in declaration order,\nand a parameterised path declared first would swallow this one.",
+        "operationId": "action_center_view_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionCenter"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Action Center View"
+      }
+    },
     "/actions/escalated": {
       "get": {
         "description": "Actions automatic reconciliation could not settle \u2014 the operator queue.",
@@ -3639,6 +4811,53 @@
           }
         },
         "summary": "List Approvals"
+      }
+    },
+    "/command-center": {
+      "get": {
+        "description": "The home screen \u2014 plan P0-05.\n\nRevenue health, the recovery funnel, what is waiting on a human, and the\nlive activity feed, in one merchant-scoped read. The funnel arrives as an\nordered list of named stages rather than six loose figures, because P1-03's\nrule \u2014 at-risk must never read as recovered \u2014 is easiest to keep true by\nnever handing a client the chance to arrange them itself.",
+        "operationId": "command_center_view_command_center_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandCenter"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Command Center View"
       }
     },
     "/config/llm-provider": {
@@ -4137,6 +5356,25 @@
         "summary": "Get Incident Trace"
       }
     },
+    "/liveness": {
+      "get": {
+        "description": "MerchantOps \u00a711. The process is running \u2014 nothing more.\n\nUnauthenticated and dependency-free on purpose. A liveness probe that\ntouches the database restarts the API when the database blips, which is the\none response guaranteed not to help.",
+        "operationId": "liveness_probe_liveness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness Probe"
+      }
+    },
     "/me": {
       "get": {
         "description": "Who the caller is, as the server understands it.\n\nThe client never asserts this. It is returned so an interface can show the\nacting identity \u2014 the same screen behaves differently for an owner and an\nanalyst, and an operator should not have to infer which one they are.",
@@ -4378,6 +5616,53 @@
           }
         },
         "summary": "Prometheus"
+      }
+    },
+    "/readiness": {
+      "get": {
+        "description": "MerchantOps \u00a711. Every dependency, checked, with a per-component verdict.\n\nReturns 503 when a *required* component is down, so a load balancer can act\non the status line without parsing the body. `degraded` is 200: the API can\nstill serve, and taking it out of rotation for a stopped cron sweep would\nremove the one interface an operator has for finding out about the stopped\ncron sweep.\n\n**Two audiences, two bodies.** A probe cannot hold a token, so the verdicts\nare unauthenticated. The operational detail behind them \u2014 mapping coverage,\nhow far the sweep is behind, which payments drifted \u2014 is not: those are the\nsame shape of fact `/metrics/prometheus` already refuses to serve without a\nscrape token, and drawing the line in a different place here for no reason\nwould be an inconsistency an attacker gets to choose between.\n\nA valid bearer token therefore widens the response. An absent or invalid one\nnarrows it rather than refusing: a probe presenting nothing must still get\nits verdict, and a probe presenting a stale token must not start failing the\ndeployment's health check.",
+        "operationId": "readiness_probe_readiness_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Readiness Probe"
       }
     },
     "/recovery/candidates/{candidate_id}/dispatch": {
@@ -4654,6 +5939,63 @@
           }
         },
         "summary": "Run One"
+      }
+    },
+    "/search": {
+      "get": {
+        "description": "One box, every identifier \u2014 plan P1-06.\n\nExact match only. Every identifier in this system is pasted rather than\ntyped, and a prefix search over payment ids invites acting on whichever row\nsorted first.",
+        "operationId": "global_search_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Global Search"
       }
     },
     "/tasks": {

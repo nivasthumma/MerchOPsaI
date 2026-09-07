@@ -69,6 +69,13 @@ def _raise_mismatch(session, action: AgentAction, before: VerificationState,
         detection_version=DETECTION_VERSION,
         revenue_at_risk_minor=action.amount_minor,
         signals={
+            # The §12 canonical four, same shape every other rule emits. The
+            # baseline here is our own recorded state and the observation is
+            # what the provider says now — which is the whole content of a
+            # reconciliation mismatch.
+            "baseline": before.value, "observed": after.value,
+            "threshold": "provider state must not contradict a SUCCESS we recorded",
+            "unit": "verification state",
             "action_id": action.id, "task_id": action.task_id,
             "target_payment_id": action.target_payment_id,
             "external_payment_id": action.external_payment_id,

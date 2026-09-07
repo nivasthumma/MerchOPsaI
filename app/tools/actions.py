@@ -21,11 +21,13 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db import checkpoint
+from app.integrations.mapping import resolve as resolve_mapping
 from app.integrations.razorpay.adapter import RazorpayAdapter
 from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 from app.verification.engine import VerificationResult, verify_refund
+from app.verification.schedule import record_attempt
 
 SPEC_REQUEST_REFUND = ToolSpec(
     name="request_refund",
@@ -92,25 +94,49 @@ class RefundOutcome:
 
 
 def resolve_external_payment(session, merchant_id: str, synthetic_payment_id: str) -> tuple[str | None, dict]:
-    """CONTRACT §6 mapping layer. The agent must never invent a provider id;
-    the only path from synthetic to external runs through here."""
+    """MerchantOps §6 mapping layer. The agent must never invent a provider id;
+    the only path from synthetic to external runs through here.
+
+    The resolution itself moved to `app.integrations.mapping`, which reads
+    `provider_mappings` — a table that holds provider and environment on the row
+    and both directions of the mapping UNIQUE. This function used to read
+    `payments.external_payment_id` directly, which resolved but could not
+    promise the id belonged to only one internal payment, or that it belonged to
+    the environment this process is actually calling.
+
+    What stayed here is the execution metadata the refund path needs alongside
+    the id: the amount, what is already refunded, and the payment's status. That
+    is deliberately re-read at execution time (§23) rather than carried from
+    planning.
+    """
+    mapping, failure = resolve_mapping(session, merchant_id, synthetic_payment_id)
+    if failure is not None:
+        return None, failure.as_dict()
+
     row = session.execute(text("""
-        SELECT id, merchant_id, external_provider, external_payment_id,
-               amount_minor, amount_refunded_minor, status
+        SELECT amount_minor, amount_refunded_minor, status
         FROM payments WHERE id = :p
     """), {"p": synthetic_payment_id}).mappings().first()
     if row is None:
-        return None, {"error": "unknown_payment"}
-    if row["merchant_id"] != merchant_id:
-        return None, {"error": "merchant_isolation"}
-    if not row["external_payment_id"]:
-        return None, {"error": "not_externally_mapped",
-                      "detail": (f"{synthetic_payment_id} has no external provider mapping. "
-                                 "Only the mapped subset can be executed externally.")}
-    return row["external_payment_id"], {
+        # `resolve_mapping` established the payment exists and is this
+        # merchant's, so this is unreachable — a deletion between the two reads,
+        # which this schema has no path to. Raised rather than asserted: an
+        # `assert` is stripped under `python -O`, which would turn an impossible
+        # state into an AttributeError several frames away from its cause.
+        raise RuntimeError(
+            f"Payment {synthetic_payment_id} resolved to a provider mapping but "
+            f"has no payments row. The mapping table and payments have "
+            f"diverged; refusing to execute.")
+
+    return mapping.external_payment_id, {
         "amount_minor": int(row["amount_minor"]),
         "amount_refunded_minor": int(row["amount_refunded_minor"]),
         "status": row["status"],
+        # Carried so the caller can record which universe it executed in
+        # without asking the settings a second time and possibly getting a
+        # different answer than the resolution did.
+        "provider": mapping.provider,
+        "environment": mapping.environment,
     }
 
 
@@ -265,7 +291,11 @@ def execute_refund(
         action.verification_state = vr.state
         action.verification_detail = vr.as_dict()
         action.verify_attempts += 1
-        session.flush()
+        # A timeout is the single most likely way an action reaches UNKNOWN, so
+        # it is the last place that may skip the schedule. Without this the
+        # action the reconciliation queue exists for would arrive in it with no
+        # next-check time.
+        record_attempt(session, action, vr.state)
         return RefundOutcome(action, ToolResult(
             success=False, error_code="EXTERNAL_STATE_UNKNOWN",
             data={"verification": vr.as_dict(), "action_id": action.id},
@@ -275,7 +305,10 @@ def execute_refund(
         action.status = ActionStatus.FAILED
         action.verification_state = VerificationState.FAILED
         action.verification_detail = {"reason": str(e)}
-        session.flush()
+        # Settled, so `record_attempt` clears the schedule rather than setting
+        # one. Going through it anyway is what keeps "when was this last
+        # looked at" true on every action, not only the unsettled ones.
+        record_attempt(session, action, VerificationState.FAILED)
         return RefundOutcome(action, ToolResult(
             success=False, error_code=e.code, data={"error": str(e), "action_id": action.id},
             risk_level="HIGH", approval_id=approval_id))
@@ -296,7 +329,11 @@ def execute_refund(
         VerificationState.PARTIAL: ActionStatus.SUBMITTED,
         VerificationState.UNKNOWN: ActionStatus.UNKNOWN,
     }[vr.state]
-    session.flush()
+    # The first read is attempt one of the ladder, not a separate thing that
+    # happens to look like one. Stamping the schedule here is what makes an
+    # action that comes back UNKNOWN from its very first verification appear in
+    # the reconciliation queue with a next-check time rather than a blank.
+    record_attempt(session, action, vr.state)
 
     return RefundOutcome(action, ToolResult(
         success=vr.state is VerificationState.SUCCESS,
@@ -413,7 +450,10 @@ def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> V
         VerificationState.PARTIAL: ActionStatus.SUBMITTED,
         VerificationState.UNKNOWN: ActionStatus.UNKNOWN,
     }[vr.state]
-    session.flush()
+    # Every re-read goes through here — the sweep, the webhook, the operator's
+    # Re-verify button — so the schedule is stamped once, in the one place all
+    # three meet, rather than three times with three chances to drift.
+    record_attempt(session, action, vr.state)
     return vr
 
 def get_refund_status(session, merchant_id: str, action_id: str) -> ToolResult:

@@ -22,14 +22,27 @@ from app.db import get_engine, session_scope
 from app.models import (
     Base,
     Customer,
+    MappingStatus,
     Merchant,
     Order,
     Payment,
     Product,
+    ProviderMapping,
     Refund,
     Tenant,
     User,
 )
+
+# The insert order. FK parents must land before their children, so this is a
+# dependency ordering rather than a list of tables.
+#
+# It lives here, once. `tests/conftest.py` kept its own copy and the two drifted
+# the moment `provider_mappings` was added: the suite seeded eight groups, the
+# ninth never landed, and every externally-mapped refund failed resolution --
+# with the failure surfacing as `'NoneType' has no attribute
+# 'verification_state'` four call frames away from the cause.
+SEEDED_TABLES = ("tenants", "merchants", "users", "customers", "products",
+                 "orders", "payments", "refunds", "provider_mappings")
 
 SEED = 20260825
 DATASET_VERSION = "synthetic-v1"
@@ -168,6 +181,7 @@ def build() -> dict:
     orders: list[Order] = []
     payments: list[Payment] = []
     refunds: list[Refund] = []
+    mappings: list[ProviderMapping] = []
 
     # ---------------- products ----------------
     for m, n in ((MERCHANT_A, 22), (MERCHANT_B, 8)):
@@ -490,13 +504,34 @@ def build() -> dict:
         p.status = "refunded"
 
     # ------------------------------------------------------------------
-    # CONTRACT §6 — external mapping for the small executable subset.
+    # MerchantOps §6 — external mapping for the small executable subset.
+    #
+    # Written in both places, on purpose and not by accident:
+    #
+    #   provider_mappings          the control plane's authority. Every
+    #                              resolution the agent, the tools and the
+    #                              verification path perform reads this.
+    #   payments.external_*        the MOCK PROVIDER's own store. The mock
+    #                              adapter answers `get_payment(pay_...)` out of
+    #                              this column, which is the provider holding
+    #                              provider-side state — exactly what Razorpay
+    #                              does with real credentials.
+    #
+    # `app.integrations.mapping.check_consistency` asserts they agree, and
+    # /readiness reports it, so the duplication is checked rather than trusted.
     # ------------------------------------------------------------------
     for i, pid in enumerate(MAPPED_PAYMENTS, start=1):
         p = next(x for x in payments if x.id == pid)
+        external = f"pay_MOCKTEST{i:08d}"
         p.external_provider = "razorpay"
-        p.external_payment_id = f"pay_MOCKTEST{i:08d}"
+        p.external_payment_id = external
+        mappings.append(ProviderMapping(
+            id=f"PMP_SEED{i:04d}", merchant_id=p.merchant_id, payment_id=p.id,
+            provider="razorpay", environment="test", external_payment_id=external,
+            status=MappingStatus.ACTIVE, source="seed",
+        ))
     stats["mapped_payments"] = len(MAPPED_PAYMENTS)
+    stats["provider_mappings"] = len(mappings)
 
     stats["merchants"] = len(merchants)
     stats["users"] = len(users)
@@ -531,7 +566,7 @@ def build() -> dict:
         "tenants": tenants,
         "merchants": merchants, "users": users, "customers": customers,
         "products": products, "orders": orders, "payments": payments,
-        "refunds": refunds, "stats": stats,
+        "refunds": refunds, "provider_mappings": mappings, "stats": stats,
     }
 
 
@@ -573,13 +608,13 @@ def main() -> None:
     data = build()
     with session_scope() as s:
         # Flush per group: FK parents must land before their children.
-        for key in ("tenants", "merchants", "users", "customers", "products", "orders", "payments", "refunds"):
+        for key in SEEDED_TABLES:
             s.add_all(data[key])
             s.flush()
     st = data["stats"]
     print("\nSeeded:")
     for k in ("tenants", "merchants", "users", "customers", "products", "orders", "payments",
-              "refunds", "mapped_payments", "injection_sites"):
+              "refunds", "mapped_payments", "provider_mappings", "injection_sites"):
         print(f"  {k:20s} {st.get(k)}")
 
     with session_scope() as s:

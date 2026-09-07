@@ -1,0 +1,535 @@
+{
+  "generated_at": "2026-09-07T07:14:23.041147+00:00",
+  "merchant_id": "MERCH_A",
+  "revenue": {
+    "at_risk_minor": 3575906,
+    "recoverable_minor": 3448647,
+    "attempted_minor": 0,
+    "recovered_minor": 0,
+    "failed_minor": 0,
+    "unknown_minor": 0,
+    "outstanding_minor": 0,
+    "invariants_broken": []
+  },
+  "funnel": [
+    {
+      "stage": "AT_RISK",
+      "label": "At risk",
+      "amount_minor": 3575906
+    },
+    {
+      "stage": "RECOVERABLE",
+      "label": "Recoverable",
+      "amount_minor": 3448647
+    },
+    {
+      "stage": "ATTEMPTED",
+      "label": "Attempted",
+      "amount_minor": 0
+    },
+    {
+      "stage": "RECOVERED",
+      "label": "Recovered",
+      "amount_minor": 0
+    }
+  ],
+  "attention": {
+    "approvals_pending": 0,
+    "approvals_expired": 0,
+    "unknown_actions": 1,
+    "escalated_actions": 0,
+    "open_incidents": 3,
+    "critical_incidents": 0,
+    "running_tasks": 0
+  },
+  "by_incident": [
+    {
+      "incident_id": "INC_C937A29618",
+      "incident_type": "PAYMENT_DEGRADATION",
+      "severity": "MEDIUM",
+      "status": "DETECTED",
+      "title": "UPI payment degradation",
+      "revenue_at_risk_minor": 2926106,
+      "recoverable_minor": "2798847",
+      "recovered_minor": "0"
+    },
+    {
+      "incident_id": "INC_E0A5EB7C5B",
+      "incident_type": "DUPLICATE_PAYMENT",
+      "severity": "LOW",
+      "status": "DETECTED",
+      "title": "Duplicate payment on SYN_ORD_DUP01",
+      "revenue_at_risk_minor": 499900,
+      "recoverable_minor": "499900",
+      "recovered_minor": "0"
+    },
+    {
+      "incident_id": "INC_81EFBB557F",
+      "incident_type": "DUPLICATE_PAYMENT",
+      "severity": "LOW",
+      "status": "DETECTED",
+      "title": "Duplicate payment on SYN_ORD_DUP02",
+      "revenue_at_risk_minor": 149900,
+      "recoverable_minor": "149900",
+      "recovered_minor": "0"
+    }
+  ],
+  "by_method": [
+    {
+      "method": "upi",
+      "recoverable_minor": "2948747",
+      "recovered_minor": "0",
+      "candidates": 34
+    },
+    {
+      "method": "card",
+      "recoverable_minor": "499900",
+      "recovered_minor": "0",
+      "candidates": 1
+    }
+  ],
+  "activity": [
+    {
+      "event_type": "task_completed",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.024677+10:00",
+      "payload": {
+        "status": "COMPLETED",
+        "verification": "UNKNOWN"
+      }
+    },
+    {
+      "event_type": "verification",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.023505+10:00",
+      "payload": {
+        "action_id": "ACT_366C01A2F836",
+        "state": "UNKNOWN",
+        "detail": {
+          "state": "UNKNOWN",
+          "reason": "Connection lost after the request was submitted. The provider may or may not have applied it. The payment shows a refund, but no external reference was received, so this action cannot be confirmed as its cause.",
+          "expected": {
+            "external_payment_id": "pay_MOCKTEST00000002",
+            "refund_amount_minor": 499900,
+            "amount_refunded_before_minor": 0,
+            "amount_refunded_after_minor": 499900
+          },
+          "actual": {
+            "amount_refunded_minor": 499900,
+            "refund_status": "full",
+            "payment_status": "refunded",
+            "refund_object_status": null
+          },
+          "external_reference": null
+        }
+      }
+    },
+    {
+      "event_type": "action_recorded",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.022793+10:00",
+      "payload": {
+        "action_id": "ACT_366C01A2F836",
+        "idempotency_key": "ccc6f2b9e9dd0970...",
+        "external_reference": null,
+        "status": "UNKNOWN"
+      }
+    },
+    {
+      "event_type": "action_executing",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.015076+10:00",
+      "payload": {
+        "approval_id": "APR_237EF4E4D8",
+        "adapter_mode": "mock",
+        "payment": "SYN_PAY_0002"
+      }
+    },
+    {
+      "event_type": "policy_recheck",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.014507+10:00",
+      "payload": {
+        "approval_id": "APR_237EF4E4D8",
+        "decision": "REQUIRE_APPROVAL",
+        "rule": "high_risk_requires_approval",
+        "duration_ms": 2.0912780000799103
+      }
+    },
+    {
+      "event_type": "approval_granted",
+      "correlation_id": null,
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:23.011771+10:00",
+      "payload": {
+        "approval_id": "APR_237EF4E4D8",
+        "signatures": [
+          "USR_A_OWNER"
+        ],
+        "required": 1
+      }
+    },
+    {
+      "event_type": "awaiting_approval",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.990093+10:00",
+      "payload": {
+        "approval_id": "APR_237EF4E4D8"
+      }
+    },
+    {
+      "event_type": "approval_requested",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.984779+10:00",
+      "payload": {
+        "approval_id": "APR_237EF4E4D8",
+        "action": "request_refund",
+        "payload": {
+          "synthetic_payment_id": "SYN_PAY_0002",
+          "amount_minor": 499900,
+          "reason": "Duplicate payment: a second capture was recorded for the same order, customer and amount within a short interval."
+        },
+        "risk_level": "HIGH",
+        "required_signatures": 1,
+        "risk": {
+          "level": "HIGH",
+          "declared": "HIGH",
+          "computed": "HIGH",
+          "raised": false,
+          "factors": [
+            {
+              "name": "irreversibility",
+              "level": "MEDIUM",
+              "reason": "request_refund cannot be undone once it reaches the provider."
+            },
+            {
+              "name": "financial_value",
+              "level": "HIGH",
+              "reason": "4,999.00 is 100% of this merchant's 5,000.00 limit."
+            }
+          ]
+        },
+        "expires_at": "2026-09-07T07:29:22.982675+00:00"
+      }
+    },
+    {
+      "event_type": "policy_decision",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.981688+10:00",
+      "payload": {
+        "tool": "request_refund",
+        "decision": "REQUIRE_APPROVAL",
+        "rule": "high_risk_requires_approval",
+        "reason": "Financial state-changing action requires human approval.",
+        "arguments": {
+          "synthetic_payment_id": "SYN_PAY_0002",
+          "amount_minor": 499900,
+          "reason": "Duplicate payment: a second capture was recorded for the same order, customer and amount within a short interval."
+        },
+        "duration_ms": 4.709365999588044
+      }
+    },
+    {
+      "event_type": "llm_turn",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.975674+10:00",
+      "payload": {
+        "turn": 3,
+        "stop_reason": "tool_use",
+        "requested_tools": [
+          "request_refund"
+        ],
+        "usage": {}
+      }
+    },
+    {
+      "event_type": "tool_call",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.973984+10:00",
+      "payload": {
+        "seq": 2,
+        "tool": "get_order",
+        "success": true,
+        "tool_call_id": "TC_BEAF7A79C7",
+        "duration_ms": 2
+      }
+    },
+    {
+      "event_type": "policy_decision",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.971544+10:00",
+      "payload": {
+        "tool": "get_order",
+        "decision": "ALLOW",
+        "rule": "low_risk_authorized",
+        "reason": "Read-only operation, user authorized.",
+        "arguments": {
+          "order_id": "SYN_ORD_DUP01"
+        },
+        "duration_ms": 0.6132479993539164
+      }
+    },
+    {
+      "event_type": "llm_turn",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.969571+10:00",
+      "payload": {
+        "turn": 2,
+        "stop_reason": "tool_use",
+        "requested_tools": [
+          "get_order"
+        ],
+        "usage": {}
+      }
+    },
+    {
+      "event_type": "tool_call",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.966787+10:00",
+      "payload": {
+        "seq": 1,
+        "tool": "find_duplicate_payments",
+        "success": true,
+        "tool_call_id": "TC_61074DE594",
+        "duration_ms": 27
+      }
+    },
+    {
+      "event_type": "policy_decision",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.937235+10:00",
+      "payload": {
+        "tool": "find_duplicate_payments",
+        "decision": "ALLOW",
+        "rule": "low_risk_authorized",
+        "reason": "Read-only operation, user authorized.",
+        "arguments": {
+          "window_seconds": 600
+        },
+        "duration_ms": 0.012275000699446537
+      }
+    },
+    {
+      "event_type": "llm_turn",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.936023+10:00",
+      "payload": {
+        "turn": 1,
+        "stop_reason": "tool_use",
+        "requested_tools": [
+          "find_duplicate_payments"
+        ],
+        "usage": {}
+      }
+    },
+    {
+      "event_type": "task_created",
+      "correlation_id": "COR_FAF547105862",
+      "task_id": "TASK_6ABDF91051",
+      "incident_id": null,
+      "created_at": "2026-09-07T17:14:22.932993+10:00",
+      "payload": {
+        "request": "Refund the duplicate payment SYN_PAY_0002 amount 499900.",
+        "provider": "deterministic",
+        "model": "deterministic-planner-v1",
+        "replay": false
+      }
+    },
+    {
+      "event_type": "recovery_planned",
+      "correlation_id": "COR_81B1CA80A39C",
+      "task_id": null,
+      "incident_id": "INC_81EFBB557F",
+      "created_at": "2026-09-07T17:14:22.928969+10:00",
+      "payload": {
+        "plan_id": "RPL_52844F1ED5",
+        "intervention": "REFUND",
+        "candidates": 1,
+        "eligible": 1,
+        "executable": 1,
+        "eligible_recovery_minor": 149900,
+        "expected_recovery_minor": 149900,
+        "expected_recovery_basis": "A refund returns a known amount; expected recovery is the unrefunded balance.",
+        "budget": {
+          "max_recovery_minor": 5000000,
+          "max_actions": 500,
+          "max_attempts_per_customer": 2,
+          "max_duration_seconds": 86400
+        },
+        "planner_version": "planner-v1"
+      }
+    },
+    {
+      "event_type": "recovery_planned",
+      "correlation_id": "COR_19B65D1478B7",
+      "task_id": null,
+      "incident_id": "INC_E0A5EB7C5B",
+      "created_at": "2026-09-07T17:14:22.926172+10:00",
+      "payload": {
+        "plan_id": "RPL_5BE573FED2",
+        "intervention": "REFUND",
+        "candidates": 1,
+        "eligible": 1,
+        "executable": 1,
+        "eligible_recovery_minor": 499900,
+        "expected_recovery_minor": 499900,
+        "expected_recovery_basis": "A refund returns a known amount; expected recovery is the unrefunded balance.",
+        "budget": {
+          "max_recovery_minor": 5000000,
+          "max_actions": 500,
+          "max_attempts_per_customer": 2,
+          "max_duration_seconds": 86400
+        },
+        "planner_version": "planner-v1"
+      }
+    },
+    {
+      "event_type": "recovery_planned",
+      "correlation_id": "COR_85AFF5C48C6A",
+      "task_id": null,
+      "incident_id": "INC_C937A29618",
+      "created_at": "2026-09-07T17:14:22.922542+10:00",
+      "payload": {
+        "plan_id": "RPL_010FE40E33",
+        "intervention": "PAYMENT_LINK",
+        "candidates": 33,
+        "eligible": 32,
+        "executable": 32,
+        "eligible_recovery_minor": 2798847,
+        "expected_recovery_minor": 2569342,
+        "expected_recovery_basis": "Failed volume attributed to this incident, times the method's own prior-period success rate (91.8%). An estimate of conversion on re-presentation, not a commitment.",
+        "budget": {
+          "max_recovery_minor": 5000000,
+          "max_actions": 500,
+          "max_attempts_per_customer": 2,
+          "max_duration_seconds": 86400
+        },
+        "planner_version": "planner-v1"
+      }
+    },
+    {
+      "event_type": "incident_detected",
+      "correlation_id": "COR_81B1CA80A39C",
+      "task_id": null,
+      "incident_id": "INC_81EFBB557F",
+      "created_at": "2026-09-07T17:14:22.907245+10:00",
+      "payload": {
+        "duration_ms": 13.181585999518575,
+        "incident_type": "DUPLICATE_PAYMENT",
+        "severity": "LOW",
+        "rule": "duplicate_capture_on_order",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 149900,
+        "correlation_id": "COR_81B1CA80A39C",
+        "signals": {
+          "order_id": "SYN_ORD_DUP02",
+          "customer_id": "SYN_CUS_A0045",
+          "first_payment_id": "SYN_PAY_0003",
+          "excess_payment_ids": [
+            "SYN_PAY_0004"
+          ],
+          "capture_count": 2,
+          "amount_minor": 149900,
+          "time_separation_seconds": [
+            112
+          ],
+          "already_refunded_minor": 0,
+          "window_seconds": 600
+        }
+      }
+    },
+    {
+      "event_type": "incident_detected",
+      "correlation_id": "COR_19B65D1478B7",
+      "task_id": null,
+      "incident_id": "INC_E0A5EB7C5B",
+      "created_at": "2026-09-07T17:14:22.904424+10:00",
+      "payload": {
+        "duration_ms": 10.461871999723371,
+        "incident_type": "DUPLICATE_PAYMENT",
+        "severity": "LOW",
+        "rule": "duplicate_capture_on_order",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 499900,
+        "correlation_id": "COR_19B65D1478B7",
+        "signals": {
+          "order_id": "SYN_ORD_DUP01",
+          "customer_id": "SYN_CUS_A0012",
+          "first_payment_id": "SYN_PAY_0001",
+          "excess_payment_ids": [
+            "SYN_PAY_0002"
+          ],
+          "capture_count": 2,
+          "amount_minor": 499900,
+          "time_separation_seconds": [
+            34
+          ],
+          "already_refunded_minor": 0,
+          "window_seconds": 600
+        }
+      }
+    },
+    {
+      "event_type": "incident_detected",
+      "correlation_id": "COR_85AFF5C48C6A",
+      "task_id": null,
+      "incident_id": "INC_C937A29618",
+      "created_at": "2026-09-07T17:14:22.899327+10:00",
+      "payload": {
+        "duration_ms": 2.680863999557914,
+        "incident_type": "PAYMENT_DEGRADATION",
+        "severity": "MEDIUM",
+        "rule": "success_rate_below_baseline",
+        "detection_version": "detection-v1",
+        "revenue_at_risk_minor": 2926106,
+        "correlation_id": "COR_85AFF5C48C6A",
+        "signals": {
+          "method": "upi",
+          "current_success_rate_pct": 73.2,
+          "baseline_success_rate_pct": 91.8,
+          "drop_pct_points": 18.6,
+          "threshold_pct_points": 10.0,
+          "current_attempts": 123,
+          "current_failures": 33,
+          "expected_successes": 112.9,
+          "actual_successes": 90,
+          "shortfall_transactions": 22.9,
+          "average_transaction_value_minor": 127677,
+          "window_start": "2026-08-13T00:00:00+00:00",
+          "window_end": "2026-08-20T00:00:00+00:00"
+        }
+      }
+    }
+  ]
+}

@@ -44,20 +44,49 @@ authority.**
 ```
 src/
   api/client.ts     typed fetch wrapper: auth header, error normalisation
-  api/types.ts      response shapes, mirroring app/api/main.py
-  App.tsx           shell, run-configuration banners, token gate
+  api/types.ts      response shapes, mirroring app/api/schemas.py
+  App.tsx           shell, run-configuration banners, token gate, nav IA
+  hooks/
+    useLiveRefresh  the ONE polling loop (see below)
   routes/
+    CommandCenter   home: what needs attention, revenue health, the funnel
+    Actions         the Action Center — five sections, UNKNOWN as work
+    Recovery        the revenue ledger: at risk → recoverable → attempted → recovered
+    Incidents       open incidents, ordered by revenue at risk
+    IncidentDetail  the decision workspace (what happened → ... → verification)
     Investigate     ask a question, read findings and grounding
     TaskDetail      approval gate, actions, verification, replay, audit trace
-    Scenarios       browse and run the 106 evaluation scenarios
+    Scenarios       browse and run the evaluation scenarios
     Operations      reconciliation sweep and the escalated operator queue
-  components/Bits   status pills, money formatting, error banners
+  components/
+    Bits            money formatting, error banners, copyable ids
+    Status          the ONE status vocabulary (see below)
+    LiveBar         when the data was last good, and whether it still is
 ```
+
+## Two things that are deliberately singular
+
+**`hooks/useLiveRefresh`.** Three screens each grew their own polling loop and each got
+a different subset of the rules right — pause on a hidden tab, refresh on return, never
+overlap two requests, show when the data was last good, distinguish paused from
+disconnected, never fake activity. A list of rules implemented three times is a list
+implemented once and imitated twice, so there is one hook and it has its own tests.
+
+The rule that matters most: **a failed poll does not blank the screen.** An operator
+reading a queue when the API hiccups keeps the queue and is told it is stale. Losing it
+would be worse, because an empty queue is the most reassuring thing this application can
+say and it must never be said by accident.
+
+**`components/Status`.** Thirteen statuses appear across these screens, and every one
+now has a tone, a business-language label, a *shape*, and a sentence saying what it
+asserts. The shape is not decoration: a red dot meaning "it failed" and a red dot
+meaning "we do not know" are the same dot, and those are opposite claims about whether
+money moved.
 
 ## Test
 
 ```bash
-npm test             # 39 Vitest tests, jsdom, no API required
+npm test             # 230 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -72,6 +101,10 @@ rather than merely look wrong:
 | Approval | The approve button stays enabled — authorization is the server's call; a refusal shows its code; the task is reloaded rather than trusting the response |
 | Replay | Zero external calls reads as correct; a non-zero count reads as a defect |
 | Shell | The mock adapter, the deterministic planner, and a development signing secret are each stated before anyone can act |
+| Action Center | An action is in exactly one section — including the case that broke it, an escalated action a later re-verification settled; the attempt limit is read from the response rather than copied; a pending approval is not rendered as an action |
+| Live refresh | A failed poll keeps the data and does not advance the freshness stamp; a hidden tab pauses and refreshes on return; two requests never overlap; a changed filter refetches at once |
+| Funnel | A later stage never draws wider than an earlier one, even when handed figures that invert |
+| Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
 

@@ -79,8 +79,9 @@ import scripts.seed_data as seeder
 from app.agent.runtime import Principal
 from app.db import get_engine, session_scope
 
-SEEDED_TABLES = ("tenants", "merchants", "users", "customers", "products",
-                 "orders", "payments", "refunds")
+# Imported, never restated. This was a copy of the seeder's own ordering and
+# they drifted: a table added to the seeder was silently not seeded here.
+SEEDED_TABLES = seeder.SEEDED_TABLES
 
 
 @pytest.fixture(scope="session")

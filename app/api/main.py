@@ -19,11 +19,19 @@ from app.agent.approval import ApprovalError, approve_and_execute, reject, rever
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
 from app.api import schemas
+from app.api.console import (
+    action_center,
+    command_center,
+    incident_actions,
+    search,
+)
+from app.api.readiness import liveness, readiness
 from app.api.security import (
     DEV_SECRET_IN_USE,
     check_rate_limit,
     current_principal,
     require_configured_secret,
+    verify_token,
 )
 from app.audit.trace import (
     record,
@@ -239,6 +247,53 @@ def health():
     }
 
 
+@app.get("/liveness", response_model=schemas.Liveness,
+          response_model_exclude_unset=True)
+def liveness_probe():
+    """MerchantOps §11. The process is running — nothing more.
+
+    Unauthenticated and dependency-free on purpose. A liveness probe that
+    touches the database restarts the API when the database blips, which is the
+    one response guaranteed not to help.
+    """
+    return liveness()
+
+
+@app.get("/readiness", response_model=schemas.Readiness,
+          response_model_exclude_unset=True)
+def readiness_probe(response: Response,
+                    authorization: str | None = Header(default=None)):
+    """MerchantOps §11. Every dependency, checked, with a per-component verdict.
+
+    Returns 503 when a *required* component is down, so a load balancer can act
+    on the status line without parsing the body. `degraded` is 200: the API can
+    still serve, and taking it out of rotation for a stopped cron sweep would
+    remove the one interface an operator has for finding out about the stopped
+    cron sweep.
+
+    **Two audiences, two bodies.** A probe cannot hold a token, so the verdicts
+    are unauthenticated. The operational detail behind them — mapping coverage,
+    how far the sweep is behind, which payments drifted — is not: those are the
+    same shape of fact `/metrics/prometheus` already refuses to serve without a
+    scrape token, and drawing the line in a different place here for no reason
+    would be an inconsistency an attacker gets to choose between.
+
+    A valid bearer token therefore widens the response. An absent or invalid one
+    narrows it rather than refusing: a probe presenting nothing must still get
+    its verdict, and a probe presenting a stale token must not start failing the
+    deployment's health check.
+    """
+    detailed = False
+    if authorization and authorization.lower().startswith("bearer "):
+        detailed = verify_token(authorization[7:].strip()) is not None
+
+    with session_scope() as s:
+        report = readiness(s, detailed=detailed)
+    if report["status"] == "not_ready":
+        response.status_code = 503
+    return report
+
+
 @app.get("/me", response_model=schemas.Me,
           response_model_exclude_unset=True)
 def whoami(principal: Principal = Depends(current_principal)):
@@ -392,6 +447,25 @@ def list_approvals(pending_only: bool = True,
 # Declared before /actions/{action_id}: Starlette matches in declaration order,
 # so with the parametrised route first "escalated" is captured as an action_id
 # and the endpoint 404s as "Unknown action."
+@app.get("/actions", response_model=schemas.ActionCenter,
+          response_model_exclude_unset=True)
+def action_center_view(limit: int = 50,
+                       principal: Principal = Depends(current_principal)):
+    """The Action Center — plan P0-03.
+
+    One read, five sections, one instant. A browser that assembled this from
+    `/approvals`, `/actions/escalated` and `/incidents` would be showing counts
+    from three different moments, and the moments diverge exactly when the
+    numbers are moving.
+
+    Declared above `/actions/{action_id}`: FastAPI matches in declaration order,
+    and a parameterised path declared first would swallow this one.
+    """
+    limit = max(1, min(limit, 200))
+    with session_scope() as s:
+        return action_center(s, principal.merchant_id, limit=limit)
+
+
 @app.get("/actions/escalated", response_model=list[schemas.EscalatedAction],
           response_model_exclude_unset=True)
 def list_escalated(max_attempts: int = 5,
@@ -773,6 +847,14 @@ def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
     } for t in s.query(AgentTask)
         .filter(AgentTask.incident_id == inc.id)
         .order_by(AgentTask.created_at).all()]
+    # The financial actions this incident produced — plan P0-07's last four
+    # stages (POLICY → APPROVAL → EXECUTION → VERIFICATION).
+    #
+    # An incident page that stops at "recovery planned" tells an operator what
+    # was *proposed* and leaves them to go and find out whether it happened.
+    # These are the same rows the Action Center lists, scoped to this incident,
+    # so the two screens cannot disagree about the state of an action.
+    view["actions"] = incident_actions(s, inc.merchant_id, inc.id)
     # Which moves are available from here. The UI renders this; it never
     # computes it, for the same reason it never computes a policy outcome.
     view["legal_transitions"] = sorted(x.value for x in legal_from(inc.status))
@@ -884,6 +966,34 @@ def merchant_dashboard(principal: Principal = Depends(current_principal)):
     """
     with session_scope() as s:
         return dashboard(s, principal.merchant_id)
+
+
+@app.get("/command-center", response_model=schemas.CommandCenter,
+          response_model_exclude_unset=True)
+def command_center_view(principal: Principal = Depends(current_principal)):
+    """The home screen — plan P0-05.
+
+    Revenue health, the recovery funnel, what is waiting on a human, and the
+    live activity feed, in one merchant-scoped read. The funnel arrives as an
+    ordered list of named stages rather than six loose figures, because P1-03's
+    rule — at-risk must never read as recovered — is easiest to keep true by
+    never handing a client the chance to arrange them itself.
+    """
+    with session_scope() as s:
+        return command_center(s, principal.merchant_id)
+
+
+@app.get("/search", response_model=schemas.SearchResults,
+          response_model_exclude_unset=True)
+def global_search(q: str = "", principal: Principal = Depends(current_principal)):
+    """One box, every identifier — plan P1-06.
+
+    Exact match only. Every identifier in this system is pasted rather than
+    typed, and a prefix search over payment ids invites acting on whichever row
+    sorted first.
+    """
+    with session_scope() as s:
+        return search(s, principal.merchant_id, q)
 
 
 @app.get("/trace/{correlation_id}", response_model=schemas.CorrelationTrace,

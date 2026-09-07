@@ -1265,3 +1265,115 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
                     letter-spacing: .05em; }
 .transcript pre { margin: 0; max-height: 16rem; overflow: auto; font-size: .78rem;
                   white-space: pre-wrap; word-break: break-word; }
+
+/* ==========================================================================
+   Operations console — plan P0-03, P0-05, P0-06, P1-01, P1-08, P1-12.
+
+   Restrained on purpose (P1-09): no gradients behind financial values, no
+   glow, no animation that is not reporting something real. A figure that
+   shimmers reads as live even when the request behind it failed.
+   ========================================================================== */
+
+/* --- P1-01: the nav groups --------------------------------------------- */
+.tab-group { display: inline-flex; align-items: center; gap: 2px; }
+.tab-group + .tab-group { margin-left: 6px; padding-left: 8px;
+                          border-left: 1px solid var(--border); }
+.tab-group-label {
+  font-size: 9.5px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-dim); padding: 0 4px; user-select: none;
+}
+@media (max-width: 1100px) {
+  /* The group labels are orientation, not navigation. On a narrow header the
+     destinations matter and the headings are what gives way — hidden rather
+     than wrapped, so the tabs stay on one scrollable row. */
+  .tab-group-label { display: none; }
+  .tab-group + .tab-group { margin-left: 2px; padding-left: 4px; }
+}
+
+/* --- P1-12: text for assistive tech only, never a visual-only meaning --- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* The glyph inside a status pill. A shape as well as a colour, so the state
+   survives greyscale and colour blindness (P1-12: no colour-only meaning). */
+.pill-glyph { margin-right: 5px; font-size: 11px; opacity: 0.85; }
+
+/* --- P0-06: the freshness line ----------------------------------------- */
+.livebar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 6px 10px; font-size: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text-2);
+}
+.livedot { width: 7px; height: 7px; border-radius: 50%; flex: none;
+           background: var(--text-dim); }
+.livedot.is-live { background: var(--ok); }
+.livedot.is-paused { background: var(--text-dim); }
+.livedot.is-error { background: var(--danger); }
+.livebar .linkish { margin-left: auto; }
+
+/* --- tiles: the attention row and the revenue figures ------------------ */
+.tiles {
+  display: grid; gap: 10px; margin: 0 0 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.tile {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: inherit; text-decoration: none;
+}
+a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft);
+               text-decoration: none; }
+.tile-n { font-size: 22px; font-weight: 600; line-height: 1.1; }
+.tile-l { font-size: 12px; color: var(--text-dim); }
+
+/* --- P1-03: the recovery funnel ---------------------------------------- */
+/* Widths are proportions of the first stage, computed in the component, so a
+   later stage can never draw wider than an earlier one. The rule is carried by
+   the geometry rather than by anyone remembering it. */
+.funnel { list-style: none; margin: 0; padding: 0;
+          display: flex; flex-direction: column; gap: 10px; }
+.funnel-head { display: flex; justify-content: space-between; align-items: baseline;
+               font-size: 13px; margin-bottom: 4px; }
+.funnel-label { color: var(--text-2); font-weight: 500; }
+.funnel-track { height: 8px; border-radius: 4px; background: var(--surface-3);
+                overflow: hidden; }
+.funnel-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+
+/* --- the live activity feed -------------------------------------------- */
+.feed { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.feed li { display: flex; gap: 12px; align-items: baseline;
+           padding: 5px 0; border-bottom: 1px solid var(--border); }
+.feed li:last-child { border-bottom: 0; }
+.feed-when { color: var(--text-dim); font-size: 12px; flex: none; }
+.feed-what { flex: 1; }
+
+/* --- P1-04: the action detail drawer ----------------------------------- */
+.drawer-scrim {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.35);
+  display: flex; justify-content: flex-end;
+}
+.drawer {
+  width: min(520px, 100%); height: 100%; overflow-y: auto;
+  padding: 20px; background: var(--surface);
+  border-left: 1px solid var(--border); box-shadow: var(--shadow-lg, none);
+  display: flex; flex-direction: column; gap: 14px;
+}
+@media (max-width: 700px) {
+  /* P1-11: on a small screen a side drawer is a sliver. It becomes a sheet. */
+  .drawer-scrim { align-items: flex-end; }
+  .drawer { width: 100%; height: auto; max-height: 88vh;
+            border-left: 0; border-top: 1px solid var(--border);
+            border-radius: var(--r) var(--r) 0 0; }
+}
+
+/* An approval past its window. Struck through rather than merely greyed: it
+   cannot execute, and "looks a bit faded" is not that claim. */
+tr.is-stale td { opacity: 0.62; }
+
+/* P1-12: motion is a preference, and every animation here is decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .funnel-fill, .tile, a.tile { transition: none; }
+}

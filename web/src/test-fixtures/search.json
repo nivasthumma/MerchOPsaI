@@ -1,0 +1,14 @@
+{
+  "query": "SYN_PAY_0002",
+  "results": [
+    {
+      "kind": "payment",
+      "id": "SYN_PAY_0002",
+      "label": "SYN_PAY_0002",
+      "detail": "card",
+      "created_at": "2026-08-18T07:00:34+10:00",
+      "route": "/incidents"
+    }
+  ],
+  "truncated": false
+}

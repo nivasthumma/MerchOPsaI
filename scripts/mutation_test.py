@@ -278,10 +278,21 @@ MUTATIONS = [
         "        return self.max_wall_clock_seconds  # MUTANT",
     ),
     (
+        # The anchor carries `abandoned_cutoff` because it has to. `escalate_exhausted`
+        # was added with an identical two-line predicate, the anchor matched twice, and
+        # the harness reported a broken anchor -- which is the harness being subject to
+        # the same drift it exists to detect, exactly as the note above predicted. The
+        # cutoff line appears only in `find_unsettled`, which is the branch this mutant
+        # is about.
         "reconciliation: stop looking at claims nobody finished",
         "app/verification/reconciler.py",
-        "                        and_(AgentAction.verification_state.is_(None),",
-        "                        and_(False, AgentAction.verification_state.is_(None),  # MUTANT",
+        "                        and_(AgentAction.verification_state.is_(None),\n"
+        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.updated_at <= abandoned_cutoff),",
+        "                        and_(False,  # MUTANT\n"
+        "                             AgentAction.verification_state.is_(None),\n"
+        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.updated_at <= abandoned_cutoff),",
     ),
     # ---------------------------------------------------------- ADR-0031
     (
@@ -542,6 +553,70 @@ MUTATIONS = [
         "app/audit/trace.py",
         "        return {k: (\"[REDACTED]\" if _SECRET_KEYS.search(str(k)) else redact(v))",
         "        return {k: redact(v)  # MUTANT",
+    ),
+
+    # --- the mapping layer (MerchantOps §6, plan P0-02) --------------------
+    (
+        # The direction §6 is actually about. With ownership unchecked, one
+        # merchant's synthetic id resolves against another merchant's payment,
+        # which is a refund placed on somebody else's money.
+        "mapping: stop checking who owns the payment being resolved",
+        "app/integrations/mapping.py",
+        "    if owner != merchant_id:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        # A mapping is only meaningful within one provider universe. Ignoring
+        # the environment makes a Test Mode id resolve for a live process and
+        # the reverse -- the failure this table was introduced to make
+        # impossible.
+        "mapping: resolve without regard to the provider environment",
+        "app/integrations/mapping.py",
+        # `record_mapping` carries a byte-identical WHERE clause, so the anchor
+        # reaches up to the SELECT list, which differs. Only `resolve` is under
+        # test here -- a write that ignores the environment is refused by
+        # `uq_mapping_payment_provider_env`, a read that ignores it is not
+        # refused by anything.
+        "        FROM provider_mappings\n"
+        "        WHERE payment_id = :p AND provider = :prov AND environment = :env",
+        "        FROM provider_mappings\n"
+        "        WHERE payment_id = :p AND provider = :prov  -- MUTANT",
+    ),
+    (
+        # A retired mapping must not execute. Treating it as live is how an id
+        # somebody deliberately withdrew gets money moved against it.
+        "mapping: execute against a retired mapping",
+        "app/integrations/mapping.py",
+        "    if row[\"status\"] != \"ACTIVE\":",
+        "    if False:  # MUTANT",
+    ),
+
+    # --- reconciliation as durable work (plan P0-04, P0-15) ---------------
+    (
+        # Never escalating turns the stopping rule off: an action nothing can
+        # settle is re-read forever and never reaches a human, which is the
+        # failure UNKNOWN exists to prevent restated one level up.
+        "reconciliation: never give up, so nothing ever reaches a human",
+        "app/verification/schedule.py",
+        "    return action.verify_attempts >= MAX_ATTEMPTS",
+        "    return False  # MUTANT",
+    ),
+    (
+        # The repair pass is what guarantees an action that reached the limit
+        # by some route other than the sweep's own last pass is still handed
+        # over. Without it such an action appears in neither queue.
+        "reconciliation: stop repairing actions that ran out of attempts elsewhere",
+        "app/verification/reconciler.py",
+        "    for action in stuck:",
+        "    for action in []:  # MUTANT",
+    ),
+    (
+        # Escalating a settled action hands a human a finished job, and does it
+        # for every action that took five attempts to succeed.
+        "reconciliation: escalate actions that already settled",
+        "app/verification/schedule.py",
+        "    if is_settled(action.verification_state):\n        return False",
+        "    if False:  # MUTANT\n        return False",
     ),
 ]
 

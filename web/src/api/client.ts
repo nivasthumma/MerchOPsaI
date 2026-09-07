@@ -6,12 +6,14 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
+  ActionCenter,
   AgentMessage,
+  CommandCenter,
   Dashboard,
   IncidentDetail,
   IncidentSummary,
-  EscalatedAction, Health, Metrics, ReconcileReport, ReplayResult, Scenario,
-  Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
+  EscalatedAction, Health, Metrics, ReconcileReport, Readiness, ReplayResult, Scenario,
+  Principal, ProviderChange, ScenarioResult, SearchResults, Task, TaskEvidence, TraceEvent,
 } from "./types";
 
 const BASE = "/api";
@@ -239,6 +241,29 @@ export const api = {
   escalated: (maxAttempts?: number) =>
     request<EscalatedAction[]>(
       `/actions/escalated${maxAttempts === undefined ? "" : `?max_attempts=${maxAttempts}`}`),
+
+  /** The Action Center — plan P0-03. One read, five sections, one instant.
+   *  Assembling this from `/approvals` + `/actions/escalated` + `/incidents`
+   *  would show counts from three different moments, and the moments diverge
+   *  exactly when the numbers are moving. */
+  actionCenter: (limit?: number) =>
+    request<ActionCenter>(
+      `/actions${limit === undefined ? "" : `?limit=${limit}`}`),
+
+  /** The home screen — plan P0-05. */
+  commandCenter: () => request<CommandCenter>("/command-center"),
+
+  /** One box, every identifier — plan P1-06. Exact match, server-side. */
+  search: (q: string) =>
+    request<SearchResults>(`/search?q=${encodeURIComponent(q)}`),
+
+  /** Per-component dependency health — §11.
+   *
+   *  Authenticated when there is a token, because the server widens the body
+   *  for one: the verdicts are public (a probe cannot hold a token) and the
+   *  operational detail behind them is not. Sent without a token this still
+   *  succeeds and returns the verdicts alone. */
+  readiness: () => request<Readiness>("/readiness"),
 
   scenarios: () => request<Scenario[]>("/scenarios", {}, { auth: false }),
 

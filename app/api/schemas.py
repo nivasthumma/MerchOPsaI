@@ -277,17 +277,233 @@ class ApprovalQueue(Contract):
 
 # ------------------------------------------------------------------- actions
 class EscalatedAction(Contract):
+    """One row of the reconciliation work queue — plan P0-04.
+
+    Every field the plan names is here, because a queue that lists identifiers
+    is not a work queue: age (`created_at`), amount, provider, external
+    reference, last known state, attempts, last check, next retry, escalation,
+    owner, and the incident and task it came from.
+
+    Timestamps are `object` rather than `str` on the fields that come straight
+    out of a `text()` query: those arrive as `datetime` and are serialised by
+    FastAPI. Declaring them `str` would coerce and change the wire format of a
+    response the frontend already parses.
+    """
     id: str
     task_id: str
     merchant_id: str
+    action_type: str | None = None
+    status: str | None = None
     target_payment_id: str | None = None
     external_payment_id: str | None = None
     amount_minor: int | None = None
     external_reference: str | None = None
     verification_state: str | None = None
     verify_attempts: int
+    created_at: str | object = None
     updated_at: str | object = None
     verification_detail: dict | None = None
+    # --- P0-04 reconciliation workflow ---
+    escalated: bool = False
+    escalated_at: str | object = None
+    last_verified_at: str | object = None
+    next_verify_at: str | object = None
+    provider: str | None = None
+    environment: str | None = None
+    incident_id: str | None = None
+    owner: str | None = None
+
+
+# --- Action Center (P0-03) -------------------------------------------------
+class ActionRow(Contract):
+    """One action in the Action Center, in every section that lists actions.
+
+    Deliberately one shape for all four action sections. A per-section model is
+    how "amount_minor" comes to mean the requested amount in one column and the
+    verified amount in another.
+    """
+    id: str
+    task_id: str
+    merchant_id: str
+    action_type: str
+    status: str
+    target_payment_id: str | None = None
+    external_payment_id: str | None = None
+    external_reference: str | None = None
+    amount_minor: int | None = None
+    verification_state: str | None = None
+    verify_attempts: int
+    escalated: bool = False
+    escalated_at: str | object = None
+    last_verified_at: str | object = None
+    next_verify_at: str | object = None
+    approval_id: str | None = None
+    recovery_candidate_id: str | None = None
+    created_at: str | object = None
+    updated_at: str | object = None
+    provider_latency_ms: Number | None = None
+    verification_latency_ms: Number | None = None
+    customer_id: str | None = None
+    payment_method: str | None = None
+    provider: str | None = None
+    environment: str | None = None
+    incident_id: str | None = None
+    owner: str | None = None
+    task_request: str | None = None
+    task_status: str | None = None
+    approval_decision: str | None = None
+    risk_level: str | None = None
+    expires_at: str | object = None
+    required_signatures: int | None = None
+
+
+class PendingApprovalRow(Contract):
+    """An approval no action exists for yet — the money has not moved.
+
+    Separate from `ActionRow` because there is genuinely no action row to
+    describe: the claim is not made until the approval clears. Modelling it as
+    an action with null everything would tell an operator an action exists.
+    """
+    approval_id: str
+    task_id: str
+    action_type: str
+    action_payload: dict
+    risk_level: str
+    decision: str
+    expires_at: str | object = None
+    required_signatures: int
+    created_at: str | object = None
+    evidence: list = []
+    incident_id: str | None = None
+    owner: str | None = None
+    task_request: str | None = None
+    signatures: int
+    expired: bool
+
+
+class ActionCenterCounts(Contract):
+    awaiting_approval: int
+    executing: int
+    unknown: int
+    escalated: int
+    recently_completed: int
+
+
+class ReconciliationPolicy(Contract):
+    max_attempts: int
+    on_exhaustion: str
+
+
+class ActionCenter(Contract):
+    generated_at: str
+    merchant_id: str
+    awaiting_approval: list[PendingApprovalRow]
+    executing: list[ActionRow]
+    unknown: list[ActionRow]
+    escalated: list[ActionRow]
+    recently_completed: list[ActionRow]
+    counts: ActionCenterCounts
+    reconciliation_policy: ReconciliationPolicy
+    sections: list[str]
+
+
+# --- Command Center (P0-05) ------------------------------------------------
+class RevenueHealth(Contract):
+    at_risk_minor: int
+    recoverable_minor: int
+    attempted_minor: int
+    recovered_minor: int
+    failed_minor: int
+    unknown_minor: int
+    outstanding_minor: int
+    invariants_broken: list[str]
+
+
+class FunnelStage(Contract):
+    """One stage of the recovery funnel — P1-03.
+
+    Ordered and named server-side so at-risk can never be rendered as
+    recovered by a client that arranged six loose numbers itself.
+    """
+    stage: str
+    label: str
+    amount_minor: int
+
+
+class AttentionCounts(Contract):
+    approvals_pending: int
+    approvals_expired: int
+    unknown_actions: int
+    escalated_actions: int
+    open_incidents: int
+    critical_incidents: int
+    running_tasks: int
+
+
+class ActivityEvent(Contract):
+    event_type: str
+    correlation_id: str | None = None
+    task_id: str | None = None
+    incident_id: str | None = None
+    created_at: str | object = None
+    payload: dict
+
+
+class CommandCenter(Contract):
+    generated_at: str
+    merchant_id: str
+    revenue: RevenueHealth
+    funnel: list[FunnelStage]
+    attention: AttentionCounts
+    by_incident: list[dict]
+    by_method: list[dict]
+    activity: list[ActivityEvent]
+
+
+# --- Global search (P1-06) -------------------------------------------------
+class SearchHit(Contract):
+    kind: str
+    id: str
+    label: str | None = None
+    detail: str | None = None
+    created_at: str | None = None
+    route: str
+
+
+class SearchResults(Contract):
+    query: str
+    results: list[SearchHit]
+    truncated: bool
+
+
+# --- Liveness / readiness (§11) --------------------------------------------
+class Liveness(Contract):
+    status: str
+    checked_at: str
+
+
+class ComponentHealth(Contract):
+    """One dependency's verdict.
+
+    `extra="forbid"` is relaxed here alone: each check attaches the facts that
+    make its own verdict actionable — mapping coverage, webhook counts, the
+    reconciliation backlog — and a fixed union of every check's extras would be
+    a model that has to be edited every time a check learns something new.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+    detail: str
+    required: bool
+    latency_ms: Number
+
+
+class Readiness(Contract):
+    status: str
+    checked_at: str
+    components: dict[str, ComponentHealth]
+    blocking: list[str]
+    degraded: list[str]
 
 
 class ActionDetail(Contract):
@@ -415,6 +631,10 @@ class IncidentSummary(Contract):
     recovery: PlanView | None = None
     timeline: list[dict] | None = None
     tasks: list[dict] | None = None
+    # The financial actions this incident produced — plan P0-07's last four
+    # stages. Same row shape the Action Center serves, so the incident page and
+    # the queue cannot disagree about the state of an action.
+    actions: list[ActionRow] | None = None
     legal_transitions: list[str] | None = None
 
 

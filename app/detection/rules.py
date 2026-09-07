@@ -71,6 +71,31 @@ class Anomaly:
     evidence: list[dict] = field(default_factory=list)
 
 
+# MerchantOps §12 requires every incident to expose why it was called an anomaly:
+#
+#     Rule: payment_success_rate_drop
+#     Baseline: 91.8%
+#     Observed: 73.2%
+#     Threshold: <80%
+#     Version: v3
+#
+# Each rule already recorded those numbers, under names of its own choosing —
+# `baseline_success_rate_pct`, `capture_count`, `event_count`. A reader wanting
+# the canonical four therefore had to know which rule produced the row and which
+# of its keys meant what, which is a mapping table living in whoever is reading.
+#
+# So every rule emits these four keys *as well as* its detailed ones. They are
+# additive to an existing JSON column, so no migration, and a rule that forgets
+# them renders as "not published" rather than as a wrong number.
+CANONICAL_SIGNAL_KEYS = ("baseline", "observed", "threshold", "unit")
+
+
+def _canonical(baseline, observed, threshold: str, unit: str) -> dict:
+    """The §12 triple, in the shape every rule emits it."""
+    return {"baseline": baseline, "observed": observed,
+            "threshold": threshold, "unit": unit}
+
+
 def _fmt_inr(minor: int) -> str:
     return f"INR {minor / 100:,.2f}"
 
@@ -153,6 +178,10 @@ def detect_payment_degradation(session, merchant_id: str, *,
             detection_rule="success_rate_below_baseline",
             revenue_at_risk_minor=revenue_at_risk,
             signals={
+                **_canonical(baseline=round(base_rate, 1),
+                             observed=round(cur_rate, 1),
+                             threshold=f"drop >= {DEGRADATION_THRESHOLD_PP}pp",
+                             unit="%"),
                 "method": method,
                 "current_success_rate_pct": round(cur_rate, 1),
                 "baseline_success_rate_pct": round(base_rate, 1),
@@ -305,6 +334,11 @@ def detect_duplicate_payments(session, merchant_id: str, *,
             detection_rule="duplicate_capture_on_order",
             revenue_at_risk_minor=exposure,
             signals={
+                # One capture per order is the expected state, so it is the
+                # baseline; the observed value is how many actually landed.
+                **_canonical(baseline=1, observed=len(members),
+                             threshold=f"> 1 capture within {window_seconds}s",
+                             unit="captures"),
                 "order_id": order_id, "customer_id": customer_id,
                 "first_payment_id": first["id"],
                 "excess_payment_ids": ids,
@@ -390,6 +424,9 @@ def detect_provider_failure_burst(session, merchant_id: str, *,
             # inventing an exposure from a count is exactly what §22 forbids.
             revenue_at_risk_minor=0,
             signals={
+                **_canonical(baseline=BURST_THRESHOLD, observed=n,
+                             threshold=f">= {BURST_THRESHOLD} in the window",
+                             unit="events"),
                 "event_type": r["event_type"], "event_count": n,
                 "window_minutes": round(span_minutes, 1),
                 "threshold": BURST_THRESHOLD,

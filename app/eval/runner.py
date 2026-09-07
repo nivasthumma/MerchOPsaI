@@ -676,7 +676,20 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
             pass
 
     if sc.reconcile:
-        reconcile(session, min_age_seconds=0)
+        # Both waits are overridden, because a scenario is measuring what the
+        # sweep *concludes*, not how long it takes to get there.
+        #
+        #   min_age_seconds=0    do not wait for the provider to propagate
+        #   respect_backoff=False do not wait out this action's own retry
+        #                         schedule (P0-15)
+        #
+        # The second is the same override an operator gets from "check now".
+        # Leaving it on would mean every reconciliation scenario asserted the
+        # backoff rather than the settlement -- and would report a working
+        # sweep as `verification_state: expected SUCCESS, got UNKNOWN`, which
+        # is a sentence about the wrong thing. The backoff has its own tests
+        # (`test_the_sweep_honours_the_backoff`).
+        reconcile(session, min_age_seconds=0, respect_backoff=False)
 
     webhook = _deliver_webhook(session, sc, task) if sc.webhook else None
 
@@ -981,8 +994,14 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
         seeder.reset_schema()
         data = seeder.build()
         with session_scope() as s:
-            for key in ("tenants", "merchants", "users", "customers", "products",
-                        "orders", "payments", "refunds"):
+            # `seeder.SEEDED_TABLES`, not a copy of it. This was the third copy
+            # of the same dependency ordering -- here, in the seeder's own
+            # main(), and in tests/conftest.py -- and adding
+            # `provider_mappings` to one of them silently stopped the other two
+            # seeding it. The suite then failed as `external_calls: expected 1,
+            # got 0` across twenty scenarios, several call frames away from a
+            # tuple that had not been updated.
+            for key in seeder.SEEDED_TABLES:
                 s.add_all(data[key])
                 s.flush()
         with session_scope() as s:

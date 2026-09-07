@@ -187,7 +187,10 @@ describe("starting the next investigation", () => {
       [{ id: "TASK_A", request: "anything", status: "COMPLETED" }]));
     renderApp();
     const link = await screen.findByRole("link", { name: /New investigation/ });
-    expect(link).toHaveAttribute("href", "/");
+    // Not "/" any more: the home screen is the Command Center (plan P0-05),
+    // and starting an investigation is its own route rather than the thing
+    // that happens when you open the application.
+    expect(link).toHaveAttribute("href", "/investigate");
   });
 
   it("offers it even when nothing has been run yet", async () => {

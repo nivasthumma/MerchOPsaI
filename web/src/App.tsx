@@ -79,13 +79,7 @@ export default function App() {
               <span className="kicker">control plane</span>
             </div>
           </div>
-          <nav className="tabs" aria-label="Sections">
-            <NavLink to="/" end>Investigate</NavLink>
-            <NavLink to="/dashboard">Dashboard</NavLink>
-            <NavLink to="/incidents">Incidents</NavLink>
-            <NavLink to="/scenarios">Scenarios</NavLink>
-            <NavLink to="/operations">Operations</NavLink>
-          </nav>
+          <MainNav />
 
           <div className="top-right">
             {me ? (
@@ -134,6 +128,50 @@ export default function App() {
         </main>
       </div>
     </ToastHost>
+  );
+}
+
+/** The information architecture of §29, as navigation — plan P1-01.
+ *
+ *  It was five flat tabs in the order they were built, which is a menu rather
+ *  than a structure. The four groups say what each screen is *for*: what needs
+ *  doing, what the system found, whether you can believe it, and how it is
+ *  configured. That grouping is the plan's, and it is worth keeping because it
+ *  matches how the work actually splits — an operator lives in OPERATIONS, an
+ *  auditor lives in TRUST, and neither wants the other's screens in their way.
+ *
+ *  Rendered as one <nav> with labelled groups rather than four navs: a screen
+ *  reader should hear one navigation landmark with sections inside it, not four
+ *  competing ones. */
+function MainNav() {
+  const groups: [string, [string, string, boolean?][]][] = [
+    ["", [["/", "Command Center", true]]],
+    ["Operations", [
+      ["/incidents", "Incidents"],
+      ["/actions", "Actions"],
+      ["/recovery", "Recovery"],
+    ]],
+    ["Intelligence", [
+      ["/investigate", "Investigate"],
+      ["/dashboard", "Dashboard"],
+    ]],
+    ["Trust", [
+      ["/operations", "Reconciliation"],
+      ["/scenarios", "Evaluation"],
+    ]],
+  ];
+
+  return (
+    <nav className="tabs" aria-label="Sections">
+      {groups.map(([label, items]) => (
+        <span className="tab-group" key={label || "home"}>
+          {label ? <span className="tab-group-label" aria-hidden="true">{label}</span> : null}
+          {items.map(([to, text, end]) => (
+            <NavLink key={to} to={to} end={end}>{text}</NavLink>
+          ))}
+        </span>
+      ))}
+    </nav>
   );
 }
 
@@ -195,7 +233,7 @@ function TaskRail() {
           task page, and it was a trip back through the nav to reach. The state
           flag asks Investigate to put the cursor in the box, so the action is
           click-then-type rather than click-then-click-then-type. */}
-      <NavLink className="rail-new" to="/" state={{ focus: true }} end>
+      <NavLink className="rail-new" to="/investigate" state={{ focus: true }} end>
         <span aria-hidden="true">+</span> New investigation
       </NavLink>
 

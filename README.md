@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-491%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-546%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 491 tests · 167/167 scenarios · 77/78 mutations |
+| [📊 Measured results](#-measured-results) | 546 tests · 167/167 scenarios · 77/78 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -85,7 +85,7 @@ and what is architecture.
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 167 scenarios + 78-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 167 scenarios + 84-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -141,13 +141,19 @@ median task latency 52 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-77/78 mutations caught      last complete run
+77/78 mutations caught      last complete run, on an older tree
   └─ the one survivor now has a test, verified against it individually
+
+84 mutants now defined      six added with the mapping and reconciliation work
+  └─ those six run and are caught; the other 78 have not been re-run since
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
 complete run takes over an hour. The last complete run measured 77/78 on the tree as
-it stood after ADR-0029. Its survivor — "roll back the whole transaction on a duplicate
+it stood after ADR-0029, which is **not** the current tree: ADR-0033 added six mutants
+and changed code three existing ones anchor on. Those six were run and caught; the
+figure for the whole set is therefore stale and is labelled as such rather than
+restated as though it still held. Its survivor — "roll back the whole transaction on a duplicate
 action" — was caused by that ADR: committing the claim shrank the bug's blast radius
 and, in doing so, disarmed the row-count assertion that used to catch it.
 `test_refusing_a_duplicate_does_not_erase_the_first_attempt` replaces it and was
@@ -438,11 +444,24 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `POST /tasks/{id}/replay?mode=` | `PLAYBACK` or `RE_REASON` |
 | `POST /actions/reconcile` | Settle unsettled actions (re-reads only) |
 | `GET /actions/escalated` | Operator queue: what reconciliation could not settle |
+| `GET /actions` | **The Action Center** — the queue in five sections, one read |
+| `GET /command-center` | **What needs attention** — revenue health, funnel, live activity |
+| `GET /search?q=` | One box, every identifier. Exact match, merchant-scoped in SQL |
 | `GET /scenarios` · `POST /scenarios/{id}/run` | Evaluation suite |
 | `GET /health` | Reports active LLM provider and payment adapter |
+| `GET /liveness` | The process is running. No I/O, no dependencies |
+| `GET /readiness` | Per-component dependency verdicts; 503 when a *required* one is down |
 
 Every endpoint enforces authentication and merchant isolation server-side. A
 cross-merchant read returns 404, not 403 — existence is not leaked.
+
+`GET /liveness` and `GET /readiness` are unauthenticated because a platform probe
+cannot hold a token. `/readiness` publishes *verdicts* to anyone and the operational
+detail behind them — mapping coverage, the reconciliation backlog, which payments
+drifted — only to a caller with a valid token, which is the same line
+`/metrics/prometheus` already draws. An invalid token narrows the body rather than
+failing the request: a probe with a stale credential must not take a deployment out of
+rotation.
 
 `POST /webhooks/razorpay` is the one exception and the only unauthenticated write: the
 provider holds no bearer token, so an HMAC signature over the raw body is the
@@ -526,7 +545,10 @@ are different claims.
    for — a lost delivery, an event type the provider does not send — and that path is
    still bounded by cron, not real time. An always-on worker means Redis or Celery,
    which the MVP scope excludes.
-5. **Single-process, synchronous.** No queue, no horizontal scale.
+5. **Single-process, synchronous.** No queue, no horizontal scale. The plan's §8
+   topology (API → queue → worker) is designed and not built; what stands in for the
+   worker is the cron sweep, and `/readiness` now reports when that sweep has stopped
+   running rather than leaving a silent backlog to be discovered by an operator.
 6. **Rate limiting is per-worker.** The counter is in-process, so with several
    workers the limit is approximate. A shared counter needs Redis.
 7. **`RETRY` and `SUBSCRIPTION_RETRY` have no tool.** They are planned, ranked and costed
@@ -567,13 +589,27 @@ are different claims.
    store is real work, not a rename.
 16. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
     Incidents appear at sweep cadence.
-17. **Only 21 of 589 payments are externally mapped.** Refunds outside that set are
+17. **Only 21 of 590 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
-   not a defect.
+   not a defect. `/readiness` publishes the coverage rather than leaving it to be
+   inferred from a rejection count, because "seventeen refunds were rejected" is
+   ambiguous between a broken mapping layer and a working one applied to unmapped data.
+18. **The mapping is recorded twice, and the disagreement is checked rather than
+   assumed away.** `provider_mappings` is the control plane's authority; the
+   `payments.external_*` columns are the *mock provider's* own store, which is the
+   right place for them — the mock stands in for Razorpay, and Razorpay holds
+   provider-side state. With live credentials the columns stop being read by anything
+   but the mock. Until then two rows carry one fact, so
+   `app.integrations.mapping.check_consistency` compares them and `/readiness` reports
+   any drift as `degraded`.
+19. **No mapping has ever been confirmed against a real provider.**
+   `provider_mappings.verified_at` is null on every seeded row, and null means nobody
+   has checked — deliberately a different claim from "checked and it was there". Real
+   Test Mode credentials would populate it.
 
 ### Coverage limits
 
-18. **Thirteen of the 78 mutants are caught by unit tests only** — no scenario
+20. **Thirteen of the 78 mutants are caught by unit tests only** — no scenario
     distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
     the key-name branch of audit redaction, the incident lifecycle's legality check, and
     grading a bulk action as if it stood alone, and six of the seven tooling controls.
@@ -588,7 +624,7 @@ are different claims.
     crash rather than a graded result, and the rest by unit tests alone — the metrics and
     taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-19. **The 78-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
+21. **The 78-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
     The test half is now fast (one seed, per-test rollback); the scenario half still
     rebuilds the schema per scenario, so a complete run is around fifty minutes.
     `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
@@ -650,10 +686,10 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 182 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (491 tests)
+tests/          unit · security · integration  (546 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 32 ADRs
+                gap-closure plan, 33 ADRs
 ```
 
 ## 📄 License / disclaimer

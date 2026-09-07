@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
+from app.integrations.mapping import MERCHANT_ISOLATION, UNKNOWN_PAYMENT
+from app.integrations.mapping import resolve as resolve_mapping
 from app.models import AgentAction, WebhookEvent
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 
@@ -45,23 +47,25 @@ SPEC_PAYMENT_STATUS = ToolSpec(
 def get_payment_status(session, merchant_id: str, payment_id: str, *, adapter=None) -> ToolResult:
     from app.integrations.razorpay.adapter import get_adapter
 
+    # Same mapping layer the execution path uses. A read and a write that
+    # resolve an internal id differently is how "verified the wrong payment"
+    # happens, so there is exactly one resolver (MerchantOps §6).
+    mapping, failure = resolve_mapping(session, merchant_id, payment_id)
+    if failure is not None:
+        code = ("NOT_FOUND" if failure.code in (UNKNOWN_PAYMENT, MERCHANT_ISOLATION)
+                else "TOOL_INVALID_ARGUMENT")
+        return ToolResult(success=False, error_code=code,
+                          data={"payment_id": payment_id, **failure.as_dict()},
+                          risk_level="LOW")
+
     row = session.execute(text("""
-        SELECT external_payment_id, amount_minor, amount_refunded_minor, status
+        SELECT amount_minor, amount_refunded_minor, status
         FROM payments WHERE id = :p AND merchant_id = :m
     """), {"p": payment_id, "m": merchant_id}).mappings().first()
-    if row is None:
-        return ToolResult(success=False, error_code="NOT_FOUND",
-                          data={"payment_id": payment_id}, risk_level="LOW")
-    if not row["external_payment_id"]:
-        return ToolResult(success=False, error_code="TOOL_INVALID_ARGUMENT",
-                          data={"error": "not_externally_mapped",
-                                "detail": f"{payment_id} has no provider mapping; there "
-                                          f"is no external state to read."},
-                          risk_level="LOW")
 
     adapter = adapter or get_adapter(session)
     try:
-        ext = adapter.get_payment(row["external_payment_id"])
+        ext = adapter.get_payment(mapping.external_payment_id)
     except Exception as exc:
         # A failed read is reported as a failed read. Falling back to our own
         # records here would answer a question about provider state with

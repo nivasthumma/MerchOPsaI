@@ -91,7 +91,30 @@ counts:     ; @$(PY) scripts/check_counts.py
 # frontend lint/typecheck/test/audit, the browser journeys, the dependency
 # lock and audit gates, and 88 mutants. Those need service containers, a
 # browser download and two hours; this needs a local Postgres and a minute.
-ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) counts && $(MAKE) eval
+#
+# On its OWN database. `SEED_FORCE=1 make seed` drops the schema, so running
+# this used to destroy the development database -- the same defect the
+# evaluation suite had, one step earlier in the same target, and it survived
+# fixing that one because the fix was aimed at `eval` rather than at the class.
+# A check you run before pushing must not cost you the data you were working
+# on, or you stop running it.
+CI_DB ?= $(shell $(PY) -c "import os,sys; sys.path.insert(0,'.'); \
+	from scripts.dbutil import database_name, sibling_url; \
+	from app.config import Settings; \
+	u=os.environ.get('DATABASE_URL') or Settings().database_url; \
+	print(sibling_url(u, database_name(u)+'_ci'))")
+ci:
+	@$(PY) -c "import sys; sys.path.insert(0,'.'); \
+	from scripts.dbutil import database_name, ensure_database; \
+	u='$(CI_DB)'; \
+	print(f'ci database: {database_name(u)}' + (' (created)' if ensure_database(u) else ''))"
+	DATABASE_URL=$(CI_DB) SEED_FORCE=1 $(MAKE) seed
+	DATABASE_URL=$(CI_DB) $(MAKE) harden
+	$(MAKE) lint
+	$(MAKE) cleanroom
+	$(MAKE) test
+	DATABASE_URL=$(CI_DB) $(MAKE) counts
+	DATABASE_URL=$(CI_DB) $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------

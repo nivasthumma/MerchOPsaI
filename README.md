@@ -423,17 +423,21 @@ make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
 ```
 
-Every one of those is safe to run with the console open. **It was not until
-2026-09-08:** the evaluation suite drops and rebuilds the schema once per
-scenario, and it inherited `DATABASE_URL` — so `make eval` destroyed the
-development database 167 times, and `make mutants`, which runs the suite per
-mutant, did it 88 times over. Anyone browsing at the time watched their open
-task become "Unknown task" with nothing connecting the two events.
-`scripts/run_e2e.sh` had had its own database from the start and said why in a
-comment; the evaluation path never got the same treatment. It does now —
-`<database>_eval`, created on demand, `EVAL_DATABASE_URL` to override — and
-`run_all()` refuses outright to reset a database whose name does not look
-disposable, so bypassing the entry point cannot reintroduce it.
+Every one of those is safe to run with the console open. **None of them was
+until 2026-09-08.** The evaluation suite drops and rebuilds the schema once per
+scenario and inherited `DATABASE_URL`, so `make eval` destroyed the development
+database 167 times; `make mutants` runs the suite per mutant and did it 88
+times over; and `make ci` began by force-seeding the same database. Anyone
+browsing at the time watched their open task become "Unknown task" with nothing
+connecting the two events.
+
+Each check now has its own database, created on demand: `<database>_eval` for
+the suite (`EVAL_DATABASE_URL` to override) and `<database>_ci` for `make ci`
+(`CI_DB`). `scripts/run_e2e.sh` had had one from the start and said why in a
+comment — the reasoning existed and had simply never been applied one directory
+across. `run_all()` additionally refuses to reset a database whose name does not
+look disposable, so bypassing the entry point cannot reintroduce it; the default
+makes the right thing happen and the guard makes the wrong thing impossible.
 
 `make ci` is **not** everything CI runs, and used to say it was. It is seed,
 harden, lint, clean-room import, tests, published-number check and evaluation —

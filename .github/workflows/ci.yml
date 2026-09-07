@@ -175,6 +175,18 @@ jobs:
           print("Every entrypoint imports from the tracked tree alone.")
           EOF
 
+      - name: No mutant is committed
+        # The check that would have caught it. `scripts/mutation_test.py`
+        # rewrites files under `app/` for two hours at a time, and on
+        # 2026-09-08 a `git add -A` during a run pushed
+        # `Decision.ALLOW,  # MUTANT` -- the mutation that removes the human
+        # approval gate on high-risk financial actions. It was found by reading
+        # `git show --name-only` afterwards, which is not a control.
+        #
+        # Compared against the harness's own MUTATIONS list rather than grepped
+        # for a marker, so it cannot drift from what the harness can apply.
+        run: python scripts/check_no_mutants.py
+
       - name: The lock is current
         # `uv pip compile` prefers the pins already in the output file, so
         # recompiling is a no-op unless `requirements.txt` changed. That makes

@@ -122,6 +122,13 @@ demo: seed  ; $(PY) scripts/demo.py
 # UNKNOWN through the real path, and a rejection. Additive -- it never
 # seeds and never deletes, which is why it is not a flag on `seed`.
 demo-state: ; $(PY) scripts/demo_state.py
+# Install the pre-commit hook that refuses to record a mutant. Hooks are
+# not version-controlled by git, so this is opt-in -- which is why the same
+# check also runs in CI, where it protects everybody rather than whoever
+# remembered.
+hooks:      ; @cp scripts/hooks/pre-commit .git/hooks/pre-commit \
+	&& chmod +x .git/hooks/pre-commit \
+	&& echo 'installed .git/hooks/pre-commit'
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------
 web-setup:  ; cd web && npm install

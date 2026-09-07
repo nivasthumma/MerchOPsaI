@@ -422,7 +422,23 @@ make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
 make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
+make hooks                               # pre-commit: refuse to record a mutant
 ```
+
+`make hooks` installs one pre-commit hook, and it exists because of a specific
+failure. `scripts/mutation_test.py` rewrites files under `app/` in place for
+over two hours; every mutation is reverted in a `finally` and the tree is
+verified afterwards, but neither stops a commit made *while* a run is in
+flight. On 2026-09-08 a `git add -A` during a run pushed
+`Decision.ALLOW,  # MUTANT` — the mutation that removes the human approval gate
+on high-risk financial actions, which 49 scenarios exist to catch. It was found
+by reading `git show --name-only` afterwards, which is not a control.
+
+The check compares the file against the harness's own `MUTATIONS` list rather
+than grepping for a `# MUTANT` marker: a marker is a convention and conventions
+get forgotten, while the replacement strings are the exact text the harness can
+write. It runs in CI as well as in the hook — git does not version-control
+hooks, so the hook protects whoever installed it and CI protects everybody.
 
 `make demo-state` is the one worth knowing about before showing this to anybody.
 A freshly seeded database has 590 payments and no *operations* — no incidents

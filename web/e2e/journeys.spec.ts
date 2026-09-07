@@ -184,11 +184,19 @@ test("C — a rejected candidate makes ZERO external calls", async ({ page, requ
   await page.goto(`/tasks/${task.id}`);
   await page.getByRole("button", { name: /Reject/ }).first().click();
 
-  const after = await api(request, `/tasks/${task.id}`);
-  expect(after.status).toBe("REJECTED");
+  // Polled, not read once. A click fires an asynchronous POST, and asserting
+  // on the next line is a race that passes whenever the machine is fast enough
+  // — which is most of the time, and is why this was green twice before it was
+  // red. A flaky end-to-end test is worse than none: it teaches people to
+  // re-run rather than to look.
+  await expect
+    .poll(async () => (await api(request, `/tasks/${task.id}`)).status,
+          { timeout: 15_000 })
+    .toBe("REJECTED");
 
   // The assertion that matters, and the one only a negative can make: no
   // action row exists, so nothing was ever sent.
+  const after = await api(request, `/tasks/${task.id}`);
   expect(after.actions).toHaveLength(0);
 
   const metrics = await api(request, "/metrics");

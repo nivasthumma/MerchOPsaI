@@ -4,5 +4,13 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["."]
+  // The browser suite needs Postgres, a seeded database and a downloaded
+  // browser, so CI does not run it (see the note in playwright.config.ts).
+  // Typechecking it costs nothing and is what stops it rotting there: a field
+  // renamed in `src/api/types.ts` or an export removed breaks this even on a
+  // machine that can never execute the journeys.
+  //
+  // The Vite and Playwright configs are included for the same reason — neither
+  // is under `src`, so the root tsconfig has never looked at either.
+  "include": [".", "../vite.config.ts", "../playwright.config.ts", "../vitest.config.ts"]
 }

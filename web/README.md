@@ -205,6 +205,44 @@ rather than merely look wrong:
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
 
+## Browser E2E — §22
+
+```bash
+make e2e-install     # once, to fetch Chromium
+make e2e             # stands up its own DB and API, runs, tears down
+```
+
+Five journeys, from the plan: revenue degradation, approval, rejection, UNKNOWN,
+replay. They exist because everything else here tests a **layer** — the scenario
+suite grades the agent, the integration tests exercise the API, Vitest renders
+components against captured fixtures. All of those can pass while a route
+renders nothing, a field is read under a name the server stopped sending, or a
+button posts somewhere that moved.
+
+Two rules they follow, which are the product's rules:
+
+- **Nothing is asserted about money that the server did not say.** Where a test
+  checks a refund happened it checks the verification state the API returned,
+  not a green tick — a tick is a rendering of a claim, not the claim.
+- **C and E assert a negative.** "No external call was made" is exactly what a
+  UI bug can violate while looking entirely correct.
+
+They run against their **own** database, for the same reason `tests/conftest.py`
+refuses to share one: these approve refunds, and pointed at the development
+database they would destroy whatever somebody had open. Journey D needs an
+action whose outcome is genuinely unestablished, which no API can produce on
+purpose — `scripts/run_e2e.sh` plants one through the real execution path with
+the timeout injector, so the journey asserts the presentation of something that
+actually reached UNKNOWN.
+
+Writing them found four wrong assumptions in one sitting, all mine, none of
+which any other test could have surfaced: `Baseline` matches four elements on
+the incident page; approving is deliberately **two** clicks (the button arms and
+relabels itself "Confirm — this moves money"); the replay controls are behind a
+`role="tab"`, not a button; and the replay count is `external_calls_made`, not
+`external_calls`. That last one is the exact failure this suite is for — caught
+in the test rather than the product, which is the same lesson either way.
+
 ## Build
 
 ```bash

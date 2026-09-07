@@ -161,6 +161,18 @@ and, in doing so, disarmed the row-count assertion that used to catch it.
 verified by applying the mutant by hand (it fails) and removing it (it passes). A full
 re-run against the current tree has **not** been completed, so 78/78 is not claimed.*
 
+**§22's five browser journeys run.** `make e2e` stands the whole stack up
+against its own database — seed, API, the built bundle behind `vite preview`,
+one Chromium — and drives detection→incident, the approval gate through to
+independent verification, a rejection, an UNKNOWN queue, and a replay. Two of
+them assert a **negative** — that no external call was made — which is the
+property a UI bug can violate while looking entirely correct.
+
+Not in `make ci`: it needs Postgres, a seeded database, two processes and a
+browser download, and CI here has none of the last (ADR-0015 already keeps the
+frontend suite out for the same reason). Where it is *gated* is a deployment
+decision; this records which one was taken rather than implying otherwise.
+
 **§20's twenty mandatory adversarial scenarios are audited rather than assumed**
 — [`docs/adversarial-coverage.md`](docs/adversarial-coverage.md) counts what the
 suite covers and names the one real gap: an out-of-order webhook is nothing the

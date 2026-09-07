@@ -56,6 +56,21 @@ web:        ; cd web && npm run dev
 web-build:  ; cd web && npm run build
 web-test:   ; cd web && npm test
 
+# Browser E2E — MerchantOps §22. Deliberately NOT part of `make ci`: it needs a
+# seeded database, a running API and a downloaded browser, and CI here has none
+# of the three (ADR-0015 already keeps the frontend suite out for the same
+# reason). This is the target that runs them on a machine that does.
+#
+#   make e2e-install     once, to fetch the browser
+#   make e2e             stands up its own database and API, runs, tears down
+#
+# `scripts/run_e2e.sh` stands the whole stack up against its OWN database and
+# takes it down again — these tests approve refunds, and pointing them at the
+# development database would destroy whatever somebody had open.
+e2e:        ; ./scripts/run_e2e.sh
+
+e2e-install: ; cd web && npx playwright install chromium
+
 # One process serving both, the way the deployment does. `api/index.py` routes
 # /api/* to the FastAPI app with the prefix stripped and everything else to the
 # built SPA, so a deep link reaches the client router instead of a 404. Running

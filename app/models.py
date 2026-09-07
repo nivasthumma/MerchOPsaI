@@ -143,6 +143,16 @@ class IncidentType(str, enum.Enum):
     # history: the provider is telling us about failures faster than they land
     # on rows we own, and a burst of them is a signal in its own right.
     PROVIDER_FAILURE_BURST = "PROVIDER_FAILURE_BURST"
+    # MerchantOps §12 "failure-code spikes". Diagnostic rather than additional
+    # exposure: this says WHY a method is degrading, and the degradation rule
+    # has already counted the revenue. It therefore carries
+    # `revenue_at_risk_minor = 0` -- see the rule for why double-counting here
+    # would inflate the ledger's at-risk figure.
+    FAILURE_CODE_SPIKE = "FAILURE_CODE_SPIKE"
+    # MerchantOps §12 "unusual refund activity". Money leaving that would not
+    # have left at the baseline rate, so unlike the spike above this IS new
+    # exposure and is counted.
+    UNUSUAL_REFUND_ACTIVITY = "UNUSUAL_REFUND_ACTIVITY"
 
 
 class Intervention(str, enum.Enum):

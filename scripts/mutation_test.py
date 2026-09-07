@@ -618,6 +618,44 @@ MUTATIONS = [
         "    if is_settled(action.verification_state):\n        return False",
         "    if False:  # MUTANT\n        return False",
     ),
+
+    # --- detection §12 ------------------------------------------------------
+    (
+        # The load-bearing decision in the failure-spike rule. The lost revenue
+        # is already on the degradation incident; claiming it again roughly
+        # doubles the at-risk figure on the Command Center.
+        "detection: let a diagnostic rule claim revenue that is already counted",
+        "app/detection/rules.py",
+        "            revenue_at_risk_minor=0,\n            signals={\n"
+        "                **_canonical(baseline=prev, observed=cur,",
+        "            revenue_at_risk_minor=cur * 100000,  # MUTANT\n            signals={\n"
+        "                **_canonical(baseline=prev, observed=cur,",
+    ),
+    (
+        # Three failures becoming six is a doubling and is noise. Without the
+        # floor the rule raises an incident for every rare error code.
+        "detection: drop the volume floor under the failure-spike rule",
+        "app/detection/rules.py",
+        "        if cur < MIN_FAILURE_VOLUME:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        # Reporting the whole refunded total describes ordinary business as an
+        # incident: a merchant who always refunds £10k would be told £25k is at
+        # risk the week they refund £25k.
+        "detection: report total refunds rather than the excess over baseline",
+        "app/detection/rules.py",
+        "    excess_value = max(0, cur_v - prev_v)",
+        "    excess_value = cur_v  # MUTANT",
+    ),
+    (
+        # A merchant's first week of refunds is not an anomaly, and calling it
+        # one greets every new account with an incident.
+        "detection: treat a first week of refunds as unusual",
+        "app/detection/rules.py",
+        "    if prev_n == 0 and prev_v == 0:\n        # No baseline",
+        "    if False:  # MUTANT\n        # No baseline",
+    ),
 ]
 
 

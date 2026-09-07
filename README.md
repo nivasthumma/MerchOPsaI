@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-546%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-594%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 546 tests · 167/167 scenarios · 77/78 mutations |
+| [📊 Measured results](#-measured-results) | 594 tests · 167/167 scenarios · 77/78 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -85,7 +85,7 @@ and what is architecture.
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 167 scenarios + 84-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 167 scenarios + 88-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Infra | Local, PostgreSQL only | Redis / Celery / containers |
@@ -144,15 +144,16 @@ deliberately breaks each core control and re-runs the suite:
 77/78 mutations caught      last complete run, on an older tree
   └─ the one survivor now has a test, verified against it individually
 
-84 mutants now defined      six added with the mapping and reconciliation work
-  └─ those six run and are caught; the other 78 have not been re-run since
+88 mutants now defined      ten added with the work since ADR-0029
+  └─ 15 run since (the 10 new ones plus 5 existing that anchor on changed
+     code): 15/15 caught. The other 73 have not been re-run.
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
 complete run takes over an hour. The last complete run measured 77/78 on the tree as
-it stood after ADR-0029, which is **not** the current tree: ADR-0033 added six mutants
-and changed code three existing ones anchor on. Those six were run and caught; the
-figure for the whole set is therefore stale and is labelled as such rather than
+it stood after ADR-0029, which is **not** the current tree: the work since added ten
+mutants and changed code three existing ones anchor on. Those ten were run and caught;
+the figure for the whole set is therefore stale and is labelled as such rather than
 restated as though it still held. Its survivor — "roll back the whole transaction on a duplicate
 action" — was caused by that ADR: committing the claim shrank the bug's blast radius
 and, in doing so, disarmed the row-count assertion that used to catch it.
@@ -569,10 +570,16 @@ are different claims.
     and revenue-at-risk accuracy need labelled ground truth a production incident does not
     carry; agent cost needs token accounting this build has no path to. A figure computed
     from nothing is worse than a blank.
-12. **The provider-burst detection rule cannot fire on the seeded dataset.** It reads
-    `webhook_events`, and the seed is payment history — it carries no provider events. The
-    rule is real and is exercised by constructed state in tests and in `CLS-01`/`CLS-02`,
-    the same honesty as the bulk-risk path.
+12. **Two detection rules cannot fire on the seeded dataset**, for different reasons and
+    both stated rather than hidden.
+
+    *Provider burst* reads `webhook_events`, and the seed is payment history — it carries
+    no provider events. Exercised by constructed state in tests and in `CLS-01`/`CLS-02`.
+
+    *Unusual refund activity* is the opposite case: the seed **does** carry refunds, and
+    they are flat — nine in each window at similar value. The rule correctly says nothing,
+    which is a rule discriminating rather than one that cannot run. A test asserts the
+    silence, so a future change that makes it fire on ordinary business fails.
 13. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
     Against the deterministic planner it is computed from evidence count, which measures
     the planner rather than any judgement; against a real model it would mean something
@@ -583,18 +590,23 @@ are different claims.
    one person means rotating the secret for everybody. A deployment can no
    longer run on the development signing key, though: the application refuses to
    start where a platform marker says it is not a laptop.
-15. **Detection observes state, not a stream.** `webhook_events` stores what the provider
+15. **Two of §12's eight signal types are still not implemented.** Absolute thresholds
+   and explicit time clustering have no rule of their own — clustering exists inside the
+   duplicate rule as a window, and every other rule compares against a *baseline* rather
+   than a fixed number. Implemented: baseline deviation, payment-method degradation,
+   percentage change, duplicate detection, failure-code spikes, unusual refund activity.
+16. **Detection observes state, not a stream.** `webhook_events` stores what the provider
    *tells* us, but the detection rules still read `payments`. A business change that
    never lands on a payment row is invisible to them. Wiring detection onto the event
    store is real work, not a rename.
-16. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
+17. **Detection is a sweep, not a daemon** — same trade-off as reconciliation, above.
     Incidents appear at sweep cadence.
-17. **Only 21 of 590 payments are externally mapped.** Refunds outside that set are
+18. **Only 21 of 590 payments are externally mapped.** Refunds outside that set are
    correctly rejected as `not_externally_mapped` — that is the mapping layer working,
    not a defect. `/readiness` publishes the coverage rather than leaving it to be
    inferred from a rejection count, because "seventeen refunds were rejected" is
    ambiguous between a broken mapping layer and a working one applied to unmapped data.
-18. **The mapping is recorded twice, and the disagreement is checked rather than
+19. **The mapping is recorded twice, and the disagreement is checked rather than
    assumed away.** `provider_mappings` is the control plane's authority; the
    `payments.external_*` columns are the *mock provider's* own store, which is the
    right place for them — the mock stands in for Razorpay, and Razorpay holds
@@ -602,14 +614,14 @@ are different claims.
    but the mock. Until then two rows carry one fact, so
    `app.integrations.mapping.check_consistency` compares them and `/readiness` reports
    any drift as `degraded`.
-19. **No mapping has ever been confirmed against a real provider.**
+20. **No mapping has ever been confirmed against a real provider.**
    `provider_mappings.verified_at` is null on every seeded row, and null means nobody
    has checked — deliberately a different claim from "checked and it was there". Real
    Test Mode credentials would populate it.
 
 ### Coverage limits
 
-20. **Thirteen of the 78 mutants are caught by unit tests only** — no scenario
+21. **Thirteen of the 78 mutants are caught by unit tests only** — no scenario
     distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
     the key-name branch of audit redaction, the incident lifecycle's legality check, and
     grading a bulk action as if it stood alone, and six of the seven tooling controls.
@@ -624,7 +636,7 @@ are different claims.
     crash rather than a graded result, and the rest by unit tests alone — the metrics and
     taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-21. **The 78-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
+22. **The 78-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
     The test half is now fast (one seed, per-test rollback); the scenario half still
     rebuilds the schema per scenario, so a complete run is around fifty minutes.
     `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
@@ -686,7 +698,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 182 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (546 tests)
+tests/          unit · security · integration  (594 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 33 ADRs

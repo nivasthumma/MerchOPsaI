@@ -96,7 +96,33 @@ _INTERVENTION = {
     # A provider reporting a run of failures is not something this system can
     # remedy by acting on transactions. It is a provider conversation.
     IncidentType.PROVIDER_FAILURE_BURST: Intervention.HUMAN_ESCALATION,
+    # Diagnostic. The spike names WHY a method is degrading; the remedy belongs
+    # to the degradation incident, which has the candidates and the exposure.
+    # Planning against this one too would propose payment links for the same
+    # transactions twice.
+    IncidentType.FAILURE_CODE_SPIKE: Intervention.HUMAN_ESCALATION,
+    # Deliberately never automatic, and this is the entry worth reading twice.
+    # Every underlying payment SUCCEEDED here — the anomaly is money going back
+    # out. There is no safe automatic remedy: refunding more compounds it, and
+    # reversing a refund is not an operation this system has or should have.
+    # A person decides.
+    IncidentType.UNUSUAL_REFUND_ACTIVITY: Intervention.HUMAN_ESCALATION,
 }
+
+# Every incident type must appear above. The `.get(..., HUMAN_ESCALATION)`
+# fallback at the call site is a safety net, not the decision: a new type that
+# silently inherits it is a remedy nobody chose, and for a financial action
+# "nobody chose" is the wrong provenance.
+#
+# Checked at import rather than asserted, because `assert` is stripped under
+# `python -O` and this is exactly the check that must not evaporate in the
+# configuration a deployment is most likely to use.
+_UNDECLARED = sorted(t.value for t in set(IncidentType) - set(_INTERVENTION))
+if _UNDECLARED:
+    raise RuntimeError(
+        f"Incident type(s) with no declared intervention: {', '.join(_UNDECLARED)}. "
+        f"Add them to _INTERVENTION in {__name__} — inheriting the fallback is a "
+        f"remedy nobody chose.")
 
 
 @dataclass

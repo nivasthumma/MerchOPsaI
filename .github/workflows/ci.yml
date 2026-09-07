@@ -170,7 +170,10 @@ jobs:
           cache-dependency-path: requirements.txt
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
+          # development runs -- a CI Node that differs from the one the
+          # suite is written against is a second environment nobody tests.
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
@@ -255,7 +258,10 @@ jobs:
           cache-dependency-path: requirements.txt
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
+          # development runs -- a CI Node that differs from the one the
+          # suite is written against is a second environment nobody tests.
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies

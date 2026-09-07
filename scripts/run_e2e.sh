@@ -107,6 +107,23 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+# Refused rather than adopted. If something is already listening here, the
+# readiness loop below would find it, report the API up, and run the whole
+# suite against whatever that is -- a different database, an older build, a
+# development API on the wrong port. uvicorn's bind failure IS printed, but it
+# goes to a background job's stderr while the script carries on, so the run
+# looks healthy and its results are meaningless. That happened once; this is
+# the fix.
+if (exec 3<>"/dev/tcp/127.0.0.1/${API_PORT}") 2>/dev/null; then
+  exec 3>&-
+  cat >&2 <<MSG
+port ${API_PORT} is already in use, and these tests approve refunds.
+Running them against whatever is already listening would drive an unknown
+database. Stop it, or set E2E_API_PORT to a free port.
+MSG
+  exit 1
+fi
+
 echo "==> api on :${API_PORT}"
 # `$PY -m uvicorn` rather than `.venv/bin/uvicorn`, so this runs wherever the
 # interpreter is -- a virtualenv locally, whatever is on PATH in CI. A hardcoded
@@ -126,6 +143,10 @@ trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 60); do
   curl -sf "${API_ORIGIN}/liveness" >/dev/null && break
+  # A uvicorn that died on startup is not going to arrive in the remaining
+  # twenty-nine seconds, and "api never came up" thirty seconds later hides the
+  # traceback that says why.
+  kill -0 "$API_PID" 2>/dev/null || { echo "api exited during startup" >&2; exit 1; }
   sleep 0.5
 done
 curl -sf "${API_ORIGIN}/liveness" >/dev/null || { echo "api never came up" >&2; exit 1; }

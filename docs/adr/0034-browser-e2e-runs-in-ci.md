@@ -67,6 +67,9 @@ deploy, not before every commit.
   drops a failure state below contrast now fails the build rather than being
   discovered by an operator squinting at it during an incident. Three real
   defects were found this way before the gate existed.
-- **ADR-0015's "the SPA has no test coverage" is now historical.** It is left in
-  place rather than edited, because an ADR is a record of what was decided and
-  when, not a document that is kept current.
+- **ADR-0015's "the SPA has no test coverage" is now historical.** So is its
+  "Node 18 pins Vite to 5.x": the toolchain is Vite 8 / Vitest 5 on Node 24,
+  taken on 2026-09-08 to clear six advisories in the build and test tooling
+  (one critical, one high). Both are left in place rather than edited, because
+  an ADR is a record of what was decided and when, not a document that is kept
+  current.

@@ -724,19 +724,20 @@ are different claims.
     palette is the only place a whole route arrives as data; everywhere else
     interpolates an id into a fixed template. Upgrading to `react-router` 7 is the
     real fix and is a routing-API change, not a version bump.
-24. **Six more advisories sit in the build and test tooling, outside the gate.**
-    `make web-audit-all` reports eight in total; the two above are the only ones in
-    anything that reaches a browser. The other six are `vite` 5.4.21 (high, path
-    traversal in optimized-deps `.map` handling), `esbuild` 0.21.5 (moderate, any
-    website can request the dev server and read the response), `vitest` 2.1.9
-    (critical, arbitrary file read and execute **while the Vitest UI server is
-    listening**) and three transitive on those. Every one is dev-server or
-    test-runner surface: none is in `dependencies`, none is in `dist/`, and the
-    critical one needs `@vitest/ui`, which is not installed and which no script
-    starts — `e2e:ui` is Playwright's. The real fix is Vite 7 / Vitest 4, which is a
-    toolchain upgrade rather than a version bump and is a decision, not a patch.
-    Recorded because "the gate is green" and "there are two advisories" are
-    different statements, and only the first was true.
+24. **Six advisories in the build and test tooling were closed by upgrading it,
+    not by widening the gate.** Before 2026-09-08 `npm audit` reported eight: the
+    two above plus `vite` 5.4.21 (high, path traversal in optimized-deps `.map`
+    handling), `esbuild` 0.21.5 (moderate, any website can request the dev server
+    and read the response), `vitest` 2.1.9 (critical, arbitrary file read and
+    execute while the Vitest UI server is listening) and three transitive on those.
+    All six were dev-server or test-runner surface — none in `dependencies`, none in
+    `dist/` — so none was urgent, and the temptation was to write that down and move
+    on. Vite 8 / Vitest 5 removes all six, and drops `esbuild` from the tree
+    entirely. It required raising CI's Node from 20 to 24 (Vitest 5 needs ≥ 22.12),
+    which `engines` plus `engine-strict` now enforce at install rather than thirty
+    seconds into a test run. Verified by the full suite: 295 Vitest tests, the build,
+    and all eleven browser journeys and accessibility scans against `vite preview`,
+    which is the part a Vite major could have broken silently.
 25. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
     CI since the start; the web half had no equivalent, which means every advisory
     above had been open and unread rather than open and accepted. `make web-audit`

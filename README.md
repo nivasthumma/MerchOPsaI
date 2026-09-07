@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-615%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-621%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 615 tests · 167/167 scenarios · 77/78 mutations |
+| [📊 Measured results](#-measured-results) | 621 tests · 167/167 scenarios · 77/78 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -403,7 +403,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 491 tests
+make test                                # 621 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -753,10 +753,10 @@ app/
   api/          FastAPI surface + response contracts (ADR-0032)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 182 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 295 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (615 tests)
+tests/          unit · security · integration  (621 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 33 ADRs

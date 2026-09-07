@@ -64,7 +64,12 @@ web-audit-all: ; cd web && npm audit
 # catches a file somebody wrote and never `git add`-ed -- the working directory
 # hides it, a fresh clone does not.
 cleanroom:  ; @$(PY) scripts/check_cleanroom.py
-ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) eval
+# Every number this repository publishes, measured and compared to what the
+# README says. Three claims were found stale on the same afternoon, and one
+# line disagreed with another in the same file -- so the drift had been there
+# long enough for a second number to be written beside the first.
+counts:     ; @$(PY) scripts/check_counts.py
+ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) counts && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------

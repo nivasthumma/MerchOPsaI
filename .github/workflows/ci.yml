@@ -83,6 +83,19 @@ jobs:
       - name: Run tests
         run: pytest tests -q
 
+      - name: Published numbers match the tree
+        # The README is the only thing most readers check, and a repository
+        # that publishes a number it cannot reproduce is making exactly the
+        # claim this project exists to refuse -- asserting a fact without
+        # reading it back. Three claims were stale when this was written, and
+        # one line in the file disagreed with another.
+        #
+        # Here rather than in `static` because collecting the Python suite
+        # needs a reachable database, and this job has one. The Vitest count is
+        # skipped where `web/node_modules` is absent; the `contract` job is
+        # where the frontend is installed.
+        run: python scripts/check_counts.py
+
   # ---------------------------------------------------------------- static analysis
   static:
     name: Lint · dependency audit · clean-room import

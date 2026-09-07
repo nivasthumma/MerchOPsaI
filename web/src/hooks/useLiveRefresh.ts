@@ -45,8 +45,13 @@ export interface LiveRefresh<T> {
    *  change. */
   live: boolean;
   /** Fetch now, out of band. Safe to call from a button; it will not stack up
-   *  behind an in-flight request. */
+   *  behind an in-flight request. Clears any backoff. */
   refresh: () => Promise<void>;
+  /** How many attempts have failed in a row. Zero once one succeeds. */
+  failures: number;
+  /** The interval currently in use, which is longer than `intervalMs` while
+   *  the API is failing. Shown, so a slowed-down screen does not look frozen. */
+  currentIntervalMs: number;
 }
 
 export interface LiveRefreshOptions {
@@ -71,6 +76,31 @@ export interface LiveRefreshOptions {
   deps?: readonly unknown[];
 }
 
+// How far the interval may stretch while the API is failing, and how fast.
+// Doubling from the screen's own cadence, capped at a minute.
+//
+// A queue polling every four seconds becomes, against a dead API, fifteen
+// requests a minute per open tab — from every operator who had it open when it
+// went down. That is load arriving exactly when the thing cannot take it, and
+// none of it can succeed. Backing off is the difference between a browser
+// waiting and a browser contributing to the outage.
+//
+// Capped at a minute rather than growing without bound: an API that comes back
+// should be noticed within a minute, and a screen that has quietly stretched
+// to a ten-minute poll is a screen showing stale data with a live-looking
+// indicator.
+const MAX_BACKOFF_MS = 60_000;
+
+/** `document.hidden`, guarded — some embedded webviews have no `document`. */
+function hidden(): boolean {
+  return typeof document !== "undefined" && document.hidden;
+}
+
+function backoff(base: number, failures: number): number {
+  if (failures === 0) return base;
+  return Math.min(base * 2 ** failures, MAX_BACKOFF_MS);
+}
+
 export function useLiveRefresh<T>(
   fetcher: () => Promise<T>,
   { intervalMs, enabled = true, deps = [] }: LiveRefreshOptions,
@@ -81,6 +111,7 @@ export function useLiveRefresh<T>(
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [live, setLive] = useState(false);
+  const [failures, setFailures] = useState(0);
 
   // The fetcher usually closes over props and is therefore a new function on
   // every render. Held in a ref so the polling effect does not restart — and
@@ -109,10 +140,17 @@ export function useLiveRefresh<T>(
       setData(next);
       setUpdatedAt(new Date());
       setError(null);
+      // One success ends the backoff outright rather than stepping down. A
+      // recovered API should be polled at the screen's real cadence
+      // immediately; easing back would leave the busiest screen the slowest.
+      setFailures(0);
     } catch (e) {
       // Deliberately does not touch `data`. Losing a queue because one poll
       // failed is worse than showing it with a staleness marker.
-      if (mounted.current) setError(e);
+      if (mounted.current) {
+        setError(e);
+        setFailures((n) => n + 1);
+      }
     } finally {
       inFlight.current = false;
       if (mounted.current) {
@@ -122,50 +160,64 @@ export function useLiveRefresh<T>(
     }
   }, []);
 
+  const period = backoff(intervalMs, failures);
+
+  // Two effects, not one, and the split is the whole reason the backoff works.
+  //
+  // The interval has to re-arm when `period` widens — that IS the mechanism.
+  // But an effect that both re-arms the timer AND fetches on entry would fetch
+  // every time the period changed, and the period changes on every failure. A
+  // failing API would then be polled MORE than a healthy one: exactly backwards,
+  // and exactly what the first version of this did.
+  //
+  // So: one effect owns "fetch now" (mount, a changed input, a tab coming
+  // back), and one owns the timer.
+
+  // --- fetch now, and watch for the tab coming back ---------------------
   useEffect(() => {
     if (!enabled) {
       setLive(false);
       // Still load once. A screen that is disabled from the start — a task that
       // was already settled when it was opened — must show its data.
-      if (!updatedAt) void refresh();
+      void refresh();
       return;
     }
 
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const start = () => { if (!timer) timer = setInterval(() => void refresh(), intervalMs); };
-    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-
     const onVisibility = () => {
-      if (document.hidden) {
-        setLive(false);
-        stop();
-      } else {
-        setLive(true);
-        // Immediately on return, before the first interval elapses. Coming back
-        // to a tab and waiting five seconds to find out the queue changed is
-        // the same as not polling.
-        void refresh();
-        start();
-      }
+      const visible = !document.hidden;
+      setLive(visible);
+      // Immediately on return, before the first interval elapses. Coming back
+      // to a tab and waiting five seconds to find out the queue changed is the
+      // same as not polling.
+      if (visible) void refresh();
     };
 
-    const visible = !document.hidden;
-    setLive(visible);
+    setLive(!document.hidden);
     void refresh();
-    if (visible) start();
 
     document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-    // `updatedAt` is deliberately not a dependency: it changes on every
-    // successful poll and would restart the interval each time. `deps` is
-    // spread so a changed input refetches at once — see LiveRefreshOptions.
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+    // `updatedAt` and `period` are deliberately absent: this effect must run on
+    // mount and on a changed input, and on nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, intervalMs, refresh, ...deps]);
+  }, [enabled, refresh, ...deps]);
 
-  return { data, error, loading, refreshing, updatedAt, live, refresh };
+  // --- the timer ---------------------------------------------------------
+  useEffect(() => {
+    if (!enabled || hidden()) return;
+    const timer = setInterval(() => {
+      // Re-checked at fire time as well as at arm time: a tab hidden between
+      // the two would otherwise keep polling until the next re-arm.
+      if (!document.hidden) void refresh();
+    }, period);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, period, refresh, live, ...deps]);
+
+  return {
+    data, error, loading, refreshing, updatedAt, live, refresh,
+    failures, currentIntervalMs: period,
+  };
 }
 
 /** How long ago, in words, for the "last updated" line.

@@ -143,6 +143,85 @@ describe("failure", () => {
   });
 });
 
+describe("backing off a failing API", () => {
+  it("does not poll a dead API at full speed", async () => {
+    // A queue on a four-second cadence is fifteen requests a minute per open
+    // tab against an API that cannot answer any of them — load arriving
+    // exactly when the thing cannot take it.
+    const fetcher = vi.fn().mockRejectedValue(new Error("down"));
+    const { result } = renderHook(
+      () => useLiveRefresh(fetcher, { intervalMs: 100 }));
+
+    await waitFor(() => expect(result.current.failures).toBe(1));
+    expect(result.current.currentIntervalMs).toBe(200);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    await waitFor(() => expect(result.current.failures).toBe(2));
+    expect(result.current.currentIntervalMs).toBe(400);
+  });
+
+  it("widening the interval does not itself trigger a fetch", async () => {
+    // The bug this pins, which the first version had: the timer effect
+    // re-arms when the period changes, and the period changes on every
+    // failure. An effect that also fetched on entry would poll a FAILING api
+    // more often than a healthy one — exactly backwards.
+    const fetcher = vi.fn().mockRejectedValue(new Error("down"));
+    renderHook(() => useLiveRefresh(fetcher, { intervalMs: 1000 }));
+
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    // Nothing advances the clock, so nothing may call again however many times
+    // the period recalculates.
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("is capped, so a recovered API is noticed within a minute", async () => {
+    // Unbounded doubling turns a screen into a ten-minute poll showing stale
+    // data behind a live-looking indicator.
+    const fetcher = vi.fn().mockRejectedValue(new Error("down"));
+    const { result } = renderHook(
+      () => useLiveRefresh(fetcher, { intervalMs: 10_000 }));
+
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(result.current.currentIntervalMs);
+      });
+    }
+    expect(result.current.currentIntervalMs).toBeLessThanOrEqual(60_000);
+  });
+
+  it("one success ends the backoff outright", async () => {
+    // Not a step down: a recovered API should be polled at the screen's real
+    // cadence immediately, or the busiest screen stays the slowest.
+    const fetcher = vi.fn()
+      .mockRejectedValueOnce(new Error("down"))
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValue("rows");
+    const { result } = renderHook(
+      () => useLiveRefresh(fetcher, { intervalMs: 100 }));
+
+    await waitFor(() => expect(result.current.failures).toBe(1));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    await waitFor(() => expect(result.current.failures).toBe(2));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    await waitFor(() => expect(result.current.data).toBe("rows"));
+    expect(result.current.failures).toBe(0);
+    expect(result.current.currentIntervalMs).toBe(100);
+  });
+
+  it("an explicit refresh is not delayed by the backoff", async () => {
+    // The operator pressing the button has decided the wait is over.
+    const fetcher = vi.fn().mockRejectedValue(new Error("down"));
+    const { result } = renderHook(
+      () => useLiveRefresh(fetcher, { intervalMs: 100 }));
+    await waitFor(() => expect(result.current.failures).toBe(1));
+
+    await act(async () => { await result.current.refresh(); });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("ago", () => {
   it("reads as recency, not as a clock", () => {
     const now = new Date("2026-09-07T12:00:00Z");

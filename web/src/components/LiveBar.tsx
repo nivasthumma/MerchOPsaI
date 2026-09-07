@@ -20,7 +20,8 @@ import { ago, type LiveRefresh } from "../hooks/useLiveRefresh";
 
 export function LiveBar<T>({ live, what = "data" }:
                            { live: LiveRefresh<T>; what?: string }) {
-  const { error, updatedAt, refreshing, live: polling, refresh, data } = live;
+  const { error, updatedAt, refreshing, live: polling, refresh, data,
+          failures, currentIntervalMs } = live;
 
   return (
     <div className="livebar" role="status" aria-live="polite">
@@ -39,6 +40,16 @@ export function LiveBar<T>({ live, what = "data" }:
               it. A read that failed changed nothing; the plan's rule is that a
               provider failure must state that no unsafe retry occurred. */}
           <span className="muted">No action was taken.</span>
+          {failures > 1 ? (
+            // A slowed screen must not read as a frozen one. Saying the
+            // interval out loud is also the honest version of "live": this is
+            // still polling, just not as often, and an operator who wants it
+            // now has the button.
+            <span className="muted">
+              Retrying every {Math.round(currentIntervalMs / 1000)}s after{" "}
+              {failures} failed attempts.
+            </span>
+          ) : null}
         </>
       ) : (
         <>

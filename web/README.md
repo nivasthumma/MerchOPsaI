@@ -149,6 +149,16 @@ reading a queue when the API hiccups keeps the queue and is told it is stale. Lo
 would be worse, because an empty queue is the most reassuring thing this application can
 say and it must never be said by accident.
 
+It also **backs off while the API is failing** — doubling from the screen's own
+cadence, capped at a minute. The Action Center polls every four seconds; against
+a dead API that is fifteen requests a minute per open tab, from every operator
+who had it open when it went down, none of which can succeed. The cap exists so
+a recovered API is noticed within a minute rather than by a screen that has
+quietly stretched to a ten-minute poll behind a live-looking indicator. One
+success ends the backoff outright rather than stepping down, or the busiest
+screen would stay the slowest. The freshness bar says the interval out loud,
+because a slowed screen must not read as a frozen one.
+
 **`components/Status`.** Thirteen statuses appear across these screens, and every one
 now has a tone, a business-language label, a *shape*, and a sentence saying what it
 asserts. The shape is not decoration: a red dot meaning "it failed" and a red dot
@@ -158,7 +168,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 284 Vitest tests, jsdom, no API required
+npm test             # 293 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -184,7 +194,7 @@ rather than merely look wrong:
 | Replay | Zero external calls reads as correct; a non-zero count reads as a defect |
 | Shell | The mock adapter, the deterministic planner, and a development signing secret are each stated before anyone can act |
 | Action Center | An action is in exactly one section — including the case that broke it, an escalated action a later re-verification settled; the attempt limit is read from the response rather than copied; a pending approval is not rendered as an action |
-| Live refresh | A failed poll keeps the data and does not advance the freshness stamp; a hidden tab pauses and refreshes on return; two requests never overlap; a changed filter refetches at once |
+| Live refresh | A failed poll keeps the data and does not advance the freshness stamp; a hidden tab pauses and refreshes on return; two requests never overlap; a changed filter refetches at once; a failing API is backed off, the backoff is capped, widening it never itself triggers a fetch, and one success clears it |
 | Funnel | A later stage never draws wider than an earlier one, even when handed figures that invert |
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 | Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |

@@ -161,6 +161,13 @@ and, in doing so, disarmed the row-count assertion that used to catch it.
 verified by applying the mutant by hand (it fails) and removing it (it passes). A full
 re-run against the current tree has **not** been completed, so 78/78 is not claimed.*
 
+**§20's twenty mandatory adversarial scenarios are audited rather than assumed**
+— [`docs/adversarial-coverage.md`](docs/adversarial-coverage.md) counts what the
+suite covers and names the one real gap: an out-of-order webhook is nothing the
+tests exercise, though §14 requires handling it. Two more (stale action,
+customer attempt limit) are covered by unit tests rather than as scenarios, and
+that distinction is recorded rather than smoothed over.
+
 That run is what makes the 167/167 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
 onset had no volume floor, so ordinary variance was being reported as the moment a

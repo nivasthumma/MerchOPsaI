@@ -1396,13 +1396,9 @@ export interface components {
             activity: components["schemas"]["ActivityEvent"][];
             attention: components["schemas"]["AttentionCounts"];
             /** By Incident */
-            by_incident: {
-                [key: string]: unknown;
-            }[];
+            by_incident: components["schemas"]["IncidentExposure"][];
             /** By Method */
-            by_method: {
-                [key: string]: unknown;
-            }[];
+            by_method: components["schemas"]["MethodExposure"][];
             /** Funnel */
             funnel: components["schemas"]["FunnelStage"][];
             /** Generated At */
@@ -1694,6 +1690,40 @@ export interface components {
             /** Resolved */
             resolved: number;
         };
+        /**
+         * IncidentExposure
+         * @description One incident's row in the ledger breakdown.
+         *
+         *     Declared, rather than left as the `dict` it used to be, because an
+         *     undeclared field is an undeclared TYPE. `recoverable_minor` reached the
+         *     wire as the string `"2798847"` while the identically-named field one level
+         *     up was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a
+         *     bigint, psycopg2 turns that into `Decimal`, and a model that says `dict`
+         *     gives pydantic nothing to coerce it against. Money on a revenue ledger,
+         *     two types, one response.
+         *
+         *     Nothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a
+         *     numeric string -- which is exactly why it survived. The first `reduce` over
+         *     these rows would have concatenated instead of adding.
+         */
+        IncidentExposure: {
+            /** Incident Id */
+            incident_id: string;
+            /** Incident Type */
+            incident_type: string;
+            /** Recoverable Minor */
+            recoverable_minor: number;
+            /** Recovered Minor */
+            recovered_minor: number;
+            /** Revenue At Risk Minor */
+            revenue_at_risk_minor: number;
+            /** Severity */
+            severity: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
         /** IncidentList */
         IncidentList: {
             /** Applied View */
@@ -1796,17 +1826,13 @@ export interface components {
             /** Basis */
             basis: string;
             /** By Incident */
-            by_incident: {
-                [key: string]: unknown;
-            }[];
+            by_incident: components["schemas"]["IncidentExposure"][];
             /** By Method */
-            by_method: {
-                [key: string]: unknown;
-            }[];
+            by_method: components["schemas"]["MethodExposure"][];
             /** Failed Minor */
             failed_minor: number;
             /** Invariants Broken */
-            invariants_broken: unknown[];
+            invariants_broken: string[];
             /** Merchant Id */
             merchant_id: string;
             /** Outstanding Minor */
@@ -1908,6 +1934,21 @@ export interface components {
             seq: number;
             /** Turn */
             turn: number;
+        };
+        /**
+         * MethodExposure
+         * @description One payment method's row in the ledger breakdown. Same story as
+         *     `IncidentExposure`, same fix.
+         */
+        MethodExposure: {
+            /** Candidates */
+            candidates: number;
+            /** Method */
+            method: string;
+            /** Recoverable Minor */
+            recoverable_minor: number;
+            /** Recovered Minor */
+            recovered_minor: number;
         };
         /** MetricView */
         MetricView: {

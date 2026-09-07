@@ -464,8 +464,8 @@ class CommandCenter(Contract):
     revenue: RevenueHealth
     funnel: list[FunnelStage]
     attention: AttentionCounts
-    by_incident: list[dict]
-    by_method: list[dict]
+    by_incident: list[IncidentExposure]
+    by_method: list[MethodExposure]
     activity: list[ActivityEvent]
 
 
@@ -859,6 +859,40 @@ class Objectives(Contract):
 
 
 # ---------------------------------------------------------------- ledger
+class IncidentExposure(Contract):
+    """One incident's row in the ledger breakdown.
+
+    Declared, rather than left as the `dict` it used to be, because an
+    undeclared field is an undeclared TYPE. `recoverable_minor` reached the
+    wire as the string `"2798847"` while the identically-named field one level
+    up was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a
+    bigint, psycopg2 turns that into `Decimal`, and a model that says `dict`
+    gives pydantic nothing to coerce it against. Money on a revenue ledger,
+    two types, one response.
+
+    Nothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a
+    numeric string -- which is exactly why it survived. The first `reduce` over
+    these rows would have concatenated instead of adding.
+    """
+    incident_id: str
+    incident_type: str
+    severity: str
+    status: str
+    title: str
+    revenue_at_risk_minor: int
+    recoverable_minor: int
+    recovered_minor: int
+
+
+class MethodExposure(Contract):
+    """One payment method's row in the ledger breakdown. Same story as
+    `IncidentExposure`, same fix."""
+    method: str
+    recoverable_minor: int
+    recovered_minor: int
+    candidates: int
+
+
 class LedgerView(Contract):
     """§49's six figures. They nest, and `invariants_broken` is reported rather
     than raised — a ledger whose figures do not nest is a defect that has to be
@@ -872,9 +906,9 @@ class LedgerView(Contract):
     failed_minor: int
     unknown_minor: int
     outstanding_minor: int
-    by_incident: list[dict]
-    by_method: list[dict]
-    invariants_broken: list
+    by_incident: list[IncidentExposure]
+    by_method: list[MethodExposure]
+    invariants_broken: list[str]
 
 
 class IncidentCounts(Contract):

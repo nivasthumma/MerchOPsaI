@@ -1240,16 +1240,14 @@
           },
           "by_incident": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/IncidentExposure"
             },
             "title": "By Incident",
             "type": "array"
           },
           "by_method": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/MethodExposure"
             },
             "title": "By Method",
             "type": "array"
@@ -2038,6 +2036,56 @@
         "title": "IncidentCounts",
         "type": "object"
       },
+      "IncidentExposure": {
+        "additionalProperties": false,
+        "description": "One incident's row in the ledger breakdown.\n\nDeclared, rather than left as the `dict` it used to be, because an\nundeclared field is an undeclared TYPE. `recoverable_minor` reached the\nwire as the string `\"2798847\"` while the identically-named field one level\nup was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a\nbigint, psycopg2 turns that into `Decimal`, and a model that says `dict`\ngives pydantic nothing to coerce it against. Money on a revenue ledger,\ntwo types, one response.\n\nNothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a\nnumeric string -- which is exactly why it survived. The first `reduce` over\nthese rows would have concatenated instead of adding.",
+        "properties": {
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "incident_type": {
+            "title": "Incident Type",
+            "type": "string"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "incident_type",
+          "severity",
+          "status",
+          "title",
+          "revenue_at_risk_minor",
+          "recoverable_minor",
+          "recovered_minor"
+        ],
+        "title": "IncidentExposure",
+        "type": "object"
+      },
       "IncidentList": {
         "additionalProperties": false,
         "properties": {
@@ -2350,16 +2398,14 @@
           },
           "by_incident": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/IncidentExposure"
             },
             "title": "By Incident",
             "type": "array"
           },
           "by_method": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/MethodExposure"
             },
             "title": "By Method",
             "type": "array"
@@ -2369,7 +2415,9 @@
             "type": "integer"
           },
           "invariants_broken": {
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Invariants Broken",
             "type": "array"
           },
@@ -2682,6 +2730,36 @@
           "at"
         ],
         "title": "MessageView",
+        "type": "object"
+      },
+      "MethodExposure": {
+        "additionalProperties": false,
+        "description": "One payment method's row in the ledger breakdown. Same story as\n`IncidentExposure`, same fix.",
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "recoverable_minor",
+          "recovered_minor",
+          "candidates"
+        ],
+        "title": "MethodExposure",
         "type": "object"
       },
       "MetricView": {

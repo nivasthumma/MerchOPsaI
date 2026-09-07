@@ -6,9 +6,12 @@
 """
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute
+from app.api.schemas import LedgerView
 from app.detection import detect
 from app.models import (
     CandidateStatus,
@@ -236,3 +239,43 @@ def test_the_incident_page_carries_its_recovery_and_timeline(db, owner):
     events = [e["event"] for e in view["timeline"]]
     assert events[0] == "incident_detected"
     assert "recovery_planned" in events
+
+# ------------------------------------------------------------ the wire types
+def test_money_in_the_breakdowns_is_a_number_not_a_string(db):
+    """Every `*_minor` figure is an integer, at every level of the response.
+
+    It was not. `by_incident` and `by_method` were declared `list[dict]` in the
+    response contract, so pydantic had no field type to coerce against --
+    Postgres widens `SUM()` over a bigint to `numeric`, psycopg2 renders that as
+    `Decimal`, and `recoverable_minor` reached the wire as the STRING
+    "2798847" while the identically-named field one level up was the integer
+    2798747. Money on a revenue ledger, two types, one response.
+
+    Nothing rendered wrong, which is why it survived: `Money` divides by 100 and
+    JavaScript coerces a numeric string. The first `reduce` over these rows
+    would have concatenated instead of adding, and the frontend's own types
+    already said `number`, so nothing would have complained until the total was
+    visibly absurd.
+
+    Asserted on the SERIALISED response rather than on the dataclass, because
+    the dataclass was never wrong -- the defect only existed once the value had
+    been through JSON.
+    """
+    for kind in (IncidentType.PAYMENT_DEGRADATION, IncidentType.DUPLICATE_PAYMENT):
+        _plan_for(db, kind)
+
+    payload = json.loads(LedgerView.model_validate(
+        build_ledger(db, "MERCH_A").as_dict()).model_dump_json())
+
+    # Non-emptiness first. Iterating an empty list asserts nothing, and both of
+    # these are empty until something has planned a recovery.
+    assert payload["by_incident"], "no incident rows to check"
+    assert payload["by_method"], "no method rows to check"
+
+    for section in ("by_incident", "by_method"):
+        for row in payload[section]:
+            for key, value in row.items():
+                if key.endswith("_minor"):
+                    assert isinstance(value, int), (
+                        f"{section}[].{key} is {type(value).__name__} "
+                        f"{value!r}, not int")

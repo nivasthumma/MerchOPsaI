@@ -118,6 +118,24 @@ state.
 Refusing to send for want of a token is `refused`, not `read-only` — nothing
 was sent at all, which is a stronger claim and the right one to make.
 
+## No optimistic financial success — P1-14
+
+Re-verify is the button people press *because* an outcome is unresolved, and it
+was reporting `Re-verify done.` in a green tone on an HTTP 200. Re-verification
+can come back UNKNOWN. Green there tells an operator the question was answered
+when all that happened is that it was asked.
+
+It now renders what the read found, and the tone is the load-bearing part —
+a green toast is a claim that the matter is settled:
+
+    SUCCESS   ok     the money moved
+    FAILED    warn   settled, and correct: it did not take effect, nothing is
+                     outstanding. Not red — red would file it beside the states
+                     that need somebody.
+    PARTIAL   warn   the provider reflects less than was requested
+    UNKNOWN   warn   still unestablished — and it says nothing was re-issued,
+                     because "unknown" on its own invites a second press
+
 ## Two things that are deliberately singular
 
 **`hooks/useLiveRefresh`.** Three screens each grew their own polling loop and each got
@@ -140,7 +158,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 279 Vitest tests, jsdom, no API required
+npm test             # 284 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -171,6 +189,7 @@ rather than merely look wrong:
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 | Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
 | Small screens (P1-11) | Every cell of a stacked table carries the header it belongs to, because the header row is not rendered at that width; no cell asserting something about money is ever marked droppable; every label matches a real column |
+| Verification outcome (P1-14) | Re-verify reports what the read FOUND, never that it ran: a still-UNKNOWN result is not given a success tone, a verified FAILED is settled rather than an alarm, and PARTIAL is distinguished from both |
 | Failure consequence (P1-13) | A failed request says whether anything happened: a read changed nothing, a 4xx was refused before doing anything, and a write that failed *after* being sent is honestly `unknown` and points at the UNKNOWN queue rather than inviting a second press |
 | Dialogs (P1-12) | `aria-modal` is kept rather than claimed, by both dialogs from one hook: focus moves in, Escape closes, Tab wraps at both ends — including in a dialog with nothing focusable in it — and focus returns to whatever opened it |
 

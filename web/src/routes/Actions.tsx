@@ -19,7 +19,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { ActionCenter as ActionCenterData, ActionRow, PendingApprovalRow } from "../api/types";
+import type {
+  ActionCenter as ActionCenterData, ActionRow, PendingApprovalRow,
+  VerificationDetail,
+} from "../api/types";
 import {
   CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, When,
 } from "../components/Bits";
@@ -36,6 +39,42 @@ const INTERVAL_MS = 4000;
 
 type SectionKey = "awaiting_approval" | "executing" | "unknown" | "escalated"
                 | "recently_completed";
+
+/** What to tell the operator happened. Shaped like a toast because that is
+ *  where it goes; named for what it is, because the point is that an action
+ *  reports its OUTCOME rather than the fact that a request returned. */
+type Outcome = { tone: "ok" | "warn" | "danger"; title: string; body?: string };
+
+/** Turn a verification result into what it actually claims — plan P1-14.
+ *
+ *  The tone is the load-bearing part. A green toast is a claim that the
+ *  question is settled, and after re-verifying an UNKNOWN action it usually is
+ *  not: the read happened and came back UNKNOWN again, which is progress of a
+ *  sort and is not resolution. Only SUCCESS and FAILED are settled states, and
+ *  only they get a tone that says so.
+ */
+function describeVerification(v: VerificationDetail): Outcome {
+  switch (v.state) {
+    case "SUCCESS":
+      return { tone: "ok", title: "Verified: the money moved.", body: v.reason };
+    case "FAILED":
+      // Not "danger": a verified FAILED is a settled, correct outcome — the
+      // action did not take effect and nothing is outstanding. Rendering it
+      // red would put it beside the states that need somebody.
+      return { tone: "warn", title: "Verified: it did not take effect.",
+               body: v.reason };
+    case "PARTIAL":
+      return { tone: "warn", title: "Partial — the provider reflects less than "
+                                    + "was requested.", body: v.reason };
+    default:
+      return {
+        tone: "warn",
+        title: "Still UNKNOWN — the outcome could not be established.",
+        body: (v.reason ?? "")
+              + " Nothing was re-issued; this was a read of provider state.",
+      };
+  }
+}
 
 const TITLES: Record<SectionKey, { title: string; sub: string; status: string }> = {
   awaiting_approval: {
@@ -85,10 +124,22 @@ export default function Actions() {
     return focus ? all.filter((s) => s === focus) : all;
   }, [d, focus]);
 
-  const act = useCallback(async (label: string, fn: () => Promise<unknown>) => {
+  /** Run something, then report what it FOUND — plan P1-14.
+   *
+   *  `fn` may return a description of its outcome. Re-verification does, and
+   *  must: it can come back UNKNOWN, and a green "Re-verify done" after an
+   *  HTTP 200 would be telling an operator the question was answered when all
+   *  that happened is that it was asked. That is the optimistic financial
+   *  success P1-14 forbids, and it is worst here — this is the button people
+   *  press *because* the outcome is unresolved.
+   */
+  const act = useCallback(async (
+    label: string,
+    fn: () => Promise<Outcome | void>,
+  ) => {
     try {
-      await fn();
-      toast({ tone: "ok", title: `${label} done.` });
+      const outcome = await fn();
+      toast(outcome ?? { tone: "ok", title: `${label} done.` });
       await live.refresh();
     } catch (e) {
       // The failure is reported as itself. A financial action whose result is
@@ -98,6 +149,12 @@ export default function Actions() {
       await live.refresh();
     }
   }, [toast, live]);
+
+  /** Re-read provider state and say what came back. */
+  const reverify = useCallback((taskId: string) => act(
+    "Re-verify",
+    async () => describeVerification((await api.reverify(taskId)).verification),
+  ), [act]);
 
   return (
     <>
@@ -126,7 +183,8 @@ export default function Actions() {
           </nav>
 
           {sections.map((key) => (
-            <Section key={key} k={key} d={d} onOpen={setDrawer} act={act} />
+            <Section key={key} k={key} d={d} onOpen={setDrawer}
+                     reverify={reverify} />
           ))}
         </>
       )}
@@ -139,10 +197,10 @@ export default function Actions() {
   );
 }
 
-function Section({ k, d, onOpen, act }: {
+function Section({ k, d, onOpen, reverify }: {
   k: SectionKey; d: ActionCenterData;
   onOpen: (r: ActionRow) => void;
-  act: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  reverify: (taskId: string) => Promise<void>;
 }) {
   const meta = TITLES[k];
   const rows = d[k];
@@ -161,8 +219,8 @@ function Section({ k, d, onOpen, act }: {
       ) : k === "awaiting_approval" ? (
         <ApprovalTable rows={rows as PendingApprovalRow[]} />
       ) : (
-        <ActionTable rows={rows as ActionRow[]} kind={k} onOpen={onOpen} act={act}
-                     policy={d.reconciliation_policy} />
+        <ActionTable rows={rows as ActionRow[]} kind={k} onOpen={onOpen}
+                     reverify={reverify} policy={d.reconciliation_policy} />
       )}
     </section>
   );
@@ -235,10 +293,10 @@ function ApprovalTable({ rows }: { rows: PendingApprovalRow[] }) {
   );
 }
 
-function ActionTable({ rows, kind, onOpen, act, policy }: {
+function ActionTable({ rows, kind, onOpen, reverify, policy }: {
   rows: ActionRow[]; kind: SectionKey;
   onOpen: (r: ActionRow) => void;
-  act: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  reverify: (taskId: string) => Promise<void>;
   policy: { max_attempts: number; on_exhaustion: string };
 }) {
   const reconciling = kind === "unknown" || kind === "escalated";
@@ -313,8 +371,7 @@ function ActionTable({ rows, kind, onOpen, act, policy }: {
                 <div className="row" style={{ gap: 6 }}>
                   {reconciling ? (
                     <button className="linkish"
-                            onClick={() => void act("Re-verify",
-                                                    () => api.reverify(r.task_id))}>
+                            onClick={() => void reverify(r.task_id)}>
                       Reverify
                     </button>
                   ) : null}
@@ -342,7 +399,7 @@ function ActionTable({ rows, kind, onOpen, act, policy }: {
 function ActionDrawer({ row, onClose, policy, act }: {
   row: ActionRow; onClose: () => void;
   policy?: { max_attempts: number; on_exhaustion: string };
-  act: (label: string, fn: () => Promise<unknown>) => Promise<void>;
+  act: (label: string, fn: () => Promise<Outcome | void>) => Promise<void>;
 }) {
   const panel = useRef<HTMLElement>(null);
 
@@ -415,7 +472,10 @@ function ActionDrawer({ row, onClose, policy, act }: {
         </dl>
 
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <button onClick={() => void act("Re-verify", () => api.reverify(row.task_id))}>
+          <button onClick={() => void act(
+            "Re-verify",
+            async () => describeVerification(
+              (await api.reverify(row.task_id)).verification))}>
             Reverify
           </button>
           <Link className="linkish" to={`/tasks/${row.task_id}`}>Open investigation</Link>

@@ -15,6 +15,15 @@ import awaiting from "../test-fixtures/action-center-awaiting.json";
 import unknown from "../test-fixtures/action-center.json";
 import escalated from "../test-fixtures/action-center-escalated.json";
 
+// Captures what the page tells the operator. The tone matters as much as the
+// words: a green toast is a claim that the question is settled.
+const toasts: { tone: string; title: string; body?: string }[] = [];
+vi.mock("../components/Toast", () => ({
+  useToast: () => (t: { tone: string; title: string; body?: string }) => {
+    toasts.push(t);
+  },
+}));
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return { ...actual, api: { actionCenter: vi.fn(), reverify: vi.fn() } };
@@ -250,5 +259,73 @@ describe("tables say what they are", () => {
     renderActions();
     expect(await screen.findByRole(
       "table", { name: "Approvals awaiting a decision" })).toBeInTheDocument();
+  });
+});
+
+
+// ------------------------------------------------------------------ P1-14
+describe("re-verification reports what it found, not that it ran", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    toasts.length = 0;
+    mocked.actionCenter.mockResolvedValue(UNKNOWN);
+  });
+
+  async function pressReverify() {
+    renderActions();
+    await userEvent.click(await screen.findByRole("button", { name: "Reverify" }));
+  }
+
+  it("does not call a still-UNKNOWN result a success", async () => {
+    // The button people press BECAUSE the outcome is unresolved. A green
+    // "Re-verify done" after an HTTP 200 tells them the question was answered
+    // when all that happened is that it was asked.
+    mocked.reverify.mockResolvedValue({
+      task: {}, verification: { state: "UNKNOWN", reason: "Provider timed out." },
+    });
+    await pressReverify();
+
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0].tone).not.toBe("ok");
+    expect(toasts[0].title).toMatch(/Still UNKNOWN/);
+    // And it says what it did do, because "unknown" alone invites a re-press.
+    expect(toasts[0].body).toMatch(/Nothing was re-issued/);
+  });
+
+  it("calls a verified SUCCESS a success", async () => {
+    mocked.reverify.mockResolvedValue({
+      task: {}, verification: { state: "SUCCESS", reason: "amount_refunded increased." },
+    });
+    await pressReverify();
+    expect(toasts[0].tone).toBe("ok");
+    expect(toasts[0].title).toMatch(/the money moved/);
+  });
+
+  it("treats a verified FAILED as settled rather than as an alarm", async () => {
+    // Nothing is outstanding: the action did not take effect and that is known.
+    // Rendering it red would put it beside the states that need somebody.
+    mocked.reverify.mockResolvedValue({
+      task: {}, verification: { state: "FAILED", reason: "Payment unchanged." },
+    });
+    await pressReverify();
+    expect(toasts[0].tone).toBe("warn");
+    expect(toasts[0].title).toMatch(/did not take effect/);
+  });
+
+  it("distinguishes PARTIAL from both", async () => {
+    mocked.reverify.mockResolvedValue({
+      task: {}, verification: { state: "PARTIAL", reason: "Only half applied." },
+    });
+    await pressReverify();
+    expect(toasts[0].tone).toBe("warn");
+    expect(toasts[0].title).toMatch(/less than was requested/);
+  });
+
+  it("reports a failed request as a failure, not as an outcome", async () => {
+    mocked.reverify.mockRejectedValue(
+      Object.assign(new Error("Cannot reach the API."), { effect: "read-only" }));
+    await pressReverify();
+    expect(toasts[0].tone).toBe("danger");
+    expect(toasts[0].title).toMatch(/failed/);
   });
 });

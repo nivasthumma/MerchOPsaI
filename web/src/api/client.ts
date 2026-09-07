@@ -16,6 +16,7 @@ import type {
   EscalatedAction, Health, Metrics, ReconcileReport, Readiness, ReplayResult, Scenario,
   PaymentLifecycle,
   Principal, ProviderChange, ScenarioResult, SearchResults, Task, TaskEvidence, TraceEvent,
+  VerificationDetail,
 } from "./types";
 
 const BASE = "/api";
@@ -280,8 +281,14 @@ export const api = {
   reject: (id: string) =>
     request<Task>(`/tasks/${encodeURIComponent(id)}/reject`, { method: "POST" }),
 
+  /** Re-reads provider state. It never re-issues the action.
+   *
+   *  The response carries what the read FOUND, and callers must render that
+   *  rather than the fact that the call returned 200: re-verification can come
+   *  back UNKNOWN, and an HTTP success there means the question was asked, not
+   *  that it was answered. */
   reverify: (id: string) =>
-    request<{ task: Task; verification: Record<string, unknown> }>(
+    request<{ task: Task; verification: VerificationDetail }>(
       `/tasks/${encodeURIComponent(id)}/reverify`, { method: "POST" }),
 
   replay: (id: string, mode: "PLAYBACK" | "RE_REASON") =>

@@ -419,9 +419,19 @@ make test                                # 626 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
-make ci                                  # what CI runs: seed + harden + test + eval
+make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
 ```
+
+`make ci` is **not** everything CI runs, and used to say it was. It is seed,
+harden, lint, clean-room import, tests, published-number check and evaluation —
+the part that is fast enough to run before pushing. CI additionally runs the
+migration driver against an unstamped database, the OpenAPI and generated-type
+contract checks, the frontend's lint, typecheck, tests and audit, the browser
+journeys and accessibility scans, the dependency lock and audit gates, and the
+88-mutant run. Those need Postgres service containers, a browser download and
+over two hours, which is why they are gated there and not here — and why the
+name was worth correcting rather than leaving as a claim nobody re-read.
 
 Run the services:
 

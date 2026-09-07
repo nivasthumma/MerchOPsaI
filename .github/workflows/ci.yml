@@ -424,6 +424,15 @@ jobs:
               sys.exit(1)
           PY
 
+      - name: Published scenario numbers match the run
+        # Here rather than only in the `test` job, because this is where
+        # `data/evaluation_report.json` exists. Without it the README's
+        # "167/167 scenarios passed (critical: 110/110)" and its eleven
+        # per-category rows were compared to nothing -- the earlier check read
+        # the numerator and compared it to the YAML's TOTAL, so the line would
+        # have passed whether or not 167 actually did.
+        run: python scripts/check_counts.py
+
       - name: Summary
         if: always()
         run: |

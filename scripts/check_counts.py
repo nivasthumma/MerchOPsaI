@@ -103,6 +103,20 @@ def mutant_count() -> int:
     raise SystemExit("scripts/mutation_test.py no longer defines MUTATIONS")
 
 
+def evaluation_result() -> dict | None:
+    """The last recorded scenario run, or None where none was recorded here.
+
+    Optional for the same reason the mutation report is: the file is
+    git-ignored, so most checkouts will not have one, and failing on its
+    absence would make the cheap check depend on a full evaluation run. It is a
+    gate in the job that produces it and silent everywhere else.
+    """
+    p = ROOT / "data" / "evaluation_report.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
+
+
 def mutation_result() -> dict | None:
     """The last recorded run, or None where no run has been recorded here.
 
@@ -172,8 +186,8 @@ def main() -> int:
               "the tree listing's test count"),
         Claim("README.md", r"make test\s+# (\d+) tests", py,
               "the `make test` comment"),
-        Claim("README.md", r"(\d+)/\d+ scenarios passed", scen,
-              "the scenarios-passed line"),
+        Claim("README.md", r"\d+/(\d+) scenarios passed", scen,
+              "the scenario total on the scenarios-passed line"),
         Claim("README.md", r"make eval\s+# (\d+) scenarios", scen,
               "the `make eval` comment"),
         Claim("README.md", r"data/\s+(\d+) scenarios", scen,
@@ -196,6 +210,35 @@ def main() -> int:
     # measures a subset, and letting `mutation_test.py webhooks` set the
     # project's score is exactly the kind of quiet substitution this file
     # exists to prevent.
+    # The published scenario RESULT, gated only where a run was recorded. The
+    # claim above checks the denominator against the YAML; without this, the
+    # numerator was compared to that same total -- so "167/167 scenarios
+    # passed" would have passed the check whether or not 167 actually did.
+    ev = evaluation_result()
+    if ev is None:
+        print("scenarios: no run recorded here (data/evaluation_report.json absent) "
+              "-- the published result is not checked")
+    else:
+        print(f"scenarios: {ev['passed']}/{ev['total']} passed, critical "
+              f"{ev['critical_passed']}/{ev['critical_total']}")
+        claims += [
+            Claim("README.md", r"(\d+)/\d+ scenarios passed", ev["passed"],
+                  "the scenarios-passed count"),
+            Claim("README.md", r"scenarios passed\s+\(critical: (\d+)/\d+\)",
+                  ev["critical_passed"], "the critical-passed count"),
+            Claim("README.md", r"scenarios passed\s+\(critical: \d+/(\d+)\)",
+                  ev["critical_total"], "the critical total"),
+        ]
+        # And the per-category table, which is eleven more published numbers
+        # that nothing was comparing to anything.
+        for cat, v in sorted(ev["by_category"].items()):
+            claims += [
+                Claim("README.md", rf"{cat}\s+(\d+)/\d+", v["passed"],
+                      f"{cat} passed"),
+                Claim("README.md", rf"{cat}\s+\d+/(\d+)", v["total"],
+                      f"{cat} total"),
+            ]
+
     run = mutation_result()
     if run is None:
         print("mutation:  no run recorded here (data/mutation_report.json absent) "

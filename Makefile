@@ -86,6 +86,11 @@ cleanroom:  ; @$(PY) scripts/check_cleanroom.py
 # line disagreed with another in the same file -- so the drift had been there
 # long enough for a second number to be written beside the first.
 counts:     ; @$(PY) scripts/check_counts.py
+# The fast pre-push subset, NOT everything CI runs -- the workflow also does
+# migrations against an unstamped database, the OpenAPI contract checks, the
+# frontend lint/typecheck/test/audit, the browser journeys, the dependency
+# lock and audit gates, and 88 mutants. Those need service containers, a
+# browser download and two hours; this needs a local Postgres and a minute.
 ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) counts && $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
 

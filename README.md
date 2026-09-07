@@ -416,12 +416,24 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make test                                # 626 tests
-make eval                                # 167 scenarios, measured
+make eval                                # 167 scenarios, on merchantops_eval
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
 make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
 ```
+
+Every one of those is safe to run with the console open. **It was not until
+2026-09-08:** the evaluation suite drops and rebuilds the schema once per
+scenario, and it inherited `DATABASE_URL` — so `make eval` destroyed the
+development database 167 times, and `make mutants`, which runs the suite per
+mutant, did it 88 times over. Anyone browsing at the time watched their open
+task become "Unknown task" with nothing connecting the two events.
+`scripts/run_e2e.sh` had had its own database from the start and said why in a
+comment; the evaluation path never got the same treatment. It does now —
+`<database>_eval`, created on demand, `EVAL_DATABASE_URL` to override — and
+`run_all()` refuses outright to reset a database whose name does not look
+disposable, so bypassing the entry point cannot reintroduce it.
 
 `make ci` is **not** everything CI runs, and used to say it was. It is seed,
 harden, lint, clean-room import, tests, published-number check and evaluation —

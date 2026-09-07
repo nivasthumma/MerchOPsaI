@@ -29,27 +29,19 @@ DB="${E2E_DATABASE_URL:-postgresql+psycopg2://merchantops:merchantops@127.0.0.1:
 API_ORIGIN="http://127.0.0.1:${API_PORT}"
 
 echo "==> e2e database: ${DB##*/}"
-# Created on demand, the way `tests/conftest.py` creates its own. `seed_data.py`
-# drops and recreates the SCHEMA; it does not create the DATABASE, and the
-# failure when it is absent points at psycopg2 rather than at the missing step.
-"$PY" - "$DB" <<'PYEOF'
+# `scripts/dbutil.ensure_database`, not a second copy of it. This was an inline
+# heredoc until `scripts/run_scenarios.py` needed the same thing -- and two
+# copies of "create the database if it is not there" is two places to get the
+# admin-connection URL wrong. `seed_data.py` builds the SCHEMA and assumes the
+# database exists; the failure when it does not points at psycopg2 rather than
+# at the missing step.
+PYTHONPATH=. "$PY" -c "
 import sys
-from urllib.parse import urlsplit, urlunsplit
-from sqlalchemy import create_engine, text
-
-parts = urlsplit(sys.argv[1])
-target = parts.path.lstrip("/")
-admin = urlunsplit(parts._replace(path="/postgres"))
-engine = create_engine(admin, isolation_level="AUTOCOMMIT", future=True)
-with engine.connect() as c:
-    exists = c.execute(text("SELECT 1 FROM pg_database WHERE datname = :n"),
-                       {"n": target}).scalar()
-    if not exists:
-        # Identifiers cannot be bound; the name comes from our own
-        # configuration and never from a request.
-        c.execute(text(f'CREATE DATABASE "{target}"'))
-        print(f"    created {target}")
-PYEOF
+from scripts.dbutil import database_name, ensure_database
+url = sys.argv[1]
+if ensure_database(url):
+    print(f'    created {database_name(url)}')
+" "$DB"
 
 DATABASE_URL="$DB" SEED_FORCE=1 "$PY" scripts/seed_data.py >/dev/null
 

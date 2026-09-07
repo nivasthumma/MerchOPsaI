@@ -95,6 +95,29 @@ choosing: the drawer takes the panel, because its first control is Close and
 landing there announces "close" before saying what was opened; the palette
 takes its input, because typing is the entire reason to open it.
 
+## What a failure says about the world — P1-13
+
+The plan asks that a provider failure "explicitly state that no unsafe retry
+occurred". An operator's real question is narrower and harder: *did this happen
+or not*, and their default assumption after seeing an error is that it did not.
+For a write that failed after being sent, that assumption is exactly wrong.
+
+So `ApiError` carries the request method and derives an `effect`:
+
+    refused     a 4xx — the server decided, nothing ran
+    read-only   a read; whatever happened to it, it changed nothing
+    unknown     a write that failed at the transport or with a 5xx. It may
+                have been applied.
+
+The banner states the consequence under the error rather than leaving it to the
+reader, and never behind a disclosure: the operator who does not expand it is
+the one most likely to press the button again. The `unknown` copy points at the
+Action Center, because this system already has a name and a queue for that
+state.
+
+Refusing to send for want of a token is `refused`, not `read-only` — nothing
+was sent at all, which is a stronger claim and the right one to make.
+
 ## Two things that are deliberately singular
 
 **`hooks/useLiveRefresh`.** Three screens each grew their own polling loop and each got
@@ -117,7 +140,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 273 Vitest tests, jsdom, no API required
+npm test             # 279 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -148,6 +171,7 @@ rather than merely look wrong:
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 | Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
 | Small screens (P1-11) | Every cell of a stacked table carries the header it belongs to, because the header row is not rendered at that width; no cell asserting something about money is ever marked droppable; every label matches a real column |
+| Failure consequence (P1-13) | A failed request says whether anything happened: a read changed nothing, a 4xx was refused before doing anything, and a write that failed *after* being sent is honestly `unknown` and points at the UNKNOWN queue rather than inviting a second press |
 | Dialogs (P1-12) | `aria-modal` is kept rather than claimed, by both dialogs from one hook: focus moves in, Escape closes, Tab wraps at both ends — including in a dialog with nothing focusable in it — and focus returns to whatever opened it |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.

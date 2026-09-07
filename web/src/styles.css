@@ -1499,3 +1499,11 @@ tr.is-stale td { opacity: 0.62; }
   .table-wrap:has(table.stacked)::after { display: none; }
   .table-wrap:has(table.stacked) { border: 0; }
 }
+
+/* P1-13. What a failure means for the state of the world, under the failure
+   itself. Quieter than the headline because it is the explanation, not the
+   alarm — but never hidden behind a disclosure: an operator who does not
+   expand it is the operator most likely to press the button again. */
+.banner-consequence {
+  margin-top: 6px; font-size: 12px; opacity: 0.9; max-width: 78ch;
+}

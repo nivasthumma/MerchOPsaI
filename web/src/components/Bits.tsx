@@ -44,14 +44,39 @@ export function Money({ minor }: { minor: number | null | undefined }) {
   );
 }
 
+/** What each effect means for whether anything happened — plan P1-13.
+ *
+ *  The plan asks that a provider failure "explicitly state that no unsafe retry
+ *  occurred". Stated here rather than left to the reader, because the reader's
+ *  default assumption after an error is that nothing happened, and for a write
+ *  that failed mid-flight that assumption is exactly wrong. */
+const CONSEQUENCE: Record<string, string> = {
+  refused:
+    "The server refused this before doing anything. Nothing changed.",
+  "read-only":
+    "This was a read. Nothing changed, and nothing was retried.",
+  unknown:
+    "This request may or may not have been applied — it failed after being "
+    + "sent. Nothing here retried it, and nothing should retry it blindly: "
+    + "if it moved money it will appear in the Action Center as UNKNOWN and "
+    + "be reconciled by reading provider state.",
+};
+
 export function ErrorBanner({ error }: { error: unknown }) {
   if (!error) return null;
-  const e = error as { message?: string; code?: string; isConflict?: boolean };
+  const e = error as {
+    message?: string; code?: string; isConflict?: boolean; effect?: string;
+  };
+  // A refusal by the approval state machine is expected, not a fault, and it
+  // keeps its softer tone. An unknown outcome is the loudest thing here.
   const tone = e.isConflict ? "warn" : "danger";
+  const consequence = e.effect ? CONSEQUENCE[e.effect] : undefined;
+
   return (
     <div className={`banner ${tone}`}>
       <strong>{e.isConflict ? "Refused" : "Error"}</strong>
       {e.code ? <code> {e.code}</code> : null} — {e.message ?? String(error)}
+      {consequence ? <div className="banner-consequence">{consequence}</div> : null}
     </div>
   );
 }

@@ -86,12 +86,30 @@ export function setToken(token: string): void {
   }
 }
 
+/** What a failed request means for the state of the world — plan P1-13.
+ *
+ *  The plan asks that a provider failure "explicitly state that no unsafe retry
+ *  occurred", and an operator's real question is narrower and harder: *did this
+ *  happen or not*. Three answers, and the difference between them is the
+ *  difference between pressing the button again and opening the UNKNOWN queue.
+ */
+export type Effect =
+  /** The server refused before doing anything. Safe to correct and try again. */
+  | "refused"
+  /** A read. Whether it arrived or not, it changed nothing. */
+  | "read-only"
+  /** A write whose fate is genuinely unknown: it may have been applied. */
+  | "unknown";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly code?: string,
     readonly body?: unknown,
+    /** The HTTP method, so the consequence below can be worked out at all.
+     *  Defaults to GET because every call that omits it is a read. */
+    readonly method: string = "GET",
   ) {
     super(message);
     this.name = "ApiError";
@@ -106,6 +124,24 @@ export class ApiError extends Error {
   get isConflict(): boolean {
     return this.status === 409;
   }
+
+  /** What this failure implies about whether anything happened.
+   *
+   *  Derived rather than guessed at the call site, because the call sites are
+   *  the places most likely to guess optimistically.
+   *
+   *  A 4xx is the server having decided: it refused, nothing ran. A read is
+   *  harmless whatever happened to it. What is left — a write that failed at
+   *  the transport, or with a 5xx — is the honest `unknown`: the request may
+   *  have reached the server and been applied before the failure. This system
+   *  already has a name and a queue for that state, and the banner points at
+   *  it rather than inviting a second press.
+   */
+  get effect(): Effect {
+    if (this.method === "GET") return "read-only";
+    if (this.status >= 400 && this.status < 500) return "refused";
+    return "unknown";
+  }
 }
 
 async function request<T>(
@@ -118,7 +154,13 @@ async function request<T>(
   if (init.body) headers.set("Content-Type", "application/json");
   if (auth) {
     const token = getToken();
-    if (!token) throw new ApiError(401, "No token. Mint one with scripts/issue_token.py.");
+    // 401 with the method, so `effect` reads `refused` rather than defaulting
+    // to `read-only`: nothing was sent at all, which is a stronger claim than
+    // "this was a read" and the right one to make.
+    if (!token) {
+      throw new ApiError(401, "No token. Mint one with scripts/issue_token.py.",
+                         undefined, undefined, init.method ?? "GET");
+    }
     headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -129,7 +171,8 @@ async function request<T>(
   } catch (e) {
     // A network-level failure is almost always "the API is not running", which
     // is worth saying plainly rather than surfacing "Failed to fetch".
-    throw new ApiError(0, `Cannot reach the API. Is it running on :8000? (${String(e)})`);
+    throw new ApiError(0, `Cannot reach the API. Is it running on :8000? (${String(e)})`,
+                       undefined, undefined, init.method ?? "GET");
   } finally {
     // One decrement, on both paths. Reading the body below is fast enough that
     // counting it would only make the indicator linger after the work is done.
@@ -145,10 +188,11 @@ async function request<T>(
     const detail = (body as { detail?: unknown } | null)?.detail;
     if (detail && typeof detail === "object") {
       const d = detail as { error?: string; code?: string };
-      throw new ApiError(res.status, d.error ?? res.statusText, d.code, body);
+      throw new ApiError(res.status, d.error ?? res.statusText, d.code, body,
+                         init.method ?? "GET");
     }
     throw new ApiError(res.status, typeof detail === "string" ? detail : res.statusText,
-                       undefined, body);
+                       undefined, body, init.method ?? "GET");
   }
   return body as T;
 }

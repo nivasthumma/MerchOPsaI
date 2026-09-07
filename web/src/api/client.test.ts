@@ -173,3 +173,51 @@ describe("activity counter", () => {
     expect(activity.pending).toBe(0);
   });
 });
+
+
+// ------------------------------------------------------------------ P1-13
+describe("what a failure says about whether anything happened", () => {
+  // A token, so these exercise the real path. Without one the client refuses
+  // before sending and every case collapses onto that single answer.
+  beforeEach(() => setToken("USR_A_OWNER.sig"));
+
+  it("a read that failed changed nothing", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("boom"));
+    expect((await rejection(api.metrics())).effect).toBe("read-only");
+  });
+
+  it("a refused write is stated as having done nothing", async () => {
+    // 409 is the approval state machine refusing. The server decided; nothing
+    // ran; pressing again after correcting is safe.
+    fetchMock.mockResolvedValueOnce(jsonResponse(
+      { detail: { error: "Already decided.", code: "approval_state" } }, 409));
+    const err = await rejection(api.approve("TASK_1"));
+    expect(err.effect).toBe("refused");
+    expect(err.isConflict).toBe(true);
+  });
+
+  it("a write that failed AFTER being sent is honestly unknown", async () => {
+    // The dangerous one. An operator's default assumption after an error is
+    // that nothing happened, and here that assumption is exactly wrong: the
+    // request may have reached the server and been applied before the failure.
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    expect((await rejection(api.approve("TASK_1"))).effect).toBe("unknown");
+  });
+
+  it("a 5xx on a write is unknown, not refused", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "boom" }, 500));
+    expect((await rejection(api.approve("TASK_1"))).effect).toBe("unknown");
+  });
+
+  it("a 5xx on a read is still only a read", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "boom" }, 500));
+    expect((await rejection(api.metrics())).effect).toBe("read-only");
+  });
+
+  it("refusing to send without a token is not called a read", async () => {
+    setToken("");
+    // Nothing was sent at all, which is a stronger claim than "this was a
+    // read" and the right one to make.
+    expect((await rejection(api.approve("TASK_1"))).effect).toBe("refused");
+  });
+});

@@ -16,7 +16,7 @@
 // resolved, never predicts an outcome, and never shows optimistic success
 // (P1-14).
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { ActionCenter as ActionCenterData, ActionRow, PendingApprovalRow } from "../api/types";
@@ -190,7 +190,7 @@ function emptyCopy(k: SectionKey): string {
 function ApprovalTable({ rows }: { rows: PendingApprovalRow[] }) {
   return (
     <div className="table-wrap">
-      <table>
+      <table className="stacked" aria-label="Approvals awaiting a decision">
         <thead>
           <tr>
             <th scope="col">Approval</th><th scope="col">Action</th>
@@ -205,17 +205,17 @@ function ApprovalTable({ rows }: { rows: PendingApprovalRow[] }) {
               (r.action_payload as { amount_minor?: number }).amount_minor ?? 0);
             return (
               <tr key={r.approval_id} className={r.expired ? "is-stale" : ""}>
-                <td><CopyId value={r.approval_id} /></td>
-                <td>{r.action_type}</td>
-                <td className="mono"><Money minor={amount} /></td>
-                <td><Status status={r.risk_level} compact /></td>
-                <td className="mono">{r.signatures} / {r.required_signatures}</td>
-                <td>
+                <td data-label="Approval"><CopyId value={r.approval_id} /></td>
+                <td data-label="Action">{r.action_type}</td>
+                <td data-label="Amount" className="mono"><Money minor={amount} /></td>
+                <td data-label="Risk"><Status status={r.risk_level} compact /></td>
+                <td data-label="Signatures" className="mono">{r.signatures} / {r.required_signatures}</td>
+                <td data-label="Window">
                   {r.expired
                     ? <Status status="EXPIRED" />
                     : <><span className="muted">expires </span><When iso={r.expires_at} /></>}
                 </td>
-                <td><Link to={`/tasks/${r.task_id}`} className="mono">{r.task_id}</Link></td>
+                <td data-label="Investigation" data-priority="low"><Link to={`/tasks/${r.task_id}`} className="mono">{r.task_id}</Link></td>
                 <td>
                   {/* Deliberately not an inline Approve button. Approving is a
                       financial decision and P0-11 makes it a hard gate; it
@@ -244,7 +244,13 @@ function ActionTable({ rows, kind, onOpen, act, policy }: {
 
   return (
     <div className="table-wrap">
-      <table>
+      {/* P1-11. `stacked` turns this into one block per action below 760px —
+          twelve columns behind a horizontal scrollbar is a scrollbar with a
+          table hidden behind it. `data-label` on every cell is what the
+          headers become there, and `data-priority="low"` drops the ones an
+          operator can read in the drawer instead. Nothing that asserts
+          something about money is ever marked low. */}
+      <table className="stacked" aria-label="Actions">
         <thead>
           <tr>
             <th scope="col">Action</th>
@@ -264,43 +270,44 @@ function ActionTable({ rows, kind, onOpen, act, policy }: {
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}>
-              <td>
+              <td data-label="Action">
                 <button className="linkish mono" onClick={() => onOpen(r)}
                         aria-label={`Open action ${r.id}`}>{r.id}</button>
               </td>
-              <td>{r.action_type}</td>
-              <td className="mono"><Money minor={r.amount_minor} /></td>
-              <td>
+              <td data-label="Type">{r.action_type}</td>
+              <td data-label="Amount" className="mono"><Money minor={r.amount_minor} /></td>
+              <td data-label="Payment">
                 <span className="mono">{r.target_payment_id}</span>
                 {r.environment ? (
                   <span className="muted"> · {r.provider} {r.environment}</span>
                 ) : null}
               </td>
-              <td className="mono">
+              <td data-label="Provider ref" className="mono">
                 {r.external_reference
                   ? <CopyId value={r.external_reference} />
                   : <span className="muted" title="No provider reference was issued. That is itself why the outcome is unknown.">—</span>}
               </td>
-              <td><Status status={r.verification_state} /></td>
+              <td data-label="State"><Status status={r.verification_state} /></td>
               {reconciling ? (
-                <td className="mono" title={`Gives up after ${policy.max_attempts}`}>
+                <td data-label="Attempts" className="mono"
+                    title={`Gives up after ${policy.max_attempts}`}>
                   {r.verify_attempts} / {policy.max_attempts}
                 </td>
               ) : null}
               {reconciling ? (
-                <td>{r.last_verified_at ? <When iso={r.last_verified_at} />
+                <td data-label="Last check">{r.last_verified_at ? <When iso={r.last_verified_at} />
                                         : <span className="muted">never</span>}</td>
               ) : null}
               {reconciling ? (
-                <td>
+                <td data-label="Next retry">
                   {r.escalated
                     ? <span className="muted" title="Escalated actions are out of the automatic loop.">—</span>
                     : r.next_verify_at ? <When iso={r.next_verify_at} />
                     : <span className="muted">due now</span>}
                 </td>
               ) : null}
-              <td><When iso={r.created_at} /></td>
-              <td className="mono">{r.owner ?? <span className="muted">—</span>}</td>
+              <td data-label="Age"><When iso={r.created_at} /></td>
+              <td data-label="Owner" data-priority="low" className="mono">{r.owner ?? <span className="muted">—</span>}</td>
               <td>
                 <div className="row" style={{ gap: 6 }}>
                   {reconciling ? (
@@ -336,10 +343,52 @@ function ActionDrawer({ row, onClose, policy, act }: {
   policy?: { max_attempts: number; on_exhaustion: string };
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
+  const panel = useRef<HTMLElement>(null);
+  const opener = useRef<Element | null>(null);
+
+  // P1-12. `role="dialog" aria-modal="true"` is a promise to assistive
+  // technology that this is a modal, and the promise was not being kept: focus
+  // stayed on the row behind it, Escape did nothing, and Tab walked off into a
+  // page the dialog claims to have made inert. A keyboard user could open this
+  // and not get out of it.
+  useEffect(() => {
+    opener.current = document.activeElement;
+    // Focus the panel itself rather than the first control: the first thing in
+    // here is a Close button, and landing on it means a screen reader announces
+    // "close" before saying what was opened.
+    panel.current?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
+      if (e.key !== "Tab" || !panel.current) return;
+
+      const focusable = panel.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      // Wrap at both ends, so Tab cannot leave a dialog that says it is modal.
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      // Back where they came from. Without this, closing the drawer drops focus
+      // onto <body> and the next Tab starts from the top of the page.
+      (opener.current as HTMLElement | null)?.focus?.();
+    };
+  }, [onClose]);
+
   return (
     <div className="drawer-scrim" onClick={onClose} role="presentation">
       <aside className="drawer" role="dialog" aria-modal="true"
              aria-label={`Action ${row.id}`}
+             ref={panel} tabIndex={-1}
              onClick={(e) => e.stopPropagation()}>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3 style={{ margin: 0 }}>

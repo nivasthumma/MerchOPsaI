@@ -65,6 +65,27 @@ src/
     LiveBar         when the data was last good, and whether it still is
 ```
 
+## Responsive and accessible, where it is checkable
+
+jsdom does no layout, so nothing here can assert what a 375px viewport *looks*
+like. What is asserted is the contract the CSS depends on, which is the half a
+change breaks silently.
+
+**P1-11.** Below 760px a `table.stacked` stops being a grid and becomes one
+block per row, each cell labelled by the header it belongs to. The Action Center
+is twelve columns wide; on a phone the previous treatment was a horizontal
+scrollbar with a table hidden behind it, and reading a refund's verification
+state meant swiping past six columns. A cell may be marked
+`data-priority="low"` and dropped entirely at that width — and a test asserts
+that nothing which asserts something about money ever is.
+
+**P1-12.** `role="dialog" aria-modal="true"` is a promise, and the action drawer
+was not keeping it: focus stayed on the row behind, Escape did nothing, and Tab
+walked off into a page the dialog claims to have made inert. A keyboard user
+could open it and not get out. Focus now moves into the panel (not onto its
+Close button, which would announce "close" before saying what was opened), Tab
+wraps at both ends, Escape closes, and focus returns to the opener.
+
 ## Two things that are deliberately singular
 
 **`hooks/useLiveRefresh`.** Three screens each grew their own polling loop and each got
@@ -87,7 +108,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 253 Vitest tests, jsdom, no API required
+npm test             # 263 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -117,6 +138,8 @@ rather than merely look wrong:
 | Funnel | A later stage never draws wider than an earlier one, even when handed figures that invert |
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 | Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
+| Small screens (P1-11) | Every cell of a stacked table carries the header it belongs to, because the header row is not rendered at that width; no cell asserting something about money is ever marked droppable; every label matches a real column |
+| The drawer (P1-12) | `aria-modal` is kept rather than claimed: focus moves into the panel, Escape closes it, Tab wraps at both ends, and focus returns to whatever opened it |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
 

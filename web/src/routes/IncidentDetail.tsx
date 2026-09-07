@@ -261,7 +261,8 @@ function Control({ inc }: { inc: Detail }) {
         </Empty>
       ) : (
         <div className="table-wrap">
-          <table>
+          {/* P1-11: stacks below 760px. */}
+          <table className="stacked" aria-label="Control and execution">
             <thead>
               <tr>
                 <th scope="col">Action</th>
@@ -276,17 +277,17 @@ function Control({ inc }: { inc: Detail }) {
             <tbody>
               {actions.map((a: ActionRow) => (
                 <tr key={a.id}>
-                  <td>
+                  <td data-label="Action">
                     <Link className="mono" to={`/actions?section=unknown`}>{a.id}</Link>
                     <div className="muted">{a.action_type}</div>
                   </td>
-                  <td className="mono"><Money minor={a.amount_minor} /></td>
-                  <td>
+                  <td data-label="Amount" className="mono"><Money minor={a.amount_minor} /></td>
+                  <td data-label="Policy">
                     {a.risk_level
                       ? <Status status={a.risk_level} compact />
                       : <span className="muted">—</span>}
                   </td>
-                  <td>
+                  <td data-label="Approval">
                     {a.approval_id
                       ? <><CopyId value={a.approval_id} />{" "}
                           {a.approval_decision
@@ -294,7 +295,7 @@ function Control({ inc }: { inc: Detail }) {
                             : null}</>
                       : <span className="muted">not required</span>}
                   </td>
-                  <td className="mono">
+                  <td data-label="Provider ref" className="mono">
                     {a.external_reference
                       ? <CopyId value={a.external_reference} />
                       : <span className="muted"
@@ -302,11 +303,11 @@ function Control({ inc }: { inc: Detail }) {
                           none
                         </span>}
                   </td>
-                  <td>
+                  <td data-label="Verification">
                     <Status status={a.verification_state} />
                     {a.escalated ? <> <Status status="ESCALATED" compact /></> : null}
                   </td>
-                  <td><When iso={a.created_at} /></td>
+                  <td data-label="When"><When iso={a.created_at} /></td>
                 </tr>
               ))}
             </tbody>

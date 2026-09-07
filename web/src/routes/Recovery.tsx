@@ -98,7 +98,7 @@ function Ledger({ d }: { d: Dashboard }) {
           </Empty>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table aria-label="Revenue at risk by incident">
               <thead>
                 <tr>
                   <th scope="col">Incident</th><th scope="col">Type</th>
@@ -137,7 +137,7 @@ function Ledger({ d }: { d: Dashboard }) {
           </Empty>
         ) : (
           <div className="table-wrap">
-            <table>
+            <table aria-label="Revenue at risk by payment method">
               <thead>
                 <tr>
                   <th scope="col">Method</th><th scope="col">Recoverable</th>

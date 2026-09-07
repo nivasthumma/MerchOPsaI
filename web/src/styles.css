@@ -1451,3 +1451,51 @@ tr.is-stale td { opacity: 0.62; }
   .chain li { grid-template-columns: 18px minmax(0, 1fr); }
   .chain-when { grid-column: 2; }
 }
+
+/* ======================================================================
+   P1-11 — dense tables become priority views on a small screen.
+
+   The plan is specific: "convert dense tables into priority views + detail
+   drawers on smaller screens." A horizontal scrollbar is not that. The Action
+   Center is twelve columns wide; on a phone that is a scrollbar with a table
+   hidden behind it, and an operator reading a refund's verification state has
+   to swipe past six columns to reach it.
+
+   So below 760px a `table.stacked` stops being a grid and becomes one block
+   per row, each cell labelled by the header it belongs to. The header text
+   comes from `data-label` on the cell, which the component supplies — headers
+   are `display:none` at this width, so `<th>` cannot supply it, and reading it
+   out of the DOM would be a layout-dependent trick.
+
+   PRIORITY is the other half. `data-priority="low"` hides a cell entirely at
+   this width: an id an operator can copy from the drawer does not need to be
+   in a list they are scanning under pressure. Nothing that asserts something
+   about money is ever marked low.
+   ====================================================================== */
+@media (max-width: 760px) {
+  table.stacked thead { display: none; }
+  table.stacked, table.stacked tbody, table.stacked tr, table.stacked td {
+    display: block; width: auto;
+  }
+  table.stacked tr {
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  table.stacked tr:last-child { border-bottom: 0; }
+  table.stacked td {
+    display: grid; grid-template-columns: 11ch minmax(0, 1fr);
+    gap: 10px; align-items: baseline;
+    padding: 3px 0; border: 0;
+  }
+  table.stacked td::before {
+    content: attr(data-label);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  /* A cell with no label is a full-width row — the actions cell, typically. */
+  table.stacked td:not([data-label]) { grid-template-columns: 1fr; }
+  table.stacked td[data-priority="low"] { display: none; }
+
+  /* The scroll shadow is meaningless once nothing scrolls sideways. */
+  .table-wrap:has(table.stacked)::after { display: none; }
+  .table-wrap:has(table.stacked) { border: 0; }
+}

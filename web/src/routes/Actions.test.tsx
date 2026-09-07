@@ -5,7 +5,7 @@
 // by the timeout fault, and one the repair pass escalated. A fixture written by
 // hand is a fixture that can disagree with the API it claims to describe.
 
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -177,5 +177,78 @@ describe("empty states say what to do next", () => {
       .toBeInTheDocument();
     expect(screen.getByText(/Automatic reconciliation has settled everything/))
       .toBeInTheDocument();
+  });
+});
+
+
+// ------------------------------------------------------------------ P1-12
+describe("the drawer keeps the promise `aria-modal` makes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.actionCenter.mockResolvedValue(UNKNOWN);
+  });
+
+  async function openDrawer() {
+    renderActions();
+    const opener = await screen.findByRole(
+      "button", { name: `Open action ${UNKNOWN.unknown[0].id}` });
+    await userEvent.click(opener);
+    return opener;
+  }
+
+  it("moves focus into the panel rather than leaving it on the row behind", async () => {
+    await openDrawer();
+    const dialog = screen.getByRole("dialog");
+    // The panel itself, not its first button: the first control is Close, and
+    // landing there announces "close" before saying what was opened.
+    expect(document.activeElement).toBe(dialog);
+  });
+
+  it("closes on Escape", async () => {
+    await openDrawer();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("returns focus to whatever opened it", async () => {
+    const opener = await openDrawer();
+    await userEvent.keyboard("{Escape}");
+    // Without this, closing drops focus onto <body> and the next Tab starts
+    // again from the top of the page.
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("does not let Tab walk out of a dialog that says it is modal", async () => {
+    await openDrawer();
+    const dialog = screen.getByRole("dialog");
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])'));
+    expect(focusable.length).toBeGreaterThan(1);
+
+    focusable[focusable.length - 1].focus();
+    await userEvent.tab();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    focusable[0].focus();
+    await userEvent.tab({ shift: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+});
+
+describe("tables say what they are", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("names the action queue and the approval queue differently", async () => {
+    mocked.actionCenter.mockResolvedValue(UNKNOWN);
+    renderActions();
+    expect(await screen.findByRole("table", { name: "Actions" }))
+      .toBeInTheDocument();
+
+    cleanup();
+    mocked.actionCenter.mockResolvedValue(AWAITING);
+    renderActions();
+    expect(await screen.findByRole(
+      "table", { name: "Approvals awaiting a decision" })).toBeInTheDocument();
   });
 });

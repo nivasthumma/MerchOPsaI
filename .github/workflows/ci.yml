@@ -198,6 +198,15 @@ jobs:
         # reads still fits what the server declares it sends.
         run: cd web && npm run typecheck
 
+      - name: Frontend lint
+        # The frontend's equivalent of the `static` job's ruff step, and
+        # curated the same way -- see `web/eslint.config.js`, which records the
+        # ten React-Compiler findings that were read and deliberately not
+        # adopted. What is enforced is rules-of-hooks and exhaustive-deps
+        # (promoted from the plugin's own "warn"), because an effect that reads
+        # an undeclared value is a queue refreshing on the wrong schedule.
+        run: cd web && npm run lint
+
       - name: Frontend tests
         run: cd web && npm test
 
@@ -442,6 +451,22 @@ jobs:
           # Uses the venv interpreter path by default; in CI the interpreter is
           # already on PATH.
           MERCHANTOPS_PYTHON="$(which python)" python scripts/mutation_test.py
+      - name: Published mutation result matches the run
+        # The number the README publishes, checked against the file the run
+        # just wrote -- here rather than in the `test` job because this is
+        # where the report exists. Everywhere else the check prints that no run
+        # was recorded and moves on, which is why a contributor does not have
+        # to sit through two hours to make the cheap check pass.
+        run: python scripts/check_counts.py
+
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: data/mutation_report.json
+          if-no-files-found: warn
+
       - name: Working tree must be unmodified
         run: |
           # Every mutation is reverted in a finally block. If anything survived

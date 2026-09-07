@@ -68,6 +68,16 @@ turn, re-runs the suite, and reports which scenarios caught the break:
 88/88                       after the survivor's test, verified individually
 ```
 
+Every run writes `data/mutation_report.json` — the per-mutant result, the scenarios
+that graded each one red, the commit it measured, and whether the run was complete or
+filtered. It exists so the published figure comes out of a file something produced
+rather than out of somebody's memory of a terminal that has since scrolled away;
+`scripts/check_counts.py` reads it and fails when the README disagrees. A *filtered*
+run is refused rather than compared: its ratio measures a subset, and letting
+`mutation_test.py webhooks` set the project's score is the exact substitution that
+check exists to prevent. The file is git-ignored for the same reason
+`data/evaluation_report.json` is — it measures a tree rather than describing one.
+
 The 88 mutations span policy, verification, the runtime, actions, governance,
 reconciliation, tools, webhooks, detection, metrics, messages, tenancy, failure
 classification, observability, durability, migrations, versioning, the recovery

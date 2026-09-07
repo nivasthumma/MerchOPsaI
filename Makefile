@@ -77,6 +77,10 @@ web-setup:  ; cd web && npm install
 web:        ; cd web && npm run dev
 web-build:  ; cd web && npm run build
 web-test:   ; cd web && npm test
+# The frontend's ruff. `tsc` proves the types line up and says nothing
+# about an effect that reads a value it never declared -- which on a
+# polling console is a screen updating on the wrong schedule.
+web-lint:   ; cd web && npm run lint
 
 # Browser E2E — MerchantOps §22. Deliberately NOT part of `make ci`: it needs a
 # seeded database, a running API and a downloaded browser, and CI here has none

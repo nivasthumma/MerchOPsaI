@@ -34,6 +34,7 @@ off, and the number drifts from then on with the checker still green.
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import subprocess
@@ -102,12 +103,19 @@ def mutant_count() -> int:
     raise SystemExit("scripts/mutation_test.py no longer defines MUTATIONS")
 
 
-# Deliberately absent: a check on the published mutation RESULT (`77/78`).
-# `scripts/mutation_test.py` prints its table and exits -- it writes no report
-# file -- so there is nothing to compare against, and a checker that read a
-# file nobody writes would be worse than the gap. The number of mutants
-# DEFINED is checked above, which at least catches a mutant added without the
-# README noticing. Closing the rest means having the harness emit a report.
+def mutation_result() -> dict | None:
+    """The last recorded run, or None where no run has been recorded here.
+
+    Optional by design. The report is git-ignored, because it measures a tree
+    rather than describing one, so most checkouts will not have it -- and
+    failing on its absence would mean every contributor had to sit through a
+    two-hour run before the cheap check would pass. It is a gate where the
+    number is produced and silent everywhere else.
+    """
+    p = ROOT / "data" / "mutation_report.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
 
 
 # ----------------------------------------------------------------- claiming
@@ -182,6 +190,25 @@ def main() -> int:
             Claim("README.md", r"make web-test\s+# (\d+) Vitest tests", web,
                   "the `make web-test` comment"),
         ]
+
+    # The published mutation result, gated only where a run was actually
+    # recorded. A FILTERED run is refused rather than compared: its ratio
+    # measures a subset, and letting `mutation_test.py webhooks` set the
+    # project's score is exactly the kind of quiet substitution this file
+    # exists to prevent.
+    run = mutation_result()
+    if run is None:
+        print("mutation:  no run recorded here (data/mutation_report.json absent) "
+              "-- the published result is not checked")
+    elif not run["complete"]:
+        print(f"mutation:  last run was FILTERED ({run['run']} of {run['defined']} "
+              f"mutants) -- the published result is not checked against it")
+    else:
+        print(f"mutation:  {run['caught']}/{run['run']} caught, tree "
+              f"{run['tree']}, {run['generated_at'][:10]}")
+        claims.append(
+            Claim("README.md", r"(\d+)/\d+ mutations caught", run["caught"],
+                  "the caught-mutant count in the measured-results block"))
 
     problems = check(claims)
     if problems:

@@ -11,9 +11,11 @@ cannot leave the working tree modified.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -690,6 +692,18 @@ def run_tests() -> tuple[bool, str]:
 
 
 LOCK = ROOT / ".mutation-in-progress"
+# Written at the end of every run, complete or filtered.
+# `data/evaluation_report.json` is the model for this: the number a
+# README publishes should come out of a file something produced, not out
+# of somebody's memory of a terminal that has since scrolled away. It is
+# git-ignored for the same reason its sibling is -- it is a measurement of
+# a tree, not a property of one, and committing it would put a stale
+# number under version control and start a merge conflict per run.
+REPORT = ROOT / "data" / "mutation_report.json"
+
+# Every file this run has rewritten. The end-of-run check compares against THIS
+# rather than against whole directories -- see `_verify_tree_restored`.
+TOUCHED: set[str] = set()
 
 
 def main() -> int:
@@ -720,10 +734,19 @@ def main() -> int:
 
     if LOCK.exists():
         print("A mutation run is already in progress (or a previous run was "
-              "killed). Verify the tree with 'git status' and remove "
-              f"{LOCK.name} before retrying.")
+              "killed).")
+        # The lock names the file that was mid-mutation. "Verify the tree with
+        # git status" is only useful advice if the reader knows which of a
+        # thousand tracked files to look at -- and after a kill, exactly one of
+        # them may be holding a mutant.
+        print()
+        print(LOCK.read_text().rstrip())
+        print()
+        print(f"If no run is live, check the file named above, restore it with "
+              f"'git checkout -- <file>' if it holds a mutant, and remove "
+              f"{LOCK.name}.")
         return 1
-    LOCK.write_text("Mutation test in progress. Source files are being rewritten.\n")
+    LOCK.write_text(_lock_text())
 
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
@@ -757,6 +780,13 @@ def main() -> int:
             survivors.append(label)
             continue
         try:
+            # Recorded BEFORE the write, and in the lock file as well as in
+            # memory. A run killed between the write and the revert takes the
+            # in-memory set with it, and that is exactly the case the
+            # end-of-run check exists for -- so the one file that might be
+            # broken is on disk, named, before it can be broken.
+            TOUCHED.add(relpath)
+            LOCK.write_text(_lock_text(relpath))
             path.write_text(original.replace(find, replace, 1))
             passed, total, failed = run_suite()
             crashed = failed == ["<suite crashed mid-run>"]
@@ -786,6 +816,7 @@ def main() -> int:
 
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
+    _write_report(rows, caught_n, mutations)
     print(f"RESULT: {caught_n}/{len(mutations)} mutations caught")
     if survivors:
         print("\nSURVIVING MUTATIONS — these are gaps in the suite:")
@@ -796,14 +827,74 @@ def main() -> int:
     return 0
 
 
+def _write_report(rows, caught_n: int, mutations) -> None:
+    """Record the run so a published number can be checked against it.
+
+    `complete` is the field that matters. A filtered run measures a subset and
+    its ratio is not the project's mutation score; recording WHICH kind of run
+    this was is what stops a `scripts/mutation_test.py webhooks` result being
+    read later as though it covered everything.
+
+    `tree` is the commit the run measured. A report is a measurement of one
+    tree, and a reader comparing it to a different tree should be able to see
+    that rather than infer it.
+    """
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                          cwd=ROOT, capture_output=True, text=True)
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    REPORT.write_text(json.dumps({
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tree": head.stdout.strip() or None,
+        "complete": len(mutations) == len(MUTATIONS),
+        "defined": len(MUTATIONS),
+        "run": len(mutations),
+        "caught": caught_n,
+        "survived": [label for label, status, _, _ in rows if status == "SURVIVED"],
+        "mutants": [
+            {"label": label, "status": status, "caught_by": detail,
+             # The scenarios that graded it red, which is what separates a
+             # mutant a scenario catches from one only a unit test does -- the
+             # distinction every honest reading of the score depends on.
+             "scenarios": [x for x in who.replace("…", "").split(", ") if x]}
+            for label, status, detail, who in rows
+        ],
+    }, indent=2) + "\n")
+    print(f"wrote {REPORT.relative_to(ROOT)}")
+
+
+def _lock_text(active: str | None = None) -> str:
+    """The lock file's contents. It is read by a human, and by the next run's
+    startup check, so it says what is happening and to what."""
+    lines = ["Mutation test in progress. Source files are being rewritten."]
+    if active:
+        lines.append(f"Currently mutated: {active}")
+    if TOUCHED:
+        lines.append("Rewritten so far: " + ", ".join(sorted(TOUCHED)))
+    return "\n".join(lines) + "\n"
+
+
 def _verify_tree_restored() -> None:
     """Every mutation is reverted in a finally block, but if the process is
     killed between write and revert a mutant is left on disk. Say so loudly
-    rather than leaving a broken working tree looking clean."""
-    # `alembic` included since ADR-0030 put a mutant target there. A directory
-    # that is mutated but not checked is a directory where a killed run leaves a
-    # broken file behind looking clean, which is the whole point of this check.
-    r = subprocess.run(["git", "diff", "--name-only", "--", "app", "scripts", "alembic"],
+    rather than leaving a broken working tree looking clean.
+
+    Checked against the files this run actually rewrote, not against whole
+    directories. It used to diff `app scripts alembic` wholesale, which had two
+    faults and both bit. It reported any UNRELATED edit under those paths as a
+    mutation artifact -- so an ordinary uncommitted change to a script, made
+    while a run was going, came back as "MUTATION ARTIFACTS LEFT ON DISK -- do
+    not commit" above a `git checkout --` line that would have destroyed it.
+    A safety check whose advice deletes real work is worse than no check.
+
+    And it needed a hand-maintained list of directories: `alembic` was added
+    only after ADR-0030 put a mutant there, which means that between those two
+    commits a killed run could have left a broken migration behind looking
+    clean. `TOUCHED` cannot drift from the mutation list, because it IS the
+    mutation list, recorded as it is applied.
+    """
+    if not TOUCHED:
+        return
+    r = subprocess.run(["git", "diff", "--name-only", "--", *sorted(TOUCHED)],
                        cwd=ROOT, capture_output=True, text=True)
     dirty = [f for f in r.stdout.split() if f]
     if dirty:

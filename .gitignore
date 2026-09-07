@@ -6,6 +6,10 @@ venv/
 *.log
 .pytest_cache/
 data/evaluation_report.json
+# Same reasoning: a measurement OF a tree, not a property of one.
+# Committing it would version a stale number and start a merge conflict
+# per run. `scripts/check_counts.py` reads it where it is produced.
+data/mutation_report.json
 .mutation-in-progress
 .vercel
 .vercel_python_packages/

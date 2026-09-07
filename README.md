@@ -441,7 +441,26 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 
 ```bash
 make web-test                     # 295 Vitest tests
+make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
+make web-audit                    # npm audit, high and above
 ```
+
+`make web-lint` is the frontend's ruff, and curated the same way. `tsc --noEmit`
+proves the types line up and says nothing about a `useEffect` that reads a value it
+never declared — which, on three screens that poll through `useLiveRefresh`, is a
+queue refreshing on the wrong schedule behind a "live" indicator.
+
+What it enforces is deliberately small: rules-of-hooks, `exhaustive-deps` (promoted
+from the plugin's own *warn* to an error), unused variables, and the recommended
+TypeScript set. `eslint-plugin-react-hooks` v7's recommended set is largely the React
+Compiler rule set; turned on wholesale it reports ten findings here — six guarded
+`setState` calls in effects that clear derived state when its input disappears, two
+`Date.now()` reads during render, and the latest-callback ref in `useLiveRefresh`.
+All ten were read. None is a defect: they are deviations from rules that exist so the
+React Compiler can memoize aggressively, and this app does not use the compiler.
+They are off by name, with the reasoning in
+[`web/eslint.config.js`](web/eslint.config.js), so that adopting the compiler later
+starts from a written list rather than a rediscovery.
 
 The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
 see [ADR-0015](docs/adr/0015-react-spa-frontend.md). The Streamlit UI remains the
@@ -705,12 +724,26 @@ are different claims.
     palette is the only place a whole route arrives as data; everywhere else
     interpolates an id into a fixed template. Upgrading to `react-router` 7 is the
     real fix and is a routing-API change, not a version bump.
-24. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
-    CI since the start; the web half had no equivalent, which means the two moderate
-    advisories above had been open and unread rather than open and accepted. `make
-    web-audit` now fails on a high or critical advisory in production dependencies,
-    and `make web-audit-all` prints everything including dev. The gate deliberately
-    stops at `--audit-level=high`: the two moderate ones are documented above, and a
+24. **Six more advisories sit in the build and test tooling, outside the gate.**
+    `make web-audit-all` reports eight in total; the two above are the only ones in
+    anything that reaches a browser. The other six are `vite` 5.4.21 (high, path
+    traversal in optimized-deps `.map` handling), `esbuild` 0.21.5 (moderate, any
+    website can request the dev server and read the response), `vitest` 2.1.9
+    (critical, arbitrary file read and execute **while the Vitest UI server is
+    listening**) and three transitive on those. Every one is dev-server or
+    test-runner surface: none is in `dependencies`, none is in `dist/`, and the
+    critical one needs `@vitest/ui`, which is not installed and which no script
+    starts — `e2e:ui` is Playwright's. The real fix is Vite 7 / Vitest 4, which is a
+    toolchain upgrade rather than a version bump and is a decision, not a patch.
+    Recorded because "the gate is green" and "there are two advisories" are
+    different statements, and only the first was true.
+25. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
+    CI since the start; the web half had no equivalent, which means every advisory
+    above had been open and unread rather than open and accepted. `make web-audit`
+    now fails on a high or critical advisory in production dependencies, and `make
+    web-audit-all` prints everything including dev. The gate deliberately stops at
+    `--omit=dev --audit-level=high`: what ships to a browser is held to a hard line,
+    the toolchain is reported and reasoned about rather than blocking a merge, and a
     gate that fires on findings nobody has agreed to is a gate people learn to pass
     with `--force`.
 

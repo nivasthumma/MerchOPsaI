@@ -13,14 +13,19 @@
 // A mocked E2E is a slower unit test. The point is the seam, so the fixture is
 // the whole stack: `make seed`, the FastAPI app, the built SPA, one browser.
 //
-// ## Why they are not in `make ci`
+// ## Where these run
 //
-// ADR-0015 keeps the frontend suite out of CI, and this inherits that decision
-// rather than quietly reversing it — running them needs Postgres, a seeded
-// database, two processes and a browser download, and CI here does not have
-// the last of those. `make e2e` runs them on a machine that does. The plan
-// asks for browser E2E; where it is GATED is a deployment decision, and this
-// records which one was taken rather than pretending otherwise.
+// In CI, as the `browser` job, and locally through `make e2e`. Both go through
+// `scripts/run_e2e.sh`, which owns the whole fixture — its own database, its
+// own port, the planted UNKNOWN action journey D needs — so the two are the
+// same run on different machines rather than two fixtures to keep in step.
+//
+// They are deliberately NOT in `make ci`. That target is the one somebody runs
+// before pushing, and adding a browser download plus a second Postgres
+// database to it would make the fast check slow enough to be skipped. §24 puts
+// browser E2E before deploy, not before every commit, and that is the line
+// taken here. See ADR-0034, which records this reversing the CI half of
+// ADR-0015.
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 5199);

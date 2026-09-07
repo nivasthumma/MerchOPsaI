@@ -202,6 +202,77 @@ jobs:
         # web-audit-all` prints everything, including dev dependencies.
         run: cd web && npm audit --omit=dev --audit-level=high
 
+  # ---------------------------------------------------------------- browser e2e
+  browser:
+    name: Browser journeys (§22)
+    # Only after the contract job: if the generated types are stale or the
+    # frontend does not compile, every journey fails for a reason that has
+    # nothing to do with the seams these exist to test.
+    needs: [contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: merchantops
+          POSTGRES_PASSWORD: merchantops
+          POSTGRES_DB: merchantops
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: |
+          pip install -q -r requirements.txt
+          cd web && npm ci
+
+      - name: Install the browser
+        # Chromium only. The journeys test seams between our own layers, not
+        # rendering differences between engines, and three browsers would
+        # triple the run to re-answer the same question.
+        run: cd web && npx playwright install --with-deps chromium
+
+      - name: Run the five journeys and the accessibility scans
+        # `run_e2e.sh` owns the whole fixture: it creates its own database,
+        # seeds it, runs detection, plants the one UNKNOWN action journey D
+        # needs through the real execution path, starts the API and takes it
+        # all down again. Nothing here reaches into those steps, because a
+        # workflow that reimplements half the script is a second fixture to
+        # keep in step with the first.
+        env:
+          PY: python
+          E2E_DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@127.0.0.1:5432/merchantops_e2e
+        run: ./scripts/run_e2e.sh
+
+      - name: Upload the trace of anything that failed
+        # `trace: "retain-on-failure"`. A browser failure read from a log line
+        # is a guess; the trace is the actual DOM, network and console at the
+        # moment it went wrong, and it is the only artifact that makes a
+        # once-a-week flake diagnosable.
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-trace
+          path: |
+            web/test-results/
+            web/playwright-report/
+          if-no-files-found: ignore
+
   # ---------------------------------------------------------------- scenario suite
   evaluate:
     name: Evaluation suite (167 scenarios)

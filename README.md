@@ -168,10 +168,14 @@ independent verification, a rejection, an UNKNOWN queue, and a replay. Two of
 them assert a **negative** — that no external call was made — which is the
 property a UI bug can violate while looking entirely correct.
 
-Not in `make ci`: it needs Postgres, a seeded database, two processes and a
-browser download, and CI here has none of the last (ADR-0015 already keeps the
-frontend suite out for the same reason). Where it is *gated* is a deployment
-decision; this records which one was taken rather than implying otherwise.
+These run in CI as the `browser` job, through the same
+[`scripts/run_e2e.sh`](scripts/run_e2e.sh) that `make e2e` uses — one fixture,
+two machines, rather than a workflow that reimplements half the script and
+drifts from it. Not in `make ci`, deliberately: that is the check somebody runs
+before pushing, and a browser download plus a second Postgres database would
+make it slow enough to be skipped. §24 puts browser E2E before deploy, not
+before every commit. See [ADR-0034](docs/adr/0034-browser-e2e-runs-in-ci.md),
+which records this reversing the CI half of ADR-0015.
 
 **Accessibility is measured, not asserted.** The same suite scans five screens
 and the error state with axe in both themes, and found three real defects on its
@@ -424,13 +428,17 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 182 Vitest tests
+make web-test                     # 295 Vitest tests
 ```
 
 The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
 see [ADR-0015](docs/adr/0015-react-spa-frontend.md). The Streamlit UI remains the
-contract-conformant surface. The SPA's tests are not in CI, so they are a local gate
-rather than a regression gate.
+contract-conformant surface. ADR-0015's consequence that "nothing in `web/` affects the
+Python CI jobs" is now historical: the `contract` job type-checks the frontend against
+the generated OpenAPI types and runs the Vitest suite, the `browser` job runs the five
+journeys and the accessibility scans ([ADR-0034](docs/adr/0034-browser-e2e-runs-in-ci.md)),
+and a stale `src/api/schema.d.ts` fails the build. These are regression gates, not local
+ones.
 
 Before trusting real payment execution:
 

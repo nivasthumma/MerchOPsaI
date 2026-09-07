@@ -108,7 +108,10 @@ if [ -z "$TOKEN" ]; then
 fi
 
 echo "==> api on :${API_PORT}"
-DATABASE_URL="$DB" PYTHONPATH=. .venv/bin/uvicorn app.api.main:app \
+# `$PY -m uvicorn` rather than `.venv/bin/uvicorn`, so this runs wherever the
+# interpreter is -- a virtualenv locally, whatever is on PATH in CI. A hardcoded
+# venv path is the reason a script like this only ever works on one machine.
+DATABASE_URL="$DB" PYTHONPATH=. "$PY" -m uvicorn app.api.main:app \
   --port "$API_PORT" --log-level warning &
 API_PID=$!
 

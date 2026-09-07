@@ -126,7 +126,7 @@ def check(claims: list[Claim]) -> list[str]:
         found = re.findall(c.pattern, text)
         if not found:
             problems.append(
-                f"{c.file}: the {c.what} claim has moved or been deleted.\n"
+                f"{c.file}: {c.what} — this claim has moved or been deleted.\n"
                 f"    nothing matched  {c.pattern}\n"
                 f"    Either restore the sentence or update the pattern in "
                 f"scripts/check_counts.py -- a claim that vanishes must not "
@@ -170,8 +170,8 @@ def main() -> int:
               "the `make eval` comment"),
         Claim("README.md", r"data/\s+(\d+) scenarios", scen,
               "the tree listing's scenario count"),
-        Claim("README.md", r"(\d+) mutants now defined", mut,
-              "the mutant count"),
+        Claim("README.md", r"\d+/(\d+) mutations caught", mut,
+              "the mutant count in the measured-results block"),
         Claim("README.md", r"scenarios \+ (\d+)-mutation validation", mut,
               "the capability table's mutant count"),
     ]

@@ -16,7 +16,7 @@ distinction the plan itself draws in P0-10.
 | 6 | prompt injection | 10 (8 critical) | covered |
 | 7 | malformed provider response | 1 (critical) | covered |
 | 8 | duplicate webhook | 5 (4 critical) | covered |
-| 9 | **out-of-order webhook** | **0** | **gap — see below** |
+| 9 | out-of-order webhook | 0 scenarios | covered by 4 tests — see below |
 | 10 | provider timeout | 14 (10 critical) | covered |
 | 11 | worker retry | 13 (10 critical) | covered |
 | 12 | stale action | 0 scenarios | covered by `test_durability.py`, not as a scenario |
@@ -29,24 +29,41 @@ distinction the plan itself draws in P0-10.
 | 19 | malformed tool response | 4 (3 critical) | covered |
 | 20 | LLM unavailable | 0 scenarios | partially — see below |
 
-## The one real gap: out-of-order webhooks
+## Out-of-order webhooks — was the one real gap, now closed
 
-§14 lists "out-of-order events" among the deliveries webhook handling must
-cope with, and **nothing tests it**. `tests/integration/test_webhooks.py`
-covers signature validation, redelivery and deduplication, unsubscribed event
-types, unknown entities and contradictions — but not a delivery that arrives
-after a later one.
+§14 lists "out-of-order events" among the deliveries webhook handling must cope
+with, and for a long time **nothing tested it**.
+`tests/integration/test_webhooks.py` covered signature validation, redelivery
+and deduplication, unsubscribed event types, unknown entities and
+contradictions — but not a delivery that arrives after a later one.
 
-The behaviour is almost certainly right *by construction*: `process_event`
-never reads the payload for truth, it re-reads provider state through the
-adapter, so a stale event triggers a fresh read that reflects current state
-whatever order events arrived in. That is the "a webhook decides *when* to
-look, never *what* was found" rule doing its job.
+The behaviour was right *by construction*: `process_event` never reads the
+payload for truth, it re-reads provider state through the adapter, so a stale
+event triggers a fresh read that reflects current state whatever order events
+arrived in. That is the "a webhook decides *when* to look, never *what* was
+found" rule doing its job.
 
-But nothing proves it, and the property is exactly the kind a later change
-breaks silently — the day someone reads `payload["status"]` because it is
-right there, a stale `payment.failed` arriving after a settled refund would
-regress a SUCCESS. An untested invariant is a comment.
+But nothing proved it, and an untested invariant is a comment. Three tests now
+do:
+
+- **a stale `refund.failed`, stamped an hour earlier, arriving after a settled
+  refund** must leave it SUCCESS and raise no incident — while still being
+  *acted on*, because an out-of-order event is still a reason to go and look;
+- **the same two events in both arrival orders reach the same final state**,
+  which is the invariant stated as a property rather than as a story about one
+  sequence;
+- **`occurred_at` and `received_at` invert**, so the event store keeps the
+  provider's own time rather than quietly making it a second copy of arrival
+  time — the only field that can show, after the fact, that a delivery was late.
+
+They were verified against the defect they exist to catch. Hand-applying the
+obvious future mistake — reading `payload["refund"]["entity"]["status"]`
+because it is right there — turns three tests red, including the first of these.
+
+It also showed why both arrival orders are needed: with that defect in place
+the `reversed` case still *passes*, because the last payload to arrive happens
+to say "processed" and lands on the right answer for the wrong reason. One
+order is a test; the pair is the property.
 
 ## Two covered, but not as scenarios
 

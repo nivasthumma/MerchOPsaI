@@ -50,10 +50,14 @@ def token(user_id: str) -> dict:
     return {"Authorization": f"Bearer {sec.issue_token(user_id)}"}
 
 
-def envelope(event: str, *, refund_id="rfnd_X", payment_id="pay_X", status="processed"):
+def envelope(event: str, *, refund_id="rfnd_X", payment_id="pay_X", status="processed",
+             created_at=1787000000):
+    """`created_at` is the provider's own event time, and it is a parameter
+    because §14's out-of-order case is not expressible without one: a late
+    delivery is late relative to when it HAPPENED, not to when it arrived."""
     return {
         "entity": "event", "event": event, "contains": ["refund"],
-        "created_at": 1787000000,
+        "created_at": created_at,
         "payload": {"refund": {"entity": {
             "id": refund_id, "payment_id": payment_id, "amount": 499900,
             "status": status}}},
@@ -277,3 +281,142 @@ def test_merchant_is_resolved_from_our_records_not_the_payload(db, owner, client
 
     ev = db.query(WebhookEvent).filter(WebhookEvent.event_id == "evt_forged_account").one()
     assert ev.merchant_id == "MERCH_A"
+
+
+# ------------------------------------------------------------- out-of-order
+# MerchantOps §14 lists "out-of-order events" among the deliveries webhook
+# handling must cope with, and until now nothing tested it — recorded as the
+# one real gap in `docs/adversarial-coverage.md`.
+#
+# The behaviour is right *by construction*: `process_event` never reads the
+# payload for truth, it re-reads provider state through the adapter. So a
+# stale event triggers a fresh read that reflects current state whatever order
+# events arrived in. That is "a webhook decides *when* to look, never *what*
+# was found" doing its job.
+#
+# Which is exactly why it needs a test rather than a comment. The day somebody
+# reads `payload["refund"]["entity"]["status"]` because it is right there, a
+# stale `refund.failed` overtaking a settled refund would silently regress a
+# SUCCESS — a financial claim reversed by a message that was already obsolete
+# when it arrived. Nothing else in this suite would notice.
+
+# An hour before the settlement the other events describe. Providers do not
+# promise ordering, and a retried delivery can arrive long after the event it
+# describes has been superseded.
+STALE_TS = 1786996400
+CURRENT_TS = 1787000000
+
+
+def test_a_stale_failure_arriving_late_does_not_regress_a_settled_refund(
+        db, owner, client, secret):
+    """The one that matters.
+
+    The refund executed and read back SUCCESS. Provider state is left exactly
+    as it is — the money really did move. A `refund.failed` then arrives,
+    stamped an hour earlier: the provider's own retry of an event that was
+    superseded before it was delivered.
+
+    The system must re-read, find SUCCESS, and leave it alone.
+    """
+    action = _settled_action(db, owner)
+
+    r = deliver(client, envelope("refund.failed",
+                                 payment_id=action.external_payment_id,
+                                 refund_id=action.external_reference or "rfnd_X",
+                                 status="failed", created_at=STALE_TS),
+                event_id="evt_stale_failure")
+    body = r.json()
+
+    # It was acted on rather than dropped: an out-of-order event is still a
+    # reason to go and look, and refusing to look would be its own bug.
+    assert body["status"] == "PROCESSED"
+    assert action.id in body["reverified"]
+
+    db.refresh(action)
+    assert action.verification_state is VerificationState.SUCCESS, (
+        "a stale failure payload reversed a verified refund — the payload was "
+        "believed instead of the provider")
+    # And no incident: the provider and our records agree. A mismatch raised
+    # here would be a CRITICAL page for an event that said nothing new.
+    assert body["incident_id"] is None
+    assert db.query(Incident).filter(
+        Incident.incident_type == IncidentType.RECONCILIATION_MISMATCH).count() == 0
+
+
+@pytest.mark.parametrize("arrival", [
+    ("refund.processed", "refund.failed"),
+    ("refund.failed", "refund.processed"),
+], ids=["in-order", "reversed"])
+def test_the_order_deliveries_arrive_in_does_not_change_the_outcome(
+        arrival, db, owner, client, secret):
+    """The same two events, both arrival orders, one final state.
+
+    This is the invariant §14 is asking for, stated as a property rather than
+    as a story about one sequence: the terminal state is a function of what the
+    provider says, not of the order in which its messages happened to land.
+
+    Both cases are needed, and a hand-applied "believe the payload" defect shows
+    why: with that defect in place `in-order` fails and `reversed` still passes,
+    because the last payload to arrive happens to say "processed" and lands on
+    the right answer for the wrong reason. One of the two orders is a test; the
+    pair is the property.
+    """
+    action = _settled_action(db, owner)
+
+    for n, event_type in enumerate(arrival):
+        stale = event_type.endswith("failed")
+        r = deliver(client,
+                    envelope(event_type,
+                             payment_id=action.external_payment_id,
+                             refund_id=action.external_reference or "rfnd_X",
+                             status="failed" if stale else "processed",
+                             # The failure is always the older event, whichever
+                             # order it arrives in. That is what makes one of
+                             # these two cases genuinely out-of-order.
+                             created_at=STALE_TS if stale else CURRENT_TS),
+                    event_id=f"evt_order_{arrival[0][7:]}_{n}")
+        # Asserted per delivery, not just at the end. The final state is
+        # SUCCESS before this loop runs, so a version of this test that only
+        # checked the end state would pass just as well if both deliveries were
+        # rejected, ignored, or never routed to the action at all -- proving
+        # nothing about ordering. These two lines are what make it a test.
+        body = r.json()
+        assert body["status"] == "PROCESSED", f"{event_type} was not processed"
+        assert action.id in body["reverified"], f"{event_type} did not re-read the action"
+
+    db.refresh(action)
+    assert action.verification_state is VerificationState.SUCCESS
+    assert db.query(Incident).filter(
+        Incident.incident_type == IncidentType.RECONCILIATION_MISMATCH).count() == 0
+
+
+def test_the_providers_own_timestamp_is_kept_when_deliveries_arrive_reversed(
+        db, owner, client, secret):
+    """Arrival order is recorded separately from event order, not instead of it.
+
+    Without this, `occurred_at` could quietly become a second copy of
+    `received_at` — and the event store would lose the only field that can
+    show, after the fact, that a delivery was late.
+    """
+    action = _settled_action(db, owner)
+
+    for event_id, event_type, ts in (
+            ("evt_reversed_new", "refund.processed", CURRENT_TS),
+            ("evt_reversed_old", "refund.failed", STALE_TS)):
+        deliver(client, envelope(event_type,
+                                 payment_id=action.external_payment_id,
+                                 refund_id=action.external_reference or "rfnd_X",
+                                 status="failed" if ts == STALE_TS else "processed",
+                                 created_at=ts),
+                event_id=event_id)
+
+    new, old = (db.query(WebhookEvent).filter(WebhookEvent.event_id == e).one()
+                for e in ("evt_reversed_new", "evt_reversed_old"))
+    # Both timestamps must actually be populated, or the comparisons below are
+    # comparing None to None and would pass on a parser that dropped the field.
+    assert old.occurred_at is not None and new.occurred_at is not None
+
+    # Arrived second, happened first. Both halves asserted, because either one
+    # alone is satisfied by a field that simply copies the other.
+    assert old.received_at > new.received_at
+    assert old.occurred_at < new.occurred_at

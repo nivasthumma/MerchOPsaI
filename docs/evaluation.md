@@ -54,26 +54,29 @@ inflating a metric.
 
 ## Mutation testing — does the suite actually work?
 
-> A full run is 55 mutants, each re-running the whole scenario and test suite: over half
-> an hour, and memory-hungry enough to be worth running detached. Pass substrings to run
+> A full run is 88 mutants, each re-running the whole scenario and test suite: over two
+> hours, and memory-hungry enough to be worth running detached. Pass substrings to run
 > a subset during development — `scripts/mutation_test.py webhooks detection` — but a
 > filtered run is not a substitute for the full one, and CI runs all of them.
 
-A suite reporting 106/106 proves nothing on its own. It may simply not be asserting
+A suite reporting 167/167 proves nothing on its own. It may simply not be asserting
 anything. `scripts/mutation_test.py` (`make mutants`) breaks each core control in
 turn, re-runs the suite, and reports which scenarios caught the break:
 
 ```
-15/15 mutations caught
+87/88 mutations caught      complete run, 2026-09-08, 2h06m, tree 3ebe32a
+88/88                       after the survivor's test, verified individually
 ```
 
-The 15 mutations cover: the registry lookup, permission checks, merchant isolation,
-the approval requirement, the amount limit, the duplicate-action guard, three
-verification behaviours, argument validation, the execution budget, approval expiry,
-idempotency-key derivation, the duplicate-action SAVEPOINT, and audit redaction.
+The 88 mutations span policy, verification, the runtime, actions, governance,
+reconciliation, tools, webhooks, detection, metrics, messages, tenancy, failure
+classification, observability, durability, migrations, versioning, the recovery
+ledger, agent output, risk, approval, the incident lifecycle, audit, and the provider
+mapping — one per control, each named for the defect it introduces rather than for the
+line it edits.
 
 "Caught" is not one thing, and the distinction matters — see *Known coverage limits*
-below for how the 15 actually break down.
+below for how the 88 actually break down.
 
 ### What the first run found
 
@@ -97,19 +100,68 @@ than the pass count.
 
 ### Known coverage limits
 
-`make mutants` reports **15/15 caught**, but that headline flattens three different
-kinds of catching. The measured breakdown, from the run itself:
+`make mutants` reports **87/88 caught** (88/88 once the survivor's test is counted),
+but that headline flattens three different kinds of catching. The breakdown below is
+read out of the run's own table rather than estimated — the harness names the scenarios
+each mutant turned red, and a row naming none is a mutant no scenario distinguishes:
 
-| How the mutant is caught | Count | Mutants |
-|---|---|---|
-| A named scenario grades it red | 35 | permissions (5 scenarios), merchant isolation (1), auto-approve HIGH (36), amount limit (2), duplicate-action guard (1), unreadable-state verification (1), trust-the-response (3), execution budget (2), approval expiry (1), ignore the read-back (3), detection dedup (DET-02), degradation threshold (DET-01/03/09), onset volume floor (DET-09), incident outcome mapping (DET-06), webhook signature (WHK-03), webhook dedup (WHK-02), fail-closed after a bad signature (WHK-03), contradiction detection (WHK-04), risk floor rule (RSK-07), risk raising (RSK-02…05), premature execution (RSK-03…06), signature count (RSK-02…05), campaign spend bound (RCV-05), action-count bound (RCV-08), stop applied not logged (RCV-05/08), volume attribution (RCV-03), recovery-action permission (TOOL-05), ungrounded claims (OUT-03), malformed output (OUT-02/03), prose/block separation (OUT-01/05), a sent link counted as recovered (LDG-02), the unknown bucket folded away (LDG-04), retryable unknown state (OBS-01), split correlation ids (OBS-04) |
-| The suite **crashes** instead of grading | 2 | registry lookup, argument validation |
-| Unit tests only — no scenario distinguishes it | 18 | idempotency-key derivation, duplicate-action SAVEPOINT, key-name branch of audit redaction, incident lifecycle legality, bulk-size grading, and six tooling controls (read/action split, link preconditions, opt-out at execution, contact dedup, notification read-back, untrusted tagging), the requires_human OR, evidence-label continuity, gross-vs-attributed reporting, resolved incidents in the at-risk figure, per-intervention dispatch, and three taxonomy classifications |
+| How the mutant is caught | Count |
+|---|---|
+| A named scenario grades it red | **40** |
+| The suite **crashes** instead of grading | **2** |
+| Unit tests only — no scenario distinguishes it | **45** |
+| Nothing caught it | **1**, now closed |
 
-Read strictly, **10 of 15 mutants produce a graded scenario failure.** The other five
-are still detected, and the suite is still doing real work — but "15/15 caught" and
-"every control has a scenario behind it" are different claims, and only the first
-one is true.
+Read strictly, **40 of 88 mutants produce a graded scenario failure.** The other 47 are
+still detected and the suite is still doing real work — but "87/88 caught" and "every
+control has a scenario behind it" are different claims, and only the first is true.
+
+The 45 fall into four groups, and only the last is an oversight:
+
+**Read-side aggregates the scenario suite cannot drive** — metrics (three), the ledger
+(two), failure classification (two), governance (two), observability (two), versioning,
+budget-vs-host-timeout. A scenario grades a tool sequence and a final state; it does not
+read `/metrics` back and check the shape of a number.
+
+**Branches a safety guard reaches first** — idempotency-key derivation and the
+duplicate-action SAVEPOINT (the refundable-balance check fires before the key is
+consulted), the incident lifecycle's legality check (every transition a scenario can
+drive is already legal), the key-name branch of audit redaction (SEC-25's secret arrives
+in the request string and is caught by the value-pattern branch, which the mutant leaves
+intact).
+
+**Structural, and correctly so** — the seven tooling controls. The deterministic planner
+does not compose customer contact on its own; it proposes a payment link only when a
+request names one. So no scenario can drive execution-time opt-out, contact
+deduplication, or notification read-back. Giving the planner freedom to invent customer
+contact would be a worse system in exchange for a better number.
+
+**New surface with no scenarios yet** — the three mapping guards, the two reconciliation
+repair passes, and three detection rules added since the last scenario pass. These are
+the ones genuinely worth closing, and they are listed here rather than folded into the
+structural bucket, which is where an inconvenient number goes to be forgotten.
+
+### The survivor
+
+**`reconciliation: escalate actions that already settled`** deleted the settled check
+inside `should_escalate`, and 626 tests did not notice. Three of that function's four
+callers make the check redundant — `escalate_exhausted` filters settled rows out in
+SQL, and both sweep call sites are already inside an `if state in UNSETTLED` branch.
+The fourth is not redundant: `reverify` calls it unconditionally, *after* deciding what
+the read found.
+
+So an operator who presses Re-verify on an UNKNOWN action four times and gets a real
+SUCCESS on the fifth crosses the attempt limit on the attempt that resolved it. The
+same action is then marked COMPLETED with "Re-verification resolved the action:
+SUCCESS" and handed to a human as "still unestablished". A finished refund on the
+escalation queue is how a queue stops being read.
+
+`test_a_manual_reverify_that_finally_succeeds_does_not_escalate` closes it, verified
+the only way a single mutant can be: applied by hand → red, reverted → green. **88/88
+is therefore two measurements and is stated as two** — 87 from the complete run, one
+from a hand-verified mutant added after it. Adding a test cannot un-catch a mutant, so
+the 87 still hold; a full re-run against this exact tree has not been done, and the
+number is not presented as though it had.
 
 The two crashes are scenario-*reachable*: with the registry guard removed, SEC-24
 drives the runtime into `AttributeError: 'NoneType' object has no attribute
@@ -195,23 +247,30 @@ configuration, and the provider/adapter actually used.
 
 ## Results (measured)
 
+Read out of `data/evaluation_report.json` and the mutation log, 2026-09-08. This block
+had been left at `106/106 · 310 assertions · 15/15 mutations` long after every one of
+those numbers had moved — which is why `scripts/check_counts.py` now gates the
+published figures against what the tree measures.
+
 ```
 run configuration : llm_provider=deterministic (deterministic-planner-v1)
                     payment_adapter=mock
                     dataset=synthetic-v1, seed=20260825
 
-106/106 scenarios passed      critical: 59/59
+167/167 scenarios passed      critical: 110/110
 
-  adversarial_security  25/25    payment_failure       12/12
-  duplicate_payment     14/14    refund_policy         25/25
-  failure_unknown       18/18    revenue_investigation 12/12
+  adversarial_security  34/34    recovery              14/14
+  detection             10/10    refund_policy         28/28
+  duplicate_payment     16/16    revenue_investigation 19/19
+  failure_unknown       20/20    risk_approval          7/7
+  payment_failure       14/14    webhook                5/5
 
-310 assertions
-median task latency   40 ms
+568 assertions
+median task latency   45 ms
 mean grounding rate   1.0
-suite runtime         ~26 s
 
-mutation testing      15/15 mutations caught
+mutation testing      87/88 caught in a complete 2h06m run
+                      88/88 with the survivor's test, verified individually
 ```
 
 Reproducibility was verified by running the suite twice and comparing the pass/fail

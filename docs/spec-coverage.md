@@ -154,12 +154,18 @@ Center, Command Center, the incident decision workspace, agent activity built
 from recorded rows — did not exist and now does. That is product surface rather
 than a specification section, so it is not in the table.
 
+**§20's out-of-order webhooks — the one gap
+[`docs/adversarial-coverage.md`](adversarial-coverage.md) named — is closed.** The
+behaviour was right by construction, because `process_event` re-reads provider state
+rather than believing the payload; what was missing was anything proving it. Three
+tests now do: a stale failure arriving after a settled refund, both arrival orders of
+the same pair reaching the same state, and the event store keeping the provider's
+timestamp separate from arrival time. Verified against a hand-applied "believe the
+payload" defect, which turns three tests red.
+
 ### Still not closed, and why
 
 - **§14, §30, §42** — unchanged. Blocked on credentials, as above.
-- **§20 out-of-order webhooks** — the one gap
-  [`docs/adversarial-coverage.md`](adversarial-coverage.md) found. The behaviour
-  is right by construction; nothing tests it.
 - **§8's worker topology** — still a cron sweep, still a deliberate scope
   decision. `/readiness` now reports when the sweep has stopped running, which
   makes the trade-off visible rather than silent.

@@ -216,6 +216,60 @@ def test_a_settled_action_never_escalates_however_many_attempts_it_took(db, owne
     assert action.escalated is False
 
 
+def test_a_manual_reverify_that_finally_succeeds_does_not_escalate(db, owner):
+    """The gap an 88-mutant run found, and the one call site that needed the
+    guard.
+
+    `escalate_exhausted` filters settled actions out in SQL, and both sweep call
+    sites are already inside an `if state in UNSETTLED` branch — so the settled
+    check inside `should_escalate` is redundant in three of its four callers.
+    The fourth is this one, and it is not redundant at all: `reverify` calls
+    `should_escalate` unconditionally, *after* deciding what the read found.
+
+    So an operator who presses Re-verify on an UNKNOWN action four times and
+    gets a real SUCCESS on the fifth crosses MAX_ATTEMPTS on the attempt that
+    resolved it. Without the guard the same action is simultaneously marked
+    COMPLETED with "Re-verification resolved the action: SUCCESS" and handed to
+    a human with the reason "the outcome is still unestablished". A finished
+    refund lands on the escalation queue, and the queue that is supposed to mean
+    "somebody must look at this" starts including things nobody needs to look
+    at — which is how a queue stops being read.
+
+    Removing the guard survived the whole suite before this test existed.
+    """
+    from sqlalchemy import text
+
+    from app.agent.approval import approve_and_execute, reverify
+    from app.agent.runtime import AgentRuntime
+    from app.verification.schedule import MAX_ATTEMPTS
+
+    out = AgentRuntime(db, owner).run(
+        "Refund the duplicate payment SYN_PAY_0002 amount 499900.")
+    r = approve_and_execute(db, out.task.id, owner)
+    action = r["action"]
+
+    # One short of the limit, so the manual attempt below is the one that
+    # crosses it. Set directly rather than by pressing the button four times:
+    # the point is the state at the boundary, and four real reads would settle
+    # it on the first.
+    db.execute(text("UPDATE agent_actions SET verify_attempts = :n WHERE id = :i"),
+               {"n": MAX_ATTEMPTS - 1, "i": action.id})
+    db.expire(action)
+
+    rv = reverify(db, out.task.id, owner)
+
+    # The premises, asserted rather than assumed. If the read did not reach the
+    # limit, or did not come back SUCCESS, this test would pass without ever
+    # visiting the branch it exists to cover.
+    assert rv["verification"].state is VerificationState.SUCCESS
+    assert action.verify_attempts >= MAX_ATTEMPTS
+
+    assert action.escalated is False, (
+        "a re-verification that RESOLVED the action escalated it — the action "
+        "is COMPLETED and on the human queue at the same time")
+    assert action.escalated_at is None
+
+
 def test_the_backoff_widens_and_is_capped():
     """P0-15. Unbounded doubling turns attempt ten into nine hours, and an
     action nobody looks at for nine hours is one nobody looks at."""

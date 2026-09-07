@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-621%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-626%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 621 tests · 167/167 scenarios · 77/78 mutations |
+| [📊 Measured results](#-measured-results) | 626 tests · 167/167 scenarios · 88/88 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -141,25 +141,36 @@ median task latency 52 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-77/78 mutations caught      last complete run, on an older tree
-  └─ the one survivor now has a test, verified against it individually
+87/88 mutations caught      complete run, 2026-09-08, 2h06m
+  └─ 40 graded red by a named scenario · 2 detected as a crash
+     45 by unit tests alone · 1 survivor
 
-88 mutants now defined      ten added with the work since ADR-0029
-  └─ 15 run since (the 10 new ones plus 5 existing that anchor on changed
-     code): 15/15 caught. The other 73 have not been re-run.
+88/88                       after the survivor's test, verified individually
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes over an hour. The last complete run measured 77/78 on the tree as
-it stood after ADR-0029, which is **not** the current tree: the work since added ten
-mutants and changed code three existing ones anchor on. Those ten were run and caught;
-the figure for the whole set is therefore stale and is labelled as such rather than
-restated as though it still held. Its survivor — "roll back the whole transaction on a duplicate
-action" — was caused by that ADR: committing the claim shrank the bug's blast radius
-and, in doing so, disarmed the row-count assertion that used to catch it.
-`test_refusing_a_duplicate_does_not_erase_the_first_attempt` replaces it and was
-verified by applying the mutant by hand (it fails) and removing it (it passes). A full
-re-run against the current tree has **not** been completed, so 78/78 is not claimed.*
+complete run takes over two hours. This one ran against `3ebe32a` and is the first
+complete run since ADR-0029 — the previous figure, 77/78, was measured on a tree ten
+mutants and several modules ago and had been carried forward with a label saying so.*
+
+*The survivor is worth more than the score. **"reconciliation: escalate actions that
+already settled"** deletes the settled check inside `should_escalate`, and nothing in
+626 tests noticed. Three of that function's four callers make the check redundant —
+`escalate_exhausted` filters settled rows out in SQL, and both sweep call sites are
+already inside an `if state in UNSETTLED` branch. The fourth does not: `reverify`
+calls it unconditionally, after deciding what the read found. So an operator who
+presses Re-verify on an UNKNOWN action four times and gets a real SUCCESS on the fifth
+crosses the attempt limit on the attempt that resolved it — and the same action is
+marked COMPLETED with "Re-verification resolved the action: SUCCESS" while being handed
+to a human as "still unestablished". A finished refund on the escalation queue is how a
+queue stops being read.*
+
+*`test_a_manual_reverify_that_finally_succeeds_does_not_escalate` closes it, verified
+the only way this can be: mutant applied by hand → red, reverted → green. **88/88 is
+therefore two measurements, and it is stated as two** — 87 from the complete run, one
+from a hand-verified mutant added afterwards. Adding a test cannot un-catch a mutant,
+so the 87 still hold, but a full re-run against this exact tree has not been done and
+the number is not presented as though it had.*
 
 **§22's five browser journeys run.** `make e2e` stands the whole stack up
 against its own database — seed, API, the built bundle behind `vite preview`,
@@ -186,10 +197,11 @@ None was reachable from jsdom.
 
 **§20's twenty mandatory adversarial scenarios are audited rather than assumed**
 — [`docs/adversarial-coverage.md`](docs/adversarial-coverage.md) counts what the
-suite covers and names the one real gap: an out-of-order webhook is nothing the
-tests exercise, though §14 requires handling it. Two more (stale action,
-customer attempt limit) are covered by unit tests rather than as scenarios, and
-that distinction is recorded rather than smoothed over.
+suite covers. The one real gap it found — an out-of-order webhook, which §14
+requires handling and nothing exercised — is now closed by three tests, verified
+against a hand-applied "believe the payload" defect that turns them red. Two
+more (stale action, customer attempt limit) are covered by unit tests rather
+than as scenarios, and that distinction is recorded rather than smoothed over.
 
 That run is what makes the 167/167 meaningful — and it is how three real gaps
 were found and closed (see below), plus a fourth in the detection engine: hour-bucket
@@ -403,7 +415,7 @@ make setup                               # venv + dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 621 tests
+make test                                # 626 tests
 make eval                                # 167 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -656,26 +668,28 @@ are different claims.
 
 ### Coverage limits
 
-21. **Thirteen of the 78 mutants are caught by unit tests only** — no scenario
-    distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
-    the key-name branch of audit redaction, the incident lifecycle's legality check, and
-    grading a bulk action as if it stood alone, and six of the seven tooling controls.
-    The tooling ones are structural: the deterministic planner does not compose customer
-    contact on its own, so no scenario can drive most of those paths, and giving it that
-    freedom would be the wrong fix. Each is reachable in principle but sits behind a guard that fires first in
-    every path a scenario can drive — for the lifecycle mutant, because every
-    transition a scenario can drive is already a legal one. Two more (registry lookup,
-    argument validation) are detected as a *crash* rather than a graded failure — the
-    suite dies on `spec is None` instead of reporting SEC-24 red.
-    Counted honestly: **40 of 69 produce a graded scenario failure**, 4 are detected as a
-    crash rather than a graded result, and the rest by unit tests alone — the metrics and
-    taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
+21. **Forty-six of the 88 mutants are caught by unit tests alone** — no scenario
+    distinguishes them. Measured, not estimated: the run's own table reports the
+    scenarios each mutant turned red, and 46 rows report none. They are the tooling
+    controls, the read-side aggregates (metrics, ledger, taxonomy), the mapping and
+    reconciliation guards, and the branches a safety check reaches first. Several are
+    structural rather than an oversight — the deterministic planner does not compose
+    customer contact on its own, so no scenario can drive execution-time opt-out or
+    contact deduplication, and giving the planner that freedom would be a worse system
+    in exchange for a better number. Two more (registry lookup, argument validation)
+    are detected as a *crash* rather than a graded failure: the suite dies on
+    `spec is None` instead of reporting SEC-24 red. That is detection — nothing
+    silently passes — but it proves less than a graded failure does.
+    Counted honestly: **40 of 88 produce a graded scenario failure**, 2 are detected as
+    a crash, and 46 by unit tests alone. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-22. **The 78-mutant run is slow.** Each mutant re-runs the full scenario and test suites.
-    The test half is now fast (one seed, per-test rollback); the scenario half still
-    rebuilds the schema per scenario, so a complete run is around fifty minutes.
-    `scripts/mutation_test.py <substring>` runs a subset during development; CI runs
-    all of them.
+22. **The 88-mutant run takes over two hours.** Each mutant re-runs the full scenario
+    and test suites, and both have grown. The test half is fast (one seed, per-test
+    rollback); the scenario half still rebuilds the schema per scenario, which is where
+    the time goes. `scripts/mutation_test.py <substring>` runs a subset during
+    development; CI runs all of them. The job's timeout was 50 minutes, which would
+    have killed it partway and reported a timeout where the answer was "87 caught, 1
+    survived"; it is now 180.
 
 ### Supply-chain limits
 
@@ -756,7 +770,7 @@ ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 295 tests
 data/           167 scenarios + the last evaluation report
 scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (621 tests)
+tests/          unit · security · integration  (626 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 33 ADRs

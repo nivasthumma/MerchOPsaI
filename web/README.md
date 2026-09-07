@@ -79,12 +79,21 @@ state meant swiping past six columns. A cell may be marked
 `data-priority="low"` and dropped entirely at that width — and a test asserts
 that nothing which asserts something about money ever is.
 
-**P1-12.** `role="dialog" aria-modal="true"` is a promise, and the action drawer
-was not keeping it: focus stayed on the row behind, Escape did nothing, and Tab
-walked off into a page the dialog claims to have made inert. A keyboard user
-could open it and not get out. Focus now moves into the panel (not onto its
-Close button, which would announce "close" before saying what was opened), Tab
-wraps at both ends, Escape closes, and focus returns to the opener.
+**P1-12.** `role="dialog" aria-modal="true"` is a promise that everything
+outside the dialog is inert, and **both** dialogs in this app declared it while
+keeping different halves of it. The action drawer kept none: focus stayed on
+the row behind, Escape did nothing, Tab walked off into the supposedly-inert
+page, and a keyboard user could open it and not get out. The command palette
+focused its input and stopped there.
+
+`hooks/useModalFocus` is the one implementation, for the same reason
+`useLiveRefresh` is: a rule written twice is a rule that holds in one place.
+Focus moves in, Tab wraps at both ends, Escape closes, and focus returns to
+whatever opened it — `<body>` otherwise, which makes the next Tab restart from
+the top of the page. Where focus lands is the caller's choice and worth
+choosing: the drawer takes the panel, because its first control is Close and
+landing there announces "close" before saying what was opened; the palette
+takes its input, because typing is the entire reason to open it.
 
 ## Two things that are deliberately singular
 
@@ -108,7 +117,7 @@ money moved.
 ## Test
 
 ```bash
-npm test             # 263 Vitest tests, jsdom, no API required
+npm test             # 273 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
 
@@ -139,7 +148,7 @@ rather than merely look wrong:
 | Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
 | Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
 | Small screens (P1-11) | Every cell of a stacked table carries the header it belongs to, because the header row is not rendered at that width; no cell asserting something about money is ever marked droppable; every label matches a real column |
-| The drawer (P1-12) | `aria-modal` is kept rather than claimed: focus moves into the panel, Escape closes it, Tab wraps at both ends, and focus returns to whatever opened it |
+| Dialogs (P1-12) | `aria-modal` is kept rather than claimed, by both dialogs from one hook: focus moves in, Escape closes, Tab wraps at both ends — including in a dialog with nothing focusable in it — and focus returns to whatever opened it |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
 

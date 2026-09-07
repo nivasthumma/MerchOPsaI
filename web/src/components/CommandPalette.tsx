@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useModalFocus } from "../hooks/useModalFocus";
 import { api } from "../api/client";
 import type { SearchHit } from "../api/types";
 
@@ -23,6 +24,7 @@ export function CommandPalette({ extra = [] }: { extra?: Command[] }) {
   const [cursor, setCursor] = useState(0);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
 
   const commands = useMemo<Command[]>(() => [
@@ -118,21 +120,32 @@ export function CommandPalette({ extra = [] }: { extra?: Command[] }) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (e.key === "Escape") {
-        close();
       }
+      // Escape is `useModalFocus`'s, not this listener's. Handling it in both
+      // would be two closes on one press — harmless today and exactly the kind
+      // of duplication that stops being harmless when one of them grows a side
+      // effect.
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [close]);
 
-  useEffect(() => { if (open) inputRef.current?.focus(); }, [open]);
+  // P1-12. This declares `aria-modal="true"`, which tells assistive technology
+  // the page behind it is inert. It focused the input and left it there: Tab
+  // walked straight out into that supposedly-inert page, and closing dropped
+  // focus on <body> so the next Tab restarted from the top. Same hook as the
+  // action drawer, so the two cannot keep different halves of one promise.
+  //
+  // The input takes focus here rather than the panel, because typing is the
+  // entire reason anyone opens this.
+  useModalFocus(panelRef, { onClose: close, initial: inputRef, active: open });
 
   if (!open) return null;
 
   return (
     <div className="palette-scrim" onClick={close}>
       <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette"
+           ref={panelRef} tabIndex={-1}
            onClick={(e) => e.stopPropagation()}>
         <input
           ref={inputRef} type="text" value={query} placeholder="Command, or paste an ID…"

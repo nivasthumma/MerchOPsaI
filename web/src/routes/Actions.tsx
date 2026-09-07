@@ -16,7 +16,7 @@
 // resolved, never predicts an outcome, and never shows optimistic success
 // (P1-14).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { ActionCenter as ActionCenterData, ActionRow, PendingApprovalRow } from "../api/types";
@@ -27,6 +27,7 @@ import { LiveBar } from "../components/LiveBar";
 import { Status, StatusCount } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
+import { useModalFocus } from "../hooks/useModalFocus";
 
 // The plan's recommended cadence for actions is 2–5 seconds. This is the
 // fastest screen in the app because it is the one where a state change means
@@ -344,45 +345,13 @@ function ActionDrawer({ row, onClose, policy, act }: {
   act: (label: string, fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const panel = useRef<HTMLElement>(null);
-  const opener = useRef<Element | null>(null);
 
-  // P1-12. `role="dialog" aria-modal="true"` is a promise to assistive
-  // technology that this is a modal, and the promise was not being kept: focus
-  // stayed on the row behind it, Escape did nothing, and Tab walked off into a
-  // page the dialog claims to have made inert. A keyboard user could open this
-  // and not get out of it.
-  useEffect(() => {
-    opener.current = document.activeElement;
-    // Focus the panel itself rather than the first control: the first thing in
-    // here is a Close button, and landing on it means a screen reader announces
-    // "close" before saying what was opened.
-    panel.current?.focus();
-
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
-      if (e.key !== "Tab" || !panel.current) return;
-
-      const focusable = panel.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])');
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      // Wrap at both ends, so Tab cannot leave a dialog that says it is modal.
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault(); last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault(); first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      // Back where they came from. Without this, closing the drawer drops focus
-      // onto <body> and the next Tab starts from the top of the page.
-      (opener.current as HTMLElement | null)?.focus?.();
-    };
-  }, [onClose]);
+  // P1-12. The panel itself takes focus, not its first control: that control
+  // is Close, and landing there announces "close" before saying what was
+  // opened. Everything else — the Tab wrap, Escape, and returning focus to the
+  // opener — is `useModalFocus`, shared with the command palette so the two
+  // dialogs cannot drift into keeping different halves of the same promise.
+  useModalFocus(panel, { onClose });
 
   return (
     <div className="drawer-scrim" onClick={onClose} role="presentation">

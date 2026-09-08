@@ -92,7 +92,11 @@ MAP: dict[tuple[str, str], Field] = {
         M, "Redacted on write, and append-only by trigger. NOT erasable: the "
            "trail is the compliance record, and DPDP's erasure right does not "
            "extend to records held to satisfy another legal obligation"),
-    ("event_outbox", "payload"): Field(M, "Redacted on write; pruned by the drain"),
+    # It was NOT pruned by the drain, which only marks `published_at`. The
+    # table grew without bound from the day it shipped, and nothing noticed
+    # because this line said otherwise. `app/retention.py` prunes it now.
+    ("event_outbox", "payload"): Field(M, "Redacted on write; pruned once "
+                                          "published (app/retention.py)"),
     ("event_outbox", "payload_hash"): Field(O, "A digest of the payload"),
     ("webhook_events", "payload"): Field(
         M, "The provider's own body. Carries payment identifiers"),

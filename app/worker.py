@@ -205,6 +205,19 @@ def job_prune_tokens() -> dict:
         return {"pruned": prune_revoked(s), "abandoned_sign_ins": prune_flows(s)}
 
 
+def job_retention() -> dict:
+    """Drop rows past their retention period -- `app/retention.py` says which.
+
+    Daily, not hourly: nothing here is urgent, and a delete sweep that runs
+    while an operator is working is load bought for nothing. `audit_logs` is
+    deliberately not among the tables it touches; that module says why.
+    """
+    from app.retention import prune
+
+    with session_scope() as s:
+        return prune(s)
+
+
 def job_heartbeat() -> dict:
     """Say this worker is alive, so its absence is visible.
 
@@ -251,6 +264,9 @@ def build_jobs() -> list[Job]:
         # Hourly. The table only grows by one row per explicit sign-out, so
         # this is housekeeping rather than a load-bearing sweep.
         Job("prune_tokens", 3600, job_prune_tokens),
+        # Daily. Housekeeping over tables that grow one row per event, and
+        # deliberately not over the ones that are evidence.
+        Job("retention", s.worker_retention_interval_seconds, job_retention),
     ]
 
 

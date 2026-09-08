@@ -147,7 +147,7 @@ def test_every_scheduled_job_has_a_configured_interval():
     s = get_settings()
     names = {j.name for j in worker.build_jobs()}
     assert names == {"heartbeat", "tasks", "drain", "notify", "reconcile",
-                     "detect", "prune_tokens"}
+                     "detect", "prune_tokens", "retention"}
     for j in worker.build_jobs():
         assert j.interval_seconds > 0, j.name
     assert s.worker_notify_interval_seconds < s.notify_approval_warning_seconds, (
@@ -156,3 +156,8 @@ def test_every_scheduled_job_has_a_configured_interval():
     assert s.worker_heartbeat_interval_seconds * 3 <= WORKER_LIVENESS_SECONDS, (
         "a live worker must survive two missed beats, or POST /tasks starts "
         "refusing submissions while a worker is running perfectly well")
+    # Retention deletes rows. Running it on a short cadence buys load rather
+    # than freshness, and a sweep that runs every few seconds is one nobody
+    # notices misbehaving until a table is gone.
+    assert s.worker_retention_interval_seconds >= 3600, (
+        "retention is housekeeping; it should not run more than hourly")

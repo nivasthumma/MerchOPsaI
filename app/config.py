@@ -242,6 +242,11 @@ class Settings(BaseSettings):
     # Must stay well under queue.WORKER_LIVENESS_SECONDS (90), or a live worker
     # reads as dead between beats and `POST /tasks` starts refusing.
     worker_heartbeat_interval_seconds: int = 15
+    #: Daily. Retention is housekeeping: nothing here is urgent, and running a
+    #: delete sweep more often buys load rather than freshness. The PERIODS --
+    #: how long each table keeps its rows -- live in `app/retention.py` and are
+    #: a compliance decision rather than an engineering one.
+    worker_retention_interval_seconds: int = 86400
 
     # --- Tokens (ADR-0049) ---------------------------------------------
     # An access token's life. Short enough that a copy stops working on its own,

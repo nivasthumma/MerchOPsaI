@@ -961,6 +961,25 @@ MUTATIONS = [
         "    pass  # MUTANT",
     ),
 
+    # --- retention (§38) ---------------------------------------------------
+    (
+        # The compliance record, swept away by housekeeping. `audit_logs` is
+        # append-only by trigger precisely so this cannot happen by accident;
+        # a retention policy that learns to delete from it is the accident.
+        "retention: let housekeeping prune the audit log",
+        "app/retention.py",
+        "        if policy.days is None:\n            continue",
+        "        if False:  # MUTANT\n            continue",
+    ),
+    (
+        # Age alone deletes events nobody ever delivered. A pending outbox row
+        # is not stale, it is unfinished.
+        "retention: drop outbox rows nothing ever published",
+        "app/retention.py",
+        "        if policy.eligible:",
+        "        if False:  # MUTANT",
+    ),
+
     # --- personal data at rest (ADR-0052) ----------------------------------
     (
         # The whole change, undone. Every value would be written in plaintext

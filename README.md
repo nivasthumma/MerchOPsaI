@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-1129%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-1142%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations](https://img.shields.io/badge/mutations-136%20defined%20%C2%B7%20not%20measured-lightgrey.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 1129 tests · 187/187 scenarios · 139 mutants defined |
+| [📊 Measured results](#-measured-results) | 1142 tests · 187/187 scenarios · 141 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -92,7 +92,7 @@ and what is architecture.
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 187 scenarios + 139-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 187 scenarios + 141-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Notifications | Operator notifications on approval requested / expiring / expired, HIGH+ incidents, escalated actions, UNKNOWN verifications. Channels: log (always), email, Slack, signed outbound webhook. Recipients derived from the permissions the action requires (ADR-0042) | Quiet hours, per-user preferences, digests, escalation chains |
@@ -151,7 +151,7 @@ median task latency 49 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-139 mutants defined         not yet measured on this tree
+141 mutants defined         not yet measured on this tree
 ```
 
 **That figure was measured entirely in Python.** `make mutants-web` asks the
@@ -459,7 +459,7 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make demo-state                          # give the console something to show
-make test                                # 1129 tests
+make test                                # 1142 tests
 make eval                                # 187 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -999,7 +999,7 @@ web/            React SPA — Vite + TypeScript (ADR-0015), 341 tests
 data/           187 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
                 mutation harness, and the gates: counts, mutants, locks
-tests/          unit · security · integration  (1129 tests)
+tests/          unit · security · integration  (1142 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 56 ADRs

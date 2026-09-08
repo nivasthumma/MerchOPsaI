@@ -251,6 +251,37 @@ work and is not pretended to exist here.
 
 ---
 
+### Retention
+
+`app/retention.py` holds the periods, and the worker runs a daily sweep. Two
+things about it are worth knowing before an incident rather than during one.
+
+**The trail is not pruned.** `audit_logs` has no retention period, on purpose:
+deleting from it means suspending the trigger that makes it evidence, and the
+restore drill exists partly to prove that trigger is still on. When volume
+becomes a problem the answer is to archive — copy out, verify the copy, then
+remove in the same transaction that recorded the archival — not to teach the
+sweep a new table. A mutant that adds `audit_logs` to the sweep is caught by the
+suite.
+
+**Age alone never deletes anything.** A row has to have been *consumed* as well
+as old: a published outbox row is a delivery receipt, an unpublished one is an
+undelivered event, and only the first is eligible however old the second gets.
+
+The periods are defaults, not a compliance answer:
+
+| Table | Kept | Eligible when |
+|---|---|---|
+| `event_outbox` | 30 days | published |
+| `operator_notifications` | 90 days | sent |
+| `evaluation_results` | 90 days | — |
+| everything else | indefinitely | `app/retention.py` says why, per table |
+
+Whoever owns the retention schedule should replace those numbers. Nothing in
+the mechanism depends on what they are.
+
+---
+
 ## 5. Triage
 
 ### `unauthorized_executions` is not zero

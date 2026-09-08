@@ -373,22 +373,49 @@ function SignIn(
   { draft, setDraft, save }:
   { draft: string; setDraft: (s: string) => void; save: () => void },
 ) {
+  // The first screen anybody sees, and it was a form card pinned to the left
+  // of an otherwise empty page. It now leads with what this system is for --
+  // the same sentence the rest of the product is built around -- because the
+  // sign-in is the one screen where a reader has nothing else to look at.
   return (
-    <div className="card" style={{ maxWidth: 620 }}>
-      <h2 style={{ marginTop: 0 }}>Bearer token</h2>
-      <p className="sub">
-        The token identifies you. It carries no permissions — those are read from the
-        database on every request, so a token cannot grant itself authority.
-      </p>
-      <label htmlFor="tok">Mint one with <code>make token USER_ID=USR_A_OWNER</code></label>
-      <input
-        id="tok" type="password" value={draft} placeholder="paste token"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-      />
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className="primary" onClick={save} disabled={!draft.trim()}>Use token</button>
-        <span className="muted">Stored in this browser only, never sent anywhere but the API.</span>
+    <div className="signin">
+      <div className="signin-panel">
+        <p className="signin-mark"><span aria-hidden="true">◨</span> MerchantOps · Control plane</p>
+
+        <h2 className="signin-h">An HTTP 200 is not a business outcome.</h2>
+        <p className="signin-sub">
+          Every financial action here is read back at the provider before it
+          counts as done. Sign in to see what is waiting on a person, what the
+          money is doing, and what the system could not establish.
+        </p>
+
+        <div className="signin-field">
+          <label htmlFor="tok">Mint one with <code>make token USER_ID=USR_A_OWNER</code></label>
+          <input
+            id="tok" type="password" value={draft} placeholder="paste token"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+          />
+          <button className="primary" onClick={save} disabled={!draft.trim()}>
+            Use token
+          </button>
+        </div>
+
+        <p className="signin-note">
+          The token identifies you and carries no permissions — those are read
+          from the database on every request, so a token cannot grant itself
+          authority. Stored in this browser only, never sent anywhere but the
+          API.
+        </p>
+
+        {/* The four states, as a quiet echo of what the console is about.
+            Labels only: nothing here claims a value. */}
+        <ul className="signin-states" aria-label="Verification states">
+          <li><b className="ok">✓</b> SUCCESS</li>
+          <li><b className="danger">✕</b> FAILED</li>
+          <li><b className="warn">◐</b> PARTIAL</li>
+          <li><b className="unknown">?</b> UNKNOWN</li>
+        </ul>
       </div>
     </div>
   );

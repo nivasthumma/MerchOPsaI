@@ -1414,6 +1414,73 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .tile.is-quiet .tile-n     { color: var(--text-dim); font-weight: 500; }
 .tile.is-quiet .tile-g     { opacity: 0.45; }
 
+/* --- the sign-in screen --------------------------------------------------
+   The first screen anybody sees. It was a form card pinned to the left of an
+   otherwise empty page; it now centres and leads with what the product is for,
+   because this is the one screen where a reader has nothing else to look at.
+
+   Everything comes from the theme tokens, so it holds in light and dark — the
+   landing page commits to one dark world, the product cannot. */
+.signin {
+  display: grid; place-items: center;
+  min-height: calc(100vh - var(--chrome, 90px) - 120px);
+  padding: clamp(20px, 5vw, 56px) 0;
+}
+.signin-panel {
+  width: 100%; max-width: 620px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: clamp(26px, 4vw, 44px);
+  box-shadow: var(--shadow);
+}
+.signin-mark {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 26px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.signin-mark span {
+  width: 24px; height: 24px; border-radius: 7px;
+  display: grid; place-items: center; letter-spacing: 0;
+  background: var(--accent-soft); border: 1px solid var(--accent-border);
+  color: var(--accent); font-size: 13px;
+}
+.signin-h {
+  margin: 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(24px, 3.4vw, 33px); line-height: 1.08;
+  letter-spacing: -0.025em; text-wrap: balance;
+}
+.signin-sub {
+  margin: 16px 0 0; color: var(--text-2); font-size: 15.5px;
+  line-height: 1.6; max-width: 52ch;
+}
+/* The field is the point of the screen, so it gets the panel's only fill. */
+.signin-field {
+  margin-top: 28px; padding: 18px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: grid; gap: 10px;
+}
+.signin-field label {
+  font-size: 12.5px; color: var(--text-dim);
+}
+.signin-field input { width: 100%; margin: 0; }
+.signin-field button { justify-self: start; }
+.signin-note {
+  margin: 18px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-dim);
+  max-width: 58ch;
+}
+.signin-states {
+  list-style: none; margin: 26px 0 0; padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+.signin-states li { display: flex; align-items: center; gap: 7px; }
+.signin-states b { font-size: 12px; }
+.signin-states .ok      { color: var(--ok); }
+.signin-states .danger  { color: var(--danger); }
+.signin-states .warn    { color: var(--warn-ink); }
+.signin-states .unknown { color: var(--unknown); }
+
 /* --- P1-03: the recovery funnel ---------------------------------------- */
 /* Widths are proportions of the first stage, computed in the component, so a
    later stage can never draw wider than an earlier one. The rule is carried by

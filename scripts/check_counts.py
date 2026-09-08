@@ -83,6 +83,26 @@ def vitest_count() -> int | None:
     return len(lines)
 
 
+def adr_count() -> int:
+    return len(list((ROOT / "docs" / "adr").glob("*.md")))
+
+
+def unmapped_app_packages() -> list[str]:
+    """`app/` subpackages the README's repository map does not mention.
+
+    Not a count -- a set difference. The map went stale the ordinary way:
+    `app/audit/` was added, the map was not, and a reader looking for the audit
+    trail found no entry for it. A number would have caught that too, but a
+    number would also have been satisfied by mentioning the wrong directory,
+    and a map that names the wrong thing is worse than one that names too few.
+    """
+    listed = (ROOT / "README.md").read_text()
+    return sorted(
+        d.name for d in (ROOT / "app").iterdir()
+        if d.is_dir() and not d.name.startswith(("_", "."))
+        and f"  {d.name}/" not in listed)
+
+
 def scenario_count() -> int:
     import yaml
     d = yaml.safe_load((ROOT / "data" / "scenarios" / "scenarios.yaml").read_text())
@@ -196,6 +216,8 @@ def main() -> int:
               "the mutant count in the measured-results block"),
         Claim("README.md", r"scenarios \+ (\d+)-mutation validation", mut,
               "the capability table's mutant count"),
+        Claim("README.md", r"gap-closure plan, (\d+) ADRs", adr_count(),
+              "the ADR count in the repository map"),
     ]
     if web is not None:
         claims += [
@@ -271,6 +293,16 @@ def main() -> int:
                   "the caught-mutant count in the measured-results block"))
 
     problems = check(claims)
+
+    # A structural claim rather than a numeric one: the repository map has to
+    # name every package it maps.
+    unmapped = unmapped_app_packages()
+    if unmapped:
+        problems.append(
+            "README.md: the repository map does not mention "
+            + ", ".join(f"app/{d}/" for d in unmapped)
+            + ".\n    A map that omits a package sends a reader looking for it "
+              "somewhere else.")
     if problems:
         print()
         for p in problems:

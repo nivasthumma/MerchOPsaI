@@ -919,21 +919,25 @@ app/
   policy/       deterministic policy engine + the computed risk engine
   failures.py   §56 taxonomy and §57 retry rules, as data
   metrics.py    §59 operational metrics and §60 objectives
-  verification/ read-back verification and state classification
-  integrations/ razorpay adapter + fault-injection seam
+  verification/ read-back verification, state classification, the P0-15
+                backoff schedule and escalation
+  integrations/ razorpay adapter, fault-injection seam, the synthetic ->
+                provider mapping (ADR-0033)
   llm/          provider abstraction (anthropic | deterministic)
   eval/         scenario schema + runner
   observability/ structured logs, runtime metrics, request + query timing
   api/          FastAPI surface + response contracts (ADR-0032)
+  audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
 web/            React SPA — Vite + TypeScript (ADR-0015), 295 tests
-data/           167 scenarios + the last evaluation report
-scripts/        migrate, seed, spike, scenarios, demo
+data/           167 scenarios + the last evaluation and mutation reports
+scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
+                mutation harness, and the gates: counts, mutants, locks
 tests/          unit · security · integration  (627 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 33 ADRs
+                gap-closure plan, 35 ADRs
 ```
 
 ## 📄 License / disclaimer

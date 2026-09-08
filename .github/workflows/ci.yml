@@ -108,6 +108,30 @@ jobs:
             exit 1
           fi
 
+      - name: The operator scripts still run
+        # Five entry points that nothing exercised. They are not library code
+        # -- they touch the models, the adapter, detection and the approval
+        # path directly -- so a renamed field breaks them silently and the
+        # first person to notice is whoever is demonstrating the system.
+        #
+        # `demo.py` is the §51 scripted walkthrough and is run LAST, on a
+        # freshly seeded database, because it needs duplicates nobody has
+        # refunded yet. It used to print "(no approval created — skipping)"
+        # and exit 0 in that situation, which let a viewer conclude they had
+        # seen the whole loop including the UNKNOWN section they had not.
+        #
+        # `razorpay_spike.py` is deliberately absent: it writes
+        # docs/assessment/razorpay-spike.md, and a CI step that dirties a
+        # tracked file is a CI step that fights the working-tree checks.
+        run: |
+          set -o pipefail
+          python scripts/demo_state.py > /dev/null
+          python scripts/confirm_mappings.py
+          python scripts/reconcile.py
+          SEED_FORCE=1 python scripts/seed_data.py > /dev/null
+          python scripts/demo.py > /dev/null
+          echo "demo_state, confirm_mappings, reconcile and demo all ran."
+
       - name: Published numbers match the tree
         # The README is the only thing most readers check, and a repository
         # that publishes a number it cannot reproduce is making exactly the

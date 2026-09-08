@@ -62,7 +62,13 @@ def main() -> int:
     where = "staged for commit" if staged else "the working tree"
 
     cache: dict[str, str | None] = {}
-    found: list[tuple[str, str]] = []
+    # Keyed by (file, replacement text), not by label. Several mutations share
+    # the identical replacement -- `        if False:  # MUTANT` guts five
+    # different controls in `app/policy/engine.py` alone -- so matching on the
+    # text and reporting per label named five mutants when one was applied.
+    # Over-reporting is the safe direction for a guard, but a guard that
+    # overstates what it found is a guard people start discounting.
+    found: dict[tuple[str, str], list[str]] = {}
     for label, relpath, _find, replace in MUTATIONS:
         if relpath == SELF:
             continue
@@ -70,7 +76,7 @@ def main() -> int:
             cache[relpath] = read(relpath)
         content = cache[relpath]
         if content is not None and replace in content:
-            found.append((relpath, label))
+            found.setdefault((relpath, replace), []).append(label)
 
     if not found:
         n = len([p for p, c in cache.items() if c is not None])
@@ -78,9 +84,23 @@ def main() -> int:
               f"{len(MUTATIONS)} mutations).")
         return 0
 
-    print(f"MUTANT FOUND IN {where.upper()} -- do not commit:", file=sys.stderr)
-    for relpath, label in found:
-        print(f"  {relpath}\n    {label}", file=sys.stderr)
+    # Reported per FILE, and without a mutant count. Replacement strings are
+    # not unique -- `if False:  # MUTANT` guts several controls, at two
+    # indentation levels -- so the text says a mutant is present and cannot say
+    # which, or how many. Counting the matches would have reported "5 mutants"
+    # and then "2 mutants" for a single applied mutation, and a guard that
+    # overstates what it found is one people start discounting.
+    files = sorted({relpath for relpath, _ in found})
+    print(f"MUTANT TEXT FOUND IN {where.upper()} -- do not commit:",
+          file=sys.stderr)
+    for relpath in files:
+        print(f"\n  {relpath}", file=sys.stderr)
+        for (rp, replace), labels in found.items():
+            if rp != relpath:
+                continue
+            print(f"      {replace.strip()}", file=sys.stderr)
+            for lab in labels:
+                print(f"        could be: {lab}", file=sys.stderr)
     lock = ROOT / ".mutation-in-progress"
     if lock.exists():
         print(f"\nA mutation run is in progress:\n"

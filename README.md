@@ -552,7 +552,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 339 Vitest tests
+make web-test                     # 341 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -995,7 +995,7 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 339 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 341 tests
 data/           187 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
                 mutation harness, and the gates: counts, mutants, locks

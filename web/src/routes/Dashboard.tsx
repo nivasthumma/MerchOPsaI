@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
 import type { Dashboard as DashboardData } from "../api/types";
 import {
-  Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip, When,
+  Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
 } from "../components/Bits";
+import { LiveBar } from "../components/LiveBar";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 /** MerchantOps §49 / §50.
  *
@@ -14,23 +15,20 @@ import {
  *  they are measured on stated underneath rather than assumed.
  */
 export default function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+  // These are the figures an operator watches during an incident, and they
+  // moved while the page sat still: this screen was the last one still
+  // fetching once and never again. It uses the same hook as every other live
+  // screen rather than a second implementation of the same rules -- which is
+  // what `feat/enterprise-ops-console` grew independently, and why the
+  // reconciliation of that branch kept this hook and dropped the other.
+  const live = useLiveRefresh<DashboardData>(
+    () => api.dashboard(), { intervalMs: 5000 });
+  const data = live.data;
 
-  const load = useCallback(async () => {
-    try {
-      setData(await api.dashboard());
-      setFetchedAt(new Date().toISOString());
-      setError(null);
-    } catch (e) {
-      setError(e as ApiError);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
-
-  if (error) return <ErrorBanner error={error} />;
+  // Only when there is nothing to show. A failed refresh over data already on
+  // screen keeps the data and says so in the bar -- blanking a ledger because
+  // one poll failed is how an operator loses the figures they were reading.
+  if (live.error && !data) return <ErrorBanner error={live.error} />;
   if (!data) return <Skeleton rows={6} />;
 
   const r = data.recovery;
@@ -69,9 +67,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      <SectionHead title="Revenue recovery">
-        {fetchedAt && <span className="muted"><When iso={fetchedAt} /></span>}
-      </SectionHead>
+      <SectionHead title="Revenue recovery" />
+      <LiveBar live={live} what="the ledger" />
 
       <ol className="ledger-chain" aria-label="Recovery ledger">
         {chain.map((c) => (

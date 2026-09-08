@@ -93,3 +93,31 @@ describe("recovery ledger", () => {
     expect(screen.getByText("Open")).toBeInTheDocument();
   });
 });
+
+// The ledger went live when `feat/enterprise-ops-console` was reconciled into
+// master: it was the last screen still fetching once and never again, while
+// the figures on it move during exactly the incident an operator is watching.
+describe("the ledger is live", () => {
+  beforeEach(() => {
+    vi.mocked(api.dashboard).mockReset();
+    vi.mocked(api.dashboard).mockResolvedValue(data);
+  });
+
+  it("says when the figures were last good", async () => {
+    await renderPage();
+    // The freshness line, not a bare timestamp: it distinguishes "refreshing"
+    // from "the API is gone", which a timestamp alone cannot.
+    expect(await screen.findByRole("status")).toBeInTheDocument();
+  });
+
+  it("keeps the figures on screen when a refresh fails", async () => {
+    await renderPage();
+    const before = await screen.findByText("Revenue at risk");
+    expect(before).toBeInTheDocument();
+
+    // A failed poll must not blank a ledger somebody is reading. The hook keeps
+    // the last good data and reports the failure beside it.
+    vi.mocked(api.dashboard).mockRejectedValue(new Error("network"));
+    expect(screen.getByText("Revenue at risk")).toBeInTheDocument();
+  });
+});

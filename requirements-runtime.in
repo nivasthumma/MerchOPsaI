@@ -36,3 +36,9 @@ redis==6.4.0
 # to do either, since which one is chosen is a runtime decision (`/health`
 # reports which), not a build-time one.
 anthropic==1.0.0
+
+# Personal data and the SSO client secret are encrypted at rest (ADR-0052).
+# A direct dependency since `app/crypto.py` imports it: it was present only
+# because something else happened to pull it in, which is not a dependency, it
+# is a coincidence that installs fine until the day it does not.
+cryptography==50.0.1

@@ -635,10 +635,10 @@ function Landing({ health }: { health: Health | null }) {
         <div className="lp-stats is-stagger">
           <div><b>187<i>/187</i></b><span>Scenarios</span>
             <em>110 of them critical</em></div>
-          <div><b>136<i>/136</i></b><span>Injected defects caught</span>
+          <div><b>139<i>/139</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>1440</b><span>Automated tests</span>
-            <em>1101 backend · 339 frontend</em></div>
+          <div><b>1462</b><span>Automated tests</span>
+            <em>1123 backend · 339 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -658,7 +658,7 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  1101 python tests · 339 vitest · 187 scenarios · 136 mutants"}
+              {"measured:  1123 python tests · 339 vitest · 187 scenarios · 139 mutants"}
             </span>
             <span className="ln">{"browser:   15 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>

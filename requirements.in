@@ -26,3 +26,9 @@ python-dotenv==1.2.3
 anthropic==1.0.0
 httpx==0.28.1
 redis==6.4.0
+
+# Personal data and the SSO client secret are encrypted at rest (ADR-0052).
+# A direct dependency since `app/crypto.py` imports it: it was present only
+# because something else happened to pull it in, which is not a dependency, it
+# is a coincidence that installs fine until the day it does not.
+cryptography==50.0.1

@@ -10,6 +10,8 @@ from datetime import timedelta
 
 from sqlalchemy import text
 
+from app.crypto import decrypt
+
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 
 # The dataset's fixed anchor. Real deployments would use now(); the fixed
@@ -305,8 +307,14 @@ def get_order(session, merchant_id: str, order_id: str) -> ToolResult:
             "created_at": o["created_at"].isoformat(), "customer_id": o["customer_id"],
         },
         "customer": {
-            "id": o["customer_id"], "name": o["cust_name"],
-            "email": o["cust_email"], "segment": o["cust_segment"],
+            # Decrypted here: these come back from raw SQL, which returns the
+            # stored form -- the ORM's `Encrypted` type is not in play on a
+            # `text()` query (ADR-0052). Handing the model ciphertext would put
+            # `enc:v1:...` in front of it as a customer's name.
+            "id": o["customer_id"],
+            "name": decrypt(o["cust_name"], table="customers", column="name"),
+            "email": decrypt(o["cust_email"], table="customers", column="email"),
+            "segment": o["cust_segment"],
         },
         "payments": [{
             "id": p["id"], "amount_minor": int(p["amount_minor"]), "method": p["method"],
@@ -524,7 +532,11 @@ def get_customer(session, merchant_id: str, customer_id: str) -> ToolResult:
     """), {"c": customer_id, "m": merchant_id}).mappings().one()
 
     data = {
-        "id": c["id"], "name": c["name"], "email": c["email"], "segment": c["segment"],
+        "id": c["id"],
+        # Same reason as `get_order` above: raw SQL, so decrypted at the edge.
+        "name": decrypt(c["name"], table="customers", column="name"),
+        "email": decrypt(c["email"], table="customers", column="email"),
+        "segment": c["segment"],
         # §28 makes this a stopping condition, so the model must be able to see
         # it before it recommends contacting anyone.
         "contact_opted_out": bool(c["contact_opted_out"]),

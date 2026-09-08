@@ -961,6 +961,35 @@ MUTATIONS = [
         "    pass  # MUTANT",
     ),
 
+    # --- personal data at rest (ADR-0052) ----------------------------------
+    (
+        # The whole change, undone. Every value would be written in plaintext
+        # while the column, the map and the ADR all still say "encrypted" --
+        # which is worse than never encrypting, because a reviewer sees the
+        # claim and stops asking.
+        "privacy: write personal data in plaintext",
+        "app/crypto.py",
+        "    if is_encrypted(value):",
+        "    if True:  # MUTANT",
+    ),
+    (
+        # The blind index stops matching what the lookups it replaces matched.
+        # `lower(email) = :e` was case-insensitive, so the symptom is not an
+        # error: it is a second account for somebody who already had one.
+        "privacy: stop normalising the blind index",
+        "app/crypto.py",
+        '    return hmac.new(key, f"{table}.{column}:{value.strip().lower()}".encode(),',
+        '    return hmac.new(key, f"{table}.{column}:{value}".encode(),  # MUTANT',
+    ),
+    (
+        # A deployment encrypting with the key published in this repository,
+        # and nothing saying so.
+        "privacy: let a deployment run on the development encryption key",
+        "app/crypto.py",
+        '    if not DEV_KEY_IN_USE or os.environ.get("MERCHANTOPS_ALLOW_DEV_SECRET"):',
+        "    if True:  # MUTANT",
+    ),
+
     # --- the mapping layer (MerchantOps §6, plan P0-02) --------------------
     (
         # The direction §6 is actually about. With ownership unchecked, one

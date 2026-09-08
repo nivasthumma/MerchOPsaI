@@ -23,6 +23,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.crypto import Encrypted
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -384,7 +386,11 @@ class IdentityProvider(Base):
     #: sitting in a column, and Phase 3 of the readiness review is where
     #: column-level encryption arrives. Named here so it is a scheduled debt
     #: rather than an oversight.
-    client_secret: Mapped[str] = mapped_column(String(500))
+    #: Encrypted at rest (ADR-0052). This was named as a scheduled debt when SSO
+    #: shipped -- a credential that impersonates this application to a
+    #: customer's identity provider, sitting in a readable column.
+    client_secret: Mapped[str] = mapped_column(
+        Encrypted(1000, table="identity_providers", column="client_secret"))
 
     #: Which email domains belong to this tenant. Lowercase, no `@`.
     email_domains: Mapped[list] = mapped_column(JSON, default=list)
@@ -584,8 +590,11 @@ class Customer(Base):
     __tablename__ = "customers"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
-    name: Mapped[str] = mapped_column(String(200))
-    email: Mapped[str] = mapped_column(String(200))
+    # Encrypted at rest (ADR-0052). The length is the CIPHERTEXT's: base64 of a
+    # nonce plus a 200-byte payload and its tag does not fit in 200 characters,
+    # and the first migration to try it failed on exactly that.
+    name: Mapped[str] = mapped_column(Encrypted(500, table="customers", column="name"))
+    email: Mapped[str] = mapped_column(Encrypted(500, table="customers", column="email"))
     segment: Mapped[str] = mapped_column(String(64), default="standard")
     # MerchantOps §28 makes "customer has opted out" a stopping condition. It has
     # to be a fact the planner can read, not a policy someone remembers.

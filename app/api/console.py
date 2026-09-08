@@ -326,7 +326,23 @@ def command_center(session, merchant_id: str) -> dict:
 # `kind` is what the UI routes on; `route` is where it navigates. Declared as
 # data so adding an identifier type is one row, not a new branch in a chain of
 # ifs that each have to remember the merchant scope.
-_SEARCHES: tuple[tuple[str, str, str], ...] = (
+def _customer_row(row) -> tuple[str | None, str]:
+    """Assemble a customer result from ciphertext.
+
+    `customers.name` and `.email` are encrypted at rest (ADR-0052), and a raw
+    SQL read returns exactly what is stored -- the ORM's type is not in play
+    here. Decrypted at the edge, so the shape the caller sees is the same as
+    every other search result.
+    """
+    from app.crypto import decrypt
+    return (decrypt(row["label"], table="customers", column="name"),
+            f'{decrypt(row["detail"], table="customers", column="email")} '
+            f'\u00b7 {row["status"]}')
+
+
+#: (kind, route, sql, shaper). The shaper is None where SQL alone produces the
+#: `label` and `detail` a result needs, and a function where it cannot.
+_SEARCHES: tuple[tuple[str, str, str, object], ...] = (
     # A payment resolves to its own lifecycle (§7), not to the incidents list.
     # Routing it there was a dead end: an operator pasting a payment id lands on
     # a page that does not contain it and has to start again.
@@ -334,7 +350,7 @@ _SEARCHES: tuple[tuple[str, str, str], ...] = (
         SELECT id, id AS label, method AS detail, created_at
           FROM payments
          WHERE merchant_id = :m AND (id = :q OR external_payment_id = :q)
-         LIMIT 5"""),
+         LIMIT 5""", None),
     # An order and a customer resolve THROUGH their payments, because the
     # lifecycle is what somebody searching an order id actually wants -- "what
     # happened to this order" is a question about its payment. Ordered newest
@@ -344,24 +360,28 @@ _SEARCHES: tuple[tuple[str, str, str], ...] = (
                o.status || ' · payment ' || p.status AS detail, p.created_at
           FROM orders o JOIN payments p ON p.order_id = o.id
          WHERE o.merchant_id = :m AND o.id = :q
-         ORDER BY p.created_at DESC LIMIT 5"""),
+         ORDER BY p.created_at DESC LIMIT 5""", None),
+    # `label` and `detail` arrive as CIPHERTEXT here and are assembled in
+    # `_customer_row` below. The other entries compose their detail in SQL with
+    # `||`; this one cannot, because concatenating two encrypted values in the
+    # database produces a string nothing can decrypt. See ADR-0052.
     ("customer", "/payments/{id}", """
-        SELECT p.id, c.name AS label,
-               c.email || ' · ' || p.status AS detail, p.created_at
+        SELECT p.id, c.name AS label, c.email AS detail,
+               p.status AS status, p.created_at
           FROM customers c JOIN payments p ON p.customer_id = c.id
          WHERE c.merchant_id = :m AND c.id = :q
-         ORDER BY p.created_at DESC LIMIT 5"""),
+         ORDER BY p.created_at DESC LIMIT 5""", _customer_row),
     ("incident", "/incidents/{id}", """
         SELECT id, title AS label, status AS detail, detected_at AS created_at
-          FROM incidents WHERE merchant_id = :m AND id = :q LIMIT 5"""),
+          FROM incidents WHERE merchant_id = :m AND id = :q LIMIT 5""", None),
     ("task", "/tasks/{id}", """
         SELECT id, request AS label, status AS detail, created_at
-          FROM agent_tasks WHERE merchant_id = :m AND id = :q LIMIT 5"""),
+          FROM agent_tasks WHERE merchant_id = :m AND id = :q LIMIT 5""", None),
     ("action", "/actions", """
         SELECT id, action_type AS label, status AS detail, created_at
           FROM agent_actions
          WHERE merchant_id = :m AND (id = :q OR external_reference = :q)
-         LIMIT 5"""),
+         LIMIT 5""", None),
     # A provider reference is the identifier an operator arrives with when they
     # are looking at the provider's dashboard rather than at ours, which is
     # exactly the moment a search box earns its place.
@@ -375,7 +395,7 @@ _SEARCHES: tuple[tuple[str, str, str], ...] = (
           FROM agent_actions a
          WHERE a.merchant_id = :m
            AND (a.external_reference = :q OR a.external_payment_id = :q)
-         LIMIT 5"""),
+         LIMIT 5""", None),
 )
 
 
@@ -398,13 +418,14 @@ def search(session, merchant_id: str, query: str) -> dict:
         return {"query": "", "results": [], "truncated": False}
 
     results: list[dict] = []
-    for kind, route, sql in _SEARCHES:
+    for kind, route, sql, shape in _SEARCHES:
         for row in session.execute(text(sql), {"m": merchant_id, "q": q}).mappings():
+            label, detail = (shape(row) if shape else (row["label"], row["detail"]))
             results.append({
                 "kind": kind,
                 "id": row["id"],
-                "label": row["label"],
-                "detail": row["detail"],
+                "label": label,
+                "detail": detail,
                 "created_at": (row["created_at"].isoformat()
                                if row["created_at"] else None),
                 "route": route.replace("{id}", row["id"]),

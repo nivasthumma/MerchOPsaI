@@ -49,6 +49,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app.crypto import decrypt
+
 # The stages of the chain, in the order §7 lists them. Published with the
 # response so a client renders the chain's shape from the system's own
 # declaration rather than from a copy that can drift.
@@ -103,7 +105,7 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
         SELECT p.id, p.merchant_id, p.order_id, p.customer_id, p.amount_minor,
                p.currency, p.method, p.status, p.error_reason,
                p.amount_refunded_minor, p.refund_status, p.created_at,
-               c.name AS customer_name, c.email AS customer_email
+               c.name AS customer_name
           FROM payments p
           LEFT JOIN customers c ON c.id = p.customer_id
          WHERE p.id = :p
@@ -382,7 +384,10 @@ def payment_lifecycle(session, merchant_id: str, payment_id: str) -> dict | None
         "payment": {
             "id": payment["id"], "merchant_id": payment["merchant_id"],
             "order_id": payment["order_id"], "customer_id": payment["customer_id"],
-            "customer_name": payment["customer_name"],
+            # Decrypted here: a raw SQL read returns what is stored, and
+            # `customers.name` is ciphertext at rest (ADR-0052).
+            "customer_name": decrypt(payment["customer_name"],
+                                     table="customers", column="name"),
             "amount_minor": payment["amount_minor"], "currency": payment["currency"],
             "method": payment["method"], "status": payment["status"],
             "error_reason": payment["error_reason"],

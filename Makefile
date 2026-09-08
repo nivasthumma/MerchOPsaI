@@ -42,9 +42,13 @@ harden:     ; $(PY) scripts/harden_db.py
 lock:       ; @$(PY) -m uv --version >/dev/null 2>&1 || $(PY) -m pip install -q uv
 	$(PY) -m uv pip compile requirements.txt --generate-hashes \
                 --python-version 3.12 -o requirements.lock
+	$(PY) -m uv pip compile api/requirements.txt --generate-hashes \
+                --python-version 3.12 -o api/requirements.lock
 lock-upgrade: ; @$(PY) -m uv --version >/dev/null 2>&1 || $(PY) -m pip install -q uv
 	$(PY) -m uv pip compile requirements.txt --generate-hashes \
                 --python-version 3.12 --upgrade -o requirements.lock
+	$(PY) -m uv pip compile api/requirements.txt --generate-hashes \
+                --python-version 3.12 --upgrade -o api/requirements.lock
 # Bring a real database to the current schema. Handles the three states a
 # database can be in -- empty, existing-but-unstamped, already stamped -- which
 # a bare `alembic upgrade head` does not. See ADR-0030.

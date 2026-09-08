@@ -175,6 +175,27 @@ jobs:
           print("Every entrypoint imports from the tracked tree alone.")
           EOF
 
+      - name: The DEPLOYED bundle imports from its own dependencies alone
+        # `api/requirements.txt` is what @vercel/python installs -- six direct
+        # requirements against the root set's thirteen, because a serverless
+        # bundle has a size limit and shipping pytest and Streamlit to
+        # production is how a 30-second cold start happens.
+        #
+        # Nothing checked it. The clean-room import above proves `api.index`
+        # imports with the FULL development set installed, which is a different
+        # claim: add an import to `app/` that needs a package only the root set
+        # carries and every job here stays green while the deploy breaks. So
+        # this installs the deployment lock and nothing else, into its own
+        # interpreter, and imports the entrypoint.
+        run: |
+          python -m venv /tmp/bundle
+          /tmp/bundle/bin/pip install -q --upgrade pip
+          /tmp/bundle/bin/pip install -q --require-hashes -r api/requirements.lock
+          MERCHANTOPS_NO_CLI_AUTH_PROBE=1 PYTHONPATH=. /tmp/bundle/bin/python -c "
+          import api.index
+          print('api.index imports from the deployment bundle alone.')
+          "
+
       - name: No mutant is committed
         # The check that would have caught it. `scripts/mutation_test.py`
         # rewrites files under `app/` for two hours at a time, and on
@@ -196,8 +217,10 @@ jobs:
         run: |
           uv pip compile requirements.txt --generate-hashes \
             --python-version 3.12 -o requirements.lock -q
-          git diff --exit-code -- requirements.lock \
-            || { echo "::error::requirements.lock is stale. Run 'make lock'."; exit 1; }
+          uv pip compile api/requirements.txt --generate-hashes \
+            --python-version 3.12 -o api/requirements.lock -q
+          git diff --exit-code -- requirements.lock api/requirements.lock \
+            || { echo "::error::A lock file is stale. Run 'make lock'."; exit 1; }
 
       - name: Dependency vulnerabilities (what ships)
         # BLOCKING, and only defensible because the set is pinned. It used to
@@ -208,7 +231,12 @@ jobs:
         # changes it, so a finding here is either a new advisory against a
         # version we chose (which the nightly schedule surfaces, and which
         # somebody should look at) or a regression somebody just introduced.
-        run: pip-audit -r requirements.lock --progress-spinner off
+        run: |
+          pip-audit -r requirements.lock --progress-spinner off
+          # And the bundle that actually reaches production, which is a
+          # different and smaller set. Auditing only the development lock
+          # would be auditing the machine nobody deploys.
+          pip-audit -r api/requirements.lock --progress-spinner off
 
       - name: Dependency vulnerabilities (the whole environment)
         # Advisory, and a different question: `-r` audits the packages the

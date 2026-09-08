@@ -843,6 +843,16 @@ are different claims.
     it was adopted: 626 tests and 167/167 scenarios against a scratch venv built
     from it.
 
+    Both locks, not one. `api/requirements.txt` is what `@vercel/python` actually
+    installs — six direct requirements against the root set's thirteen, because a
+    serverless bundle has a size limit and shipping pytest and Streamlit to
+    production is how a 30-second cold start happens. Nothing checked it: the
+    clean-room import proved `api.index` imports with the *full development set*
+    installed, which is a different claim. Add an import to `app/` needing a
+    package only the root set carries and every job stays green while the deploy
+    breaks. CI now installs the deployment lock alone into its own interpreter and
+    imports the entrypoint — 16 packages, and it does import.
+
     `pip-audit` is now blocking, which it could not honestly have been before —
     failing on a resolution that moves every morning really would have failed
     unrelated pull requests. A second, advisory audit covers the whole installed

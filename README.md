@@ -853,6 +853,12 @@ are different claims.
     breaks. CI now installs the deployment lock alone into its own interpreter and
     imports the entrypoint — 16 packages, and it does import.
 
+    The reasoning behind this and the rest of the session's measurement work is
+    recorded in
+    [ADR-0035](docs/adr/0035-a-measurement-carries-its-own-conditions.md) — a
+    measurement carries its own conditions, and every published number is gated
+    against an artifact a run produced.
+
     `pip-audit` is now blocking, which it could not honestly have been before —
     failing on a resolution that moves every morning really would have failed
     unrelated pull requests. A second, advisory audit covers the whole installed

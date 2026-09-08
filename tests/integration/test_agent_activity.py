@@ -99,6 +99,54 @@ def test_a_failed_tool_call_is_not_reported_as_done(db, owner):
     assert first["detail"] == "TOOL_TIMEOUT"
 
 
+def test_a_call_held_by_policy_is_not_reported_as_failed(db, owner):
+    """The defect this replaces was visible on screen and self-contradicting.
+
+    `request_refund` returns success=False with no error code and
+    policy_decision=REQUIRE_APPROVAL when the control plane stops it for a
+    person. The builder rendered any unsuccessful call as `failed`, so the
+    activity list drew a red mark reading "did not complete" -- the accessible
+    name the frontend gives that state -- directly above the approval panel
+    saying no external call has been made. `audit/lifecycle.py` had drawn this
+    distinction since it was written; this had not.
+    """
+    out = AgentRuntime(db, owner).run("Why did revenue drop?")
+    db.flush()
+    first_seq = db.execute(text(
+        "SELECT MIN(seq) FROM tool_calls WHERE task_id = :t"),
+        {"t": out.task.id}).scalar()
+
+    for decision in ("REQUIRE_APPROVAL", "REQUIRE_DUAL_APPROVAL"):
+        db.execute(text(
+            "UPDATE tool_calls SET success = false, error_code = NULL, "
+            "policy_decision = :d WHERE task_id = :t AND seq = :s"),
+            {"d": decision, "t": out.task.id, "s": first_seq})
+        db.expire_all()
+
+        first = _by_key(agent_activity(db, out.task), "tool:")[0]
+        assert first["state"] == "blocked", decision
+        assert "held" in first["detail"]
+        assert "fail" not in first["detail"].lower()
+
+
+def test_a_call_denied_by_policy_says_denied_rather_than_failed(db, owner):
+    """DENY is a failure -- nobody is waiting on it -- but it has a reason."""
+    out = AgentRuntime(db, owner).run("Why did revenue drop?")
+    db.flush()
+    first_seq = db.execute(text(
+        "SELECT MIN(seq) FROM tool_calls WHERE task_id = :t"),
+        {"t": out.task.id}).scalar()
+    db.execute(text(
+        "UPDATE tool_calls SET success = false, error_code = NULL, "
+        "policy_decision = 'DENY' WHERE task_id = :t AND seq = :s"),
+        {"t": out.task.id, "s": first_seq})
+    db.expire_all()
+
+    first = _by_key(agent_activity(db, out.task), "tool:")[0]
+    assert first["state"] == "failed"
+    assert first["detail"] == "denied by policy: DENY"
+
+
 def test_a_single_source_is_stated_as_uncorroborated(db, owner):
     """"Corroborated" over one read is the overclaim the evidence graph exists
     to prevent."""

@@ -78,12 +78,35 @@ def build(session, task: AgentTask) -> list[dict]:
         # dropping it from the operator's view of what ran.
         label = (spec.activity_label if spec and spec.activity_label
                  else f"Ran {c.tool_name}")
-        steps.append(_step(
-            f"tool:{c.seq}", label,
-            DONE if c.success else FAILED,
-            c.created_at,
-            "" if c.success else (c.error_code or "failed"),
-        ))
+        # A gated call is not a failed one.
+        #
+        # `request_refund` returns success=False with no error code and
+        # policy_decision=REQUIRE_APPROVAL when the control plane stops it for a
+        # person: the tool did exactly what it should. Rendered as FAILED it
+        # drew a red ✕ "did not complete" directly above the panel saying no
+        # external call has been made -- the two halves of the same screen
+        # contradicting each other, with the wrong half in red. `audit/
+        # lifecycle.py` already distinguished these; this did not.
+        #
+        # DENY stays FAILED, because a denied call is not waiting on anybody --
+        # but it is labelled as denied rather than left to say "failed".
+        #
+        # `startswith("REQUIRE")` rather than a match on REQUIRE_APPROVAL:
+        # `Decision` also has REQUIRE_DUAL_APPROVAL, and naming only the first
+        # would have sent the dual-approval case down the DENY branch and
+        # printed "denied by policy" over a refund waiting for its second
+        # signature -- a worse sentence than the one being fixed.
+        if c.success:
+            state, detail = DONE, ""
+        elif c.error_code:
+            state, detail = FAILED, c.error_code
+        elif (c.policy_decision or "").startswith("REQUIRE"):
+            state, detail = BLOCKED, "held for a person to sign"
+        elif c.policy_decision and c.policy_decision != "ALLOW":
+            state, detail = FAILED, f"denied by policy: {c.policy_decision}"
+        else:
+            state, detail = FAILED, "failed"
+        steps.append(_step(f"tool:{c.seq}", label, state, c.created_at, detail))
         if c.success:
             sources.add(c.tool_name)
         if c.policy_decision and policy_seen is None:

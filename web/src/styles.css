@@ -1542,7 +1542,7 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-nav a.on { color: var(--accent); }
 /* Below the width the pills need, the header keeps brand and sign-in: the foot
    of the page carries the same links for a reader who wants them. */
-@media (max-width: 1000px) { .lp-nav { display: none; } }
+@media (max-width: 1100px) { .lp-nav { display: none; } }
 
 .lp-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 /* The console's icon button is sized for a dense toolbar; here it sits beside
@@ -1570,7 +1570,12 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-btn.sm { padding: 9px 16px; font-size: 14px; }
 
 /* --- sections ----------------------------------------------------------- */
-.landing section { scroll-margin-top: 88px; }
+/* Clear of the sticky header, with room to breathe. `--lp-head` is the header's
+   measured height, published by `LandingHeader`; the fallback is its height at
+   rest, for the moment before the observer runs. A constant here was five
+   pixels short at 1440 and eighteen behind at 1024, where the pill row wraps
+   and the bar is half again as tall. */
+.landing section { scroll-margin-top: calc(var(--lp-head, 69px) + 28px); }
 
 /* --- the measured band -------------------------------------------------- */
 .lp-stats {

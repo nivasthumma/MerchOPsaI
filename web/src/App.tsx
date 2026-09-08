@@ -5,7 +5,7 @@ import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import {
   ForkDiagram, LadderMark, LandingHeader, LimitMark, ScreenCarousel, SECTIONS,
-  SectionHead, StateMark, useReveal,
+  SectionHead, settleReveals, StateMark, useReveal,
 } from "./components/Landing";
 import { ThemeToggle } from "./components/Theme";
 import { CommandPalette } from "./components/CommandPalette";
@@ -595,8 +595,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>110 of them critical</em></div>
           <div><b>88<i>/88</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>933</b><span>Automated tests</span>
-            <em>627 backend · 306 frontend</em></div>
+          <div><b>936</b><span>Automated tests</span>
+            <em>629 backend · 307 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -616,9 +616,9 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  627 python tests · 306 vitest · 167 scenarios · 88 mutants"}
+              {"measured:  629 python tests · 307 vitest · 167 scenarios · 88 mutants"}
             </span>
-            <span className="ln">{"browser:   13 Playwright tests defined"}</span>
+            <span className="ln">{"browser:   14 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>
           </code></pre>
         </figure>
@@ -654,7 +654,7 @@ function Landing({ health }: { health: Health | null }) {
             the foot is the copy nobody notices has. */}
         <nav className="lp-foot-nav" aria-label="Back to a section">
           {SECTIONS.map((sec) => (
-            <a key={sec.id} href={`#${sec.id}`}>{sec.label}</a>
+            <a key={sec.id} href={`#${sec.id}`} onClick={settleReveals}>{sec.label}</a>
           ))}
         </nav>
         <p className="lp-foot-note">

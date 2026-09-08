@@ -217,6 +217,22 @@ export function StateMark({ kind }: { kind: "ok" | "failed" | "partial" | "unkno
  * the one thing a long single-scroll page cannot otherwise tell you.
  */
 
+/** Drop every pending reveal, before an anchor jump.
+ *
+ *  Sections wait for the observer holding a 14px offset, and an anchor scroll
+ *  aims at where the page is *now* -- so it lands, the observers fire, each
+ *  section above the target drops its offset, and the target rises by the sum
+ *  of them, ending up behind the page header. Revealing only the target is not
+ *  enough: the ones above it move too. Once a reader is navigating by a section
+ *  list the reveal has done its job, so the whole page settles at once and the
+ *  scroll lands where it aimed.
+ */
+export function settleReveals() {
+  for (const el of document.querySelectorAll<HTMLElement>("[data-reveal]")) {
+    el.dataset.reveal = "in";
+  }
+}
+
 export const SECTIONS = [
   { id: "console", label: "The console" },
   { id: "problem", label: "The problem" },
@@ -299,7 +315,27 @@ export function LandingHeader({ tools }: { tools: ReactNode }) {
   const active = useActiveSection(SECTIONS.map((s) => s.id));
   const scrolled = useScrolled();
   const navRef = useRef<HTMLElement | null>(null);
+  const headRef = useRef<HTMLElement | null>(null);
   const [ind, setInd] = useState<{ x: number; w: number } | null>(null);
+
+  // How far a section has to scroll clear of the header, published as a custom
+  // property for `scroll-margin-top` to use.
+  //
+  // A constant was wrong at the first width that changed the header's height:
+  // the pill row wraps on a narrow desktop, the bar is 107px instead of 69, and
+  // a section followed from the nav lands 18px *behind* it. Measured, this
+  // holds for any header -- wrapped, condensed, or one somebody adds a row to
+  // later.
+  useEffect(() => {
+    const el = headRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const publish = (h: number) =>
+      document.documentElement.style.setProperty("--lp-head", `${Math.ceil(h)}px`);
+    publish(el.getBoundingClientRect().height);
+    const ro = new ResizeObserver(([e]) => publish(e.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // The pill slides between links instead of each link painting its own. One
   // moving object is legible; five fading in and out is a flicker. Measured
@@ -315,7 +351,7 @@ export function LandingHeader({ tools }: { tools: ReactNode }) {
   }, [active]);
 
   return (
-    <header className={`lp-topwrap${scrolled ? " is-stuck" : ""}`}>
+    <header className={`lp-topwrap${scrolled ? " is-stuck" : ""}`} ref={headRef}>
       <div className="lp-top">
         <a className="lp-brand" href="#top">
           <span aria-hidden="true">◨</span> MerchantOps
@@ -332,6 +368,7 @@ export function LandingHeader({ tools }: { tools: ReactNode }) {
             <a
               key={s.id} href={`#${s.id}`} className={active === s.id ? "on" : ""}
               aria-current={active === s.id ? "true" : undefined}
+              onClick={settleReveals}
             >
               {s.label}
             </a>

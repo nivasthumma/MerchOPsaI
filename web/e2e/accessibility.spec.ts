@@ -169,4 +169,44 @@ test.describe("signed out", () => {
     // than a token that failed to switch.
     await scanAnonymously(browser, "/signin", /A token identifies you/);
   });
+
+  test("following the landing nav never parks a section behind the header",
+       async ({ browser }) => {
+    // Two ways this broke, both of which look like the page simply lost a
+    // heading:
+    //
+    //   - the sticky header is 69px tall and `scroll-margin-top` was a
+    //     constant, so at a width where the pill row wrapped the bar was 107px
+    //     and the target landed 18px behind it;
+    //   - sections wait for an IntersectionObserver holding a 14px offset, so
+    //     the scroll aimed at where the page was before the observers fired
+    //     and the target rose by the sum of every offset above it.
+    //
+    // Checked at more than one width because the first failure only appears at
+    // one, and on the section's own <header> rather than the section box --
+    // that is the element a reader loses.
+    for (const width of [1440, 1180] as const) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      const page = await ctx.newPage();
+      try {
+        await page.goto("/");
+        const nav = page.getByRole("navigation", { name: "On this page" });
+        await expect(nav).toBeVisible();
+
+        for (const link of await nav.getByRole("link").all()) {
+          const label = (await link.textContent())!.trim();
+          await link.click();
+          // The scroll settles asynchronously; poll rather than sleep.
+          await expect.poll(async () => page.evaluate(() => {
+            const header = document.querySelector(".lp-topwrap")!.getBoundingClientRect();
+            const section = document.getElementById(location.hash.slice(1))!;
+            const head = section.querySelector(".lp-sec-head") ?? section;
+            return Math.round(head.getBoundingClientRect().top - header.bottom);
+          }), `"${label}" at ${width}px sits behind the header`).toBeGreaterThan(0);
+        }
+      } finally {
+        await ctx.close();
+      }
+    }
+  });
 });

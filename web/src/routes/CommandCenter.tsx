@@ -15,7 +15,7 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import type { CommandCenter as CommandCenterData, FunnelStage } from "../api/types";
 import { Empty, ErrorBanner, Money, SectionHead, Skeleton } from "../components/Bits";
-import { Status } from "../components/Status";
+import { Status, statusSpec } from "../components/Status";
 import { LiveBar } from "../components/LiveBar";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
@@ -76,13 +76,33 @@ function Attention({ d }: { d: CommandCenterData }) {
     <section className="card">
       <h3 className="card-title">Needs attention</h3>
       <div className="tiles">
-        {tiles.map((t) => (
-          <Link key={t.to + t.label} className="tile" to={t.to} title={t.hint}>
-            <span className="tile-n">{t.count}</span>
-            <span className="tile-l">{t.label}</span>
-            <Status status={t.status} compact />
-          </Link>
-        ))}
+        {tiles.map((t) => {
+          // The tone comes from the same status vocabulary as everywhere else,
+          // but it is carried by the TILE rather than by a pill inside it.
+          //
+          // The pill used to sit here in full, and on three of four tiles it
+          // repeated the label word for word -- "0 / Awaiting approval /
+          // [Awaiting approval]". On the fourth it was worse: "Open incidents"
+          // carried a pill reading "Running", because RUNNING had been chosen
+          // for its colour and then rendered as a claim. A tone is not a label.
+          //
+          // The glyph stays, because P1-08 requires a state to be legible
+          // without colour, and it is `aria-hidden` beside the count and label
+          // that a screen reader already reads.
+          const spec = statusSpec(t.status);
+          const quiet = t.count === 0;
+          return (
+            <Link key={t.to + t.label}
+                  className={`tile ${quiet ? "is-quiet" : `t-${spec.tone}`}`}
+                  to={t.to} title={t.hint}>
+              <span className="tile-n">{t.count}</span>
+              <span className="tile-l">
+                <span className="tile-g" aria-hidden="true">{spec.glyph}</span>
+                {t.label}
+              </span>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Not a tile. An expired approval is not work waiting on someone — it is
@@ -138,8 +158,12 @@ function RevenueHealth({ d }: { d: CommandCenterData }) {
 
 function Figure({ label, minor, hint }:
                 { label: string; minor: number; hint: string }) {
+  // Zero rupees recedes, for the same reason a queue of zero does: four
+  // figures at equal weight make a reader compare four numbers to find the
+  // two that are moving. Nothing is hidden -- ₹0.00 is still the answer, and
+  // still on screen at full size.
   return (
-    <div className="tile" title={hint}>
+    <div className={`tile ${minor === 0 ? "is-quiet" : ""}`} title={hint}>
       <span className="tile-n mono"><Money minor={minor} /></span>
       <span className="tile-l">{label}</span>
     </div>

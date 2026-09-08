@@ -196,7 +196,15 @@ function OpsStrip({ m }: { m: Metrics | null }) {
       <span className={`strip-cell ${m.rejected > 0 ? "danger" : ""}`}>
         Rejected <b>{m.rejected}</b>
       </span>
-      <span className="strip-cell">
+      {/* Toned like every other cell here: the strip already says "gated" in
+          clay and "rejected" in red, and a tool error rate of 26.7% sat in
+          plain grey beside them. A number that means something is wrong should
+          not be the calmest thing on the row.
+          Ten per cent is the threshold the taxonomy treats as a degraded
+          provider rather than noise; below it, the rate is information. */}
+      <span className={`strip-cell ${
+        m.tool_error_rate !== null && m.tool_error_rate >= 0.1 ? "danger"
+        : m.tool_error_rate !== null && m.tool_error_rate > 0 ? "warn" : ""}`}>
         Tool err{" "}
         {/* Unknown is not zero. Over no calls there is no rate to report. */}
         <b>{m.tool_error_rate === null

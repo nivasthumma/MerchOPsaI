@@ -186,6 +186,11 @@ pre {
 .frame > .shell { max-width: none; margin: 0; padding: 14px 16px 64px; width: 100%; }
 /* Signed out there is no rail, so the form should not sit hard against the left. */
 .frame:not(:has(.rail)) { grid-template-columns: minmax(0, 1fr); }
+/* An empty rail is 252px of "Nothing yet." beside the densest tables in the
+   application, on every screen, for as long as somebody has opened no tasks --
+   which is the whole of a first session. It keeps its full width once there is
+   something in it to read, because then it is doing its job. */
+.frame:has(.rail-empty) { grid-template-columns: 186px minmax(0, 1fr); }
 .frame:not(:has(.rail)) > .shell { margin: 0 auto; }
 
 /* ---- the operations strip ------------------------------------------------
@@ -386,7 +391,12 @@ header.top {
 }
 .top-inner {
   max-width: none; margin: 0; padding: 8px 16px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  display: flex; align-items: center; flex-wrap: wrap;
+  /* Separate axes. The nav is wide enough that `top-right` wraps below it on a
+     laptop, and a 16px row gap turned that wrap into a band of empty header --
+     the identity on the left, the controls on the right, and a void between
+     them that read as a layout fault rather than as a second row. */
+  column-gap: 16px; row-gap: 4px;
 }
 
 .logo { display: flex; align-items: center; gap: 10px; margin-right: auto; }
@@ -1342,8 +1352,37 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft);
                text-decoration: none; }
-.tile-n { font-size: 22px; font-weight: 600; line-height: 1.1; }
-.tile-l { font-size: 12px; color: var(--text-dim); }
+.tile-n {
+  font-family: var(--display);
+  font-size: 30px; font-weight: 600; line-height: 1.05;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.tile-l { display: flex; align-items: center; gap: 6px;
+          font-size: 12px; color: var(--text-2); }
+.tile-g { font-size: 11px; line-height: 1; }
+
+/* The tone the tile carries, in place of a pill that used to repeat its own
+   label. A left edge rather than a fill: four filled cards compete with each
+   other and with the money below them, and this row's job is to be scanned,
+   not to shout. */
+.tile.t-warn    { border-left: 3px solid var(--warn); }
+.tile.t-warn    .tile-g { color: var(--warn-ink); }
+.tile.t-unknown { border-left: 3px solid var(--unknown); }
+.tile.t-unknown .tile-g { color: var(--unknown); }
+.tile.t-danger  { border-left: 3px solid var(--danger); }
+.tile.t-danger  .tile-g { color: var(--danger); }
+.tile.t-info    { border-left: 3px solid var(--accent); }
+.tile.t-info    .tile-g { color: var(--accent); }
+.tile.t-ok      { border-left: 3px solid var(--ok); }
+.tile.t-ok      .tile-g { color: var(--ok); }
+
+/* Zero is not work. Three queues at zero and one at five rendered identically,
+   so the eye had to read four numbers to find the one that mattered. The count
+   stays full size -- it is still the answer to "how many" -- and everything
+   else recedes. */
+.tile.is-quiet             { background: transparent; }
+.tile.is-quiet .tile-n     { color: var(--text-dim); font-weight: 500; }
+.tile.is-quiet .tile-g     { opacity: 0.45; }
 
 /* --- P1-03: the recovery funnel ---------------------------------------- */
 /* Widths are proportions of the first stage, computed in the component, so a

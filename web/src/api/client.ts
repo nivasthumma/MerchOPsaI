@@ -11,7 +11,8 @@ import type {
   CommandCenter,
   Dashboard,
   IncidentDetail,
-  EscalatedAction, Health, IncidentList, IncidentQuery, LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
+  AccessReview, EscalatedAction, Health, IncidentList, IncidentQuery,
+  LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
   ReconcileReport, Readiness, ReplayResult, Scenario, ScenarioResult,
   SearchResults, Task, TaskEvidence, TraceEvent, VerificationDetail,
 } from "./types";
@@ -465,6 +466,14 @@ export const api = {
    *  operational detail behind them is not. Sent without a token this still
    *  succeeds and returns the verdicts alone. */
   readiness: () => request<Readiness>("/readiness"),
+
+  /** §66 — who holds what, as something a person can sign off.
+   *
+   *  Owner only, and the server says so with `role_required` rather than a
+   *  bare 403: a list of who can move money is exactly the reconnaissance a
+   *  read-only token would want, so the refusal is deliberate and the screen
+   *  explains it rather than reporting a fault. */
+  accessReview: () => request<AccessReview>("/access-review"),
 
   scenarios: () => request<Scenario[]>("/scenarios", {}, { auth: false }),
 

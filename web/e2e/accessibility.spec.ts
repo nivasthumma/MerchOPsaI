@@ -103,6 +103,15 @@ test("the recovery ledger is accessible in both themes", async ({ page }) => {
   await inBothThemes(page, "/recovery", "Exposure");
 });
 
+test("the access review is accessible in both themes", async ({ page }) => {
+  // §66, and the one screen here that puts text on a tinted ground: the
+  // permissions that move money are chipped in `--warn-ink` on `--warn-soft`.
+  // That pairing is exactly the one the severity chips got wrong once, so it
+  // is scanned rather than reasoned about. Runs as USR_A_OWNER, which the
+  // endpoint requires.
+  await inBothThemes(page, "/access-review", /Who holds what/);
+});
+
 test("a failure state stays readable", async ({ page }) => {
   // The one worth having most. A palette change that leaves an error banner
   // unreadable is discovered, otherwise, by somebody trying to read it during

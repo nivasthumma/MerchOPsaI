@@ -759,3 +759,38 @@ export interface LiveEventList {
    *  system rather than a broken one. */
   pending: number;
 }
+
+// ------------------------------------------------------- access review (§66)
+
+/** What a role grants, so a reviewer signing off on "make them an approver"
+ *  can see what that sentence actually means. */
+export interface AccessReviewRole {
+  name: string;
+  permissions: string[];
+}
+
+/** One person's access. Shaped from a captured `/access-review` response, not
+ *  from the endpoint's docstring: the operator queue's type once claimed a
+ *  column the query never selected and the UI rendered an always-empty cell. */
+export interface AccessReviewEntry {
+  user_id: string;
+  email: string;
+  merchant_id: string;
+  role: string;
+  permissions: string[];
+  /** ACTIVE | DISABLED. Offboarded accounts are listed deliberately — "whose
+   *  access was removed, and when" is half of what a review asks, and an
+   *  account missing from the list is indistinguishable from one that never
+   *  existed. */
+  status: string;
+  deactivated_at?: string | null;
+}
+
+export interface AccessReview {
+  tenant_id: string;
+  /** Computed per read. A review quoted without an as-of is one somebody
+   *  attests to a week after it stopped being true. */
+  generated_at: string;
+  roles: AccessReviewRole[];
+  users: AccessReviewEntry[];
+}

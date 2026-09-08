@@ -666,6 +666,25 @@ td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
   background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
 }
 
+/* ---------------------------------------------------------- access review */
+/* Permissions read as a SET — several short tokens scanned together — so they
+   wrap as chips rather than running as a comma sentence the eye has to parse.
+   The ones that move money are the only thing here worth colour: everything
+   below `action:` is a read, and colouring reads too would leave the column
+   uniformly loud and say nothing. */
+.perms { display: flex; flex-wrap: wrap; gap: 4px; }
+.perm {
+  font-size: 11.5px; padding: 1px 6px; border-radius: 3px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); white-space: nowrap;
+}
+/* `--warn-ink`, not `--warn`, for the same reason the severity chips give at
+   line ~585: the fill colour lands near 3:1 as text on its own soft ground. */
+.perm.act {
+  background: var(--warn-soft); border-color: var(--warn-border);
+  color: var(--warn-ink);
+}
+
 /* ------------------------------------------------------------------ action */
 .action-card {
   border: 1px solid var(--border); border-radius: var(--r);

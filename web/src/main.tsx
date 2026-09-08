@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import App from "./App";
 import { AppErrorBoundary } from "./components/ErrorBoundary";
+import AccessReview from "./routes/AccessReview";
 import Actions from "./routes/Actions";
 import CommandCenter from "./routes/CommandCenter";
 import Dashboard from "./routes/Dashboard";
@@ -42,6 +43,9 @@ const router = createBrowserRouter([
       { path: "scenarios", element: <Scenarios /> },
       { path: "operations", element: <Operations /> },
       { path: "timeline", element: <Timeline /> },
+      // §66. Owner-only server-side; the route is not gated here because
+      // the screen explains the refusal better than a 404 would.
+      { path: "access-review", element: <AccessReview /> },
       { path: "settings", element: <Settings /> },
       // Signed out this renders the sign-in page and signed in it
       // redirects home, both handled in `App`. It needs to exist here

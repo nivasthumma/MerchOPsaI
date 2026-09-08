@@ -71,6 +71,26 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "  const total = d.counts[k];",
         "  const total = rows.length;  // MUTANT",
     ),
+    # --- who can move money (§66) ------------------------------------------
+    (
+        # The access review's whole claim. If this reads false, every reviewer
+        # sees a tenant in which nobody can move money -- a clean bill of
+        # health, produced by a screen that stopped looking.
+        "access review: stop marking who can move money",
+        "web/src/routes/AccessReview.tsx",
+        '  return p.startsWith("action:");',
+        "  return false;  // MUTANT",
+    ),
+    (
+        # Offboarded accounts are listed deliberately. Dropped, the review says
+        # "here is everyone with access" while omitting the people whose
+        # removal is the half a reviewer is checking.
+        "access review: hide offboarded accounts",
+        "web/src/routes/AccessReview.tsx",
+        "  offboarded: (u) => u.status !== \"ACTIVE\",",
+        "  offboarded: () => false,  // MUTANT",
+    ),
+
     # --- money -------------------------------------------------------------
     (
         "money: render minor units as rupees",

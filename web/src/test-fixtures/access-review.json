@@ -1,0 +1,73 @@
+{
+  "tenant_id": "TEN_KETTLE",
+  "generated_at": "2026-09-08T13:58:17.631402+00:00",
+  "roles": [
+    {
+      "name": "analyst",
+      "permissions": [
+        "read:metrics",
+        "read:orders"
+      ]
+    },
+    {
+      "name": "approver",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ]
+    },
+    {
+      "name": "owner",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "user_id": "USR_A_ANALYST",
+      "email": "analyst@kettle.example",
+      "merchant_id": "MERCH_A",
+      "role": "analyst",
+      "permissions": [
+        "read:metrics",
+        "read:orders"
+      ],
+      "status": "ACTIVE",
+      "deactivated_at": null
+    },
+    {
+      "user_id": "USR_A_APPROVER",
+      "email": "approver@kettle.example",
+      "merchant_id": "MERCH_A",
+      "role": "approver",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ],
+      "status": "ACTIVE",
+      "deactivated_at": null
+    },
+    {
+      "user_id": "USR_A_OWNER",
+      "email": "owner@kettle.example",
+      "merchant_id": "MERCH_A",
+      "role": "owner",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ],
+      "status": "ACTIVE",
+      "deactivated_at": null
+    }
+  ]
+}

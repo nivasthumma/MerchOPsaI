@@ -74,13 +74,21 @@ def vitest_count() -> int | None:
     """
     if not (ROOT / "web" / "node_modules").is_dir():
         return None
-    r = subprocess.run(["npx", "vitest", "list"], cwd=ROOT / "web",
-                       capture_output=True, text=True)
-    lines = [ln for ln in r.stdout.splitlines() if " > " in ln]
-    if not lines:
-        raise SystemExit("could not list the Vitest suite:\n  "
-                         + (r.stderr.strip() or "no output"))
-    return len(lines)
+    # `vitest run`, not `vitest list`. The two disagree: `list` prints one line
+    # per `it.each` block where `run` expands it, so a suite with one
+    # six-case table reported 298 against the 303 that `npm test` prints. The
+    # README puts its number beside `make web-test`, and a reader who runs that
+    # command must see the number the README claims -- otherwise this file is
+    # gating a figure nobody can reproduce, which is the thing it exists to
+    # stop. Slower, and it only runs where node_modules is present.
+    r = subprocess.run(["npx", "vitest", "run"],
+                       cwd=ROOT / "web", capture_output=True, text=True)
+    m = re.search(r"Tests\s+(\d+) passed", r.stdout + r.stderr)
+    if not m:
+        tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
+        raise SystemExit("could not count the Vitest suite:\n  "
+                         + "\n  ".join(tail))
+    return int(m.group(1))
 
 
 def e2e_test_count() -> int | None:

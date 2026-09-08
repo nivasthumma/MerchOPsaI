@@ -1021,6 +1021,30 @@ def _refuse_to_destroy_a_working_database(url: str) -> None:
     )
 
 
+def _provenance() -> dict:
+    """The commit this ran against, and whether the tree matched it.
+
+    `tree_clean` is the load-bearing field. A report from a modified `app/` is
+    a measurement of something that is not in version control, which is
+    exactly what a mutation run produces and exactly what must never be read as
+    the project's result.
+    """
+    import subprocess
+
+    def git(*args: str) -> str:
+        # Fixed argument vectors, no shell, no caller input -- `args` is
+        # literal in both call sites below. S603/S607 are about neither.
+        r = subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
+            cwd=Path(__file__).resolve().parents[2],
+            capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    head = git("rev-parse", "--short", "HEAD")
+    dirty = git("status", "--porcelain", "--", "app")
+    return {"tree": head or None, "tree_clean": not dirty}
+
+
 def run_all(scenario_ids: list[str] | None = None) -> dict:
     """Each scenario runs against a freshly seeded database so that scenarios
     cannot contaminate one another (CONTRACT §30 reproducibility)."""
@@ -1073,6 +1097,18 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
 
     return {
         "run_id": run_id,
+        # Which tree produced this, and whether that tree was the committed
+        # one. Recorded because the report is read back as evidence and had no
+        # way to say what it measured.
+        #
+        # A killed mutation run leaves the LAST MUTANT's report on disk --
+        # deliberately broken code -- and `scripts/check_counts.py` then
+        # compares the README against it and reports four scenarios failing.
+        # That happened: 163/167 with REF-25, UNK-16, UNK-17 and WHK-04 red,
+        # which are precisely the four that catch "ignore the payment
+        # read-back entirely". Alarming, and untrue, and nothing on screen
+        # distinguished it from a real regression.
+        **_provenance(),
         "provider": settings.resolved_llm_provider,
         "model": get_provider().model,
         "adapter_mode": settings.resolved_razorpay_mode,

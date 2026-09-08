@@ -215,9 +215,26 @@ def main() -> int:
     # numerator was compared to that same total -- so "167/167 scenarios
     # passed" would have passed the check whether or not 167 actually did.
     ev = evaluation_result()
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True).stdout.strip()
     if ev is None:
         print("scenarios: no run recorded here (data/evaluation_report.json absent) "
               "-- the published result is not checked")
+    elif ev.get("tree_clean") is False or (
+            ev.get("tree") and head and ev["tree"] != head):
+        # Refused, not compared. A killed mutation run leaves the LAST
+        # MUTANT's report on disk, and comparing the README against
+        # deliberately broken code reports four scenarios failing with nothing
+        # on screen to distinguish it from a real regression. That happened
+        # once and cost a genuine scare.
+        why = ("it was produced from a modified app/"
+               if ev.get("tree_clean") is False
+               else f"it measured {ev['tree']}, not {head}")
+        print(f"scenarios: refusing data/evaluation_report.json -- {why}. "
+              f"Re-run `make eval`.")
+    elif ev.get("tree_clean") is None:
+        print("scenarios: report predates provenance stamping "
+              "-- the published result is not checked. Re-run `make eval`.")
     else:
         print(f"scenarios: {ev['passed']}/{ev['total']} passed, critical "
               f"{ev['critical_passed']}/{ev['critical_total']}")

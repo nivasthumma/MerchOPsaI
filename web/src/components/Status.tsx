@@ -111,6 +111,60 @@ export const STATUS: Record<string, StatusSpec> = {
     tone: "danger", label: "Escalated", glyph: "▲",
     meaning: "Automatic reconciliation is exhausted. A person owns this now.",
   },
+
+  // --- risk, which the Action Center and the task page both scan by ---
+  //
+  // These were missing, and the fallback rendered all four as the same neutral
+  // grey dot labelled "An unrecognised status (CRITICAL)". On a console whose
+  // job is to make an operator's eye land on the right row, CRITICAL and LOW
+  // looked identical -- which is P1-08's whole point failing in the one place
+  // it matters most.
+  CRITICAL: {
+    tone: "danger", label: "Critical", glyph: "▲",
+    meaning: "Irreversible, high value, or bulk. Never executes without a human.",
+  },
+  HIGH: {
+    tone: "danger", label: "High", glyph: "▲",
+    meaning: "Moves money and requires explicit human approval.",
+  },
+  MEDIUM: {
+    tone: "warn", label: "Medium", glyph: "▸",
+    meaning: "Has an external effect that is reversible or bounded.",
+  },
+  LOW: {
+    tone: "neutral", label: "Low", glyph: "·",
+    meaning: "Read-only, or no external effect.",
+  },
+
+  // --- an approval's own decision ---
+  APPROVED: {
+    tone: "ok", label: "Approved", glyph: "✓",
+    meaning: "A human with the permission signed for this action.",
+  },
+
+  // --- a recovery plan's lifecycle ---
+  DRAFT: {
+    tone: "neutral", label: "Draft", glyph: "·",
+    meaning: "Planned and costed. Nothing has been dispatched.",
+  },
+  ACTIVE: {
+    tone: "info", label: "Active", glyph: "▶",
+    meaning: "Dispatching within its budget and stopping rules.",
+  },
+  STOPPED: {
+    tone: "warn", label: "Stopped", glyph: "◼",
+    meaning: "A stopping rule ended this campaign. No further action will be taken.",
+  },
+
+  // --- a payment's own state, uppercased by the lifecycle page ---
+  CAPTURED: {
+    tone: "ok", label: "Captured", glyph: "✓",
+    meaning: "The provider took the money and holds it.",
+  },
+  REFUNDED: {
+    tone: "info", label: "Refunded", glyph: "↩",
+    meaning: "Returned to the customer, in full or in part.",
+  },
 };
 
 const unknownSpec = (raw: string): StatusSpec => ({

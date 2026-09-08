@@ -66,3 +66,58 @@ describe("counts", () => {
     expect(container.querySelector(".chip")).toHaveClass("danger");
   });
 });
+
+describe("every value the API can send through <Status>", () => {
+  // The four fields that actually feed this component, and their closed sets.
+  //
+  // Written out rather than derived, because the contract does not carry them:
+  // `risk_level`, `plan.status` and `approval_decision` are declared `str` in
+  // `app/api/schemas.py`, so `schema.d.ts` says `string | null` and there is
+  // nothing to import. Typing them as literals server-side is the better fix
+  // and would let this list come from the generated types instead of from
+  // here; until then this list is the contract, and it is checked.
+  const FEEDS: Record<string, string[]> = {
+    // Written from `app/models.TaskStatus`, after the first draft of this list
+    // was wrong: it invented QUEUED, EXECUTING and EXPIRED and omitted PENDING,
+    // DENIED and ABORTED_BUDGET. The test caught it, which is the argument for
+    // the list existing -- and equally the argument for deriving it from the
+    // contract once the server declares these as literals.
+    "task.status": ["PENDING", "RUNNING", "AWAITING_APPROVAL", "COMPLETED",
+                    "DENIED", "REJECTED", "FAILED", "ABORTED_BUDGET"],
+    "verification_state": ["SUCCESS", "FAILED", "PARTIAL", "UNKNOWN"],
+    "risk_level": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    "plan.status": ["DRAFT", "ACTIVE", "STOPPED", "ESCALATED", "COMPLETED",
+                    "EXPIRED"],
+    "approval_decision": ["PENDING", "APPROVED", "REJECTED"],
+    "payment.status (uppercased)": ["CAPTURED", "FAILED", "REFUNDED"],
+  };
+
+  it.each(Object.entries(FEEDS))("%s is fully described", (_field, values) => {
+    expect(values.length).toBeGreaterThan(0);
+    const missing = values.filter((v) => !(v in STATUS));
+    expect(missing, `no STATUS entry for: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("does not render risk levels as an unrecognised status", () => {
+    // The defect this suite missed. All four risk levels fell through to the
+    // fallback and rendered as the same neutral grey dot labelled "An
+    // unrecognised status (CRITICAL)". On a console whose job is to make an
+    // operator's eye land on the right row, CRITICAL and LOW looked identical.
+    for (const level of ["LOW", "MEDIUM", "HIGH", "CRITICAL"]) {
+      expect(statusSpec(level).meaning).not.toMatch(/unrecognised/);
+    }
+    // And they are distinguishable from one another, not merely present.
+    const tones = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+      .map((l) => statusSpec(l).tone);
+    expect(new Set(tones).size).toBeGreaterThan(1);
+  });
+
+  it("still renders an unknown status honestly rather than inventing one", () => {
+    // The fallback is correct behaviour and must stay: a status this build has
+    // never heard of is shown as received, not guessed at.
+    const spec = statusSpec("SOMETHING_NEW");
+    expect(spec.tone).toBe("neutral");
+    expect(spec.label).toBe("SOMETHING NEW");
+    expect(spec.meaning).toMatch(/unrecognised/);
+  });
+});

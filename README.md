@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-663%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-664%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 663 tests · 167/167 scenarios · 88/88 mutations |
+| [📊 Measured results](#-measured-results) | 664 tests · 167/167 scenarios · 88/88 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -147,9 +147,26 @@ deliberately breaks each core control and re-runs the suite:
 ```
 
 **That figure was measured entirely in Python.** `make mutants-web` asks the
-same question of the 308 Vitest tests, which had never been asked it — and the
-frontend had reason to be doubted. Three tests found by hand asserted less than
-their own names promised: one checked the sentence under a table and the strip
+same question of the Vitest suite:
+
+```
+15/15 frontend mutations caught      complete run, 2026-09-08, 3m12s
+  └─ 13/15 on the first run — the two survivors are described below
+```
+
+It found two gaps immediately. **A failed step drawn with the done glyph**
+passed all 311 tests: `data-state` was pinned and the screen-reader text was
+pinned, and the mark itself — the only thing most readers actually look at —
+was free to say anything. A failed financial step with a green tick is the
+single worst thing that list can do. **Shortening "Execution is live against
+Razorpay test mode" to "Execution is live"** also passed: the test asserted the
+notice body and never the summary line, so the front door could announce that
+real money can move without saying where. Both have assertions now.
+
+The suite was worth asking because it had never been asked, and because the
+frontend had reason to be doubted before any of this ran. Three tests found by
+hand asserted less than their own names promised: one checked the sentence
+under a table and the strip
 beside it but never the count in the heading, which was the page size and
 wrong; one carried the comment "Recovered is forced above at-risk here" over
 data that nested perfectly, so it asserted that a correct funnel draws
@@ -437,7 +454,7 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make demo-state                          # give the console something to show
-make test                                # 663 tests
+make test                                # 664 tests
 make eval                                # 167 scenarios, on merchantops_eval
 make mutants                             # prove the scenario suite catches regressions
 make mutants-web                         # the same question, asked of Vitest
@@ -531,7 +548,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 311 Vitest tests
+make web-test                     # 312 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -960,12 +977,12 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 311 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 312 tests
 data/           167 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, two
                 mutation harnesses (app/ and web/), and the gates: counts,
                 mutants, locks
-tests/          unit · security · integration  (663 tests)
+tests/          unit · security · integration  (664 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 36 ADRs

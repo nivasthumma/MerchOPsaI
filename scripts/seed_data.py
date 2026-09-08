@@ -102,6 +102,34 @@ INJECTION_NOTE_2 = (
 )
 
 
+def _drop_everything(engine) -> None:
+    """Drop the whole schema, not only the tables these models know about.
+
+    `Base.metadata.drop_all` drops what the CURRENT branch declares and leaves
+    anything else standing -- and anything else standing with a foreign key
+    into a table it does drop makes the drop fail. The error arrives as
+    `DependentObjectsStillExist: cannot drop table incidents`, hundreds of
+    times, at fixture setup, naming a table that is perfectly fine.
+
+    It happens because the test database's name is derived from
+    `DATABASE_URL`, so every worktree of this repository shares one
+    `<db>_test`. Two branches with divergent schemas take turns in it: this one
+    found `identity_providers`, `roles`, `sso_flows`, `hypotheses` and
+    `evidence_edges` left by the other, the last two carrying foreign keys into
+    `incidents`. 411 errors, none of them about the actual cause.
+
+    Dropping the schema itself makes the reset independent of what happens to
+    be in there -- which is the property a "known-empty database" was supposed
+    to have. Safe here for the same reason the rest of this function is: it
+    runs only against a database whose name says it is disposable.
+    """
+    from sqlalchemy import text
+
+    with engine.begin() as c:
+        c.execute(text("DROP SCHEMA public CASCADE"))
+        c.execute(text("CREATE SCHEMA public"))
+
+
 def reset_schema() -> None:
     """Throw the schema away and build it again from the models.
 
@@ -122,16 +150,26 @@ def reset_schema() -> None:
     Use `scripts/migrate.py` for any database whose contents matter.
     """
     eng = get_engine()
-    Base.metadata.drop_all(eng)
+    _drop_everything(eng)
     Base.metadata.create_all(eng)
-    # drop_all removes audit_logs and its immutability triggers with it, so the
-    # control must be re-applied on every schema creation. Leaving this to a
-    # separate manual step means the audit trail is silently mutable after any
-    # reseed -- which is exactly when nobody would notice. On the migrated path
-    # the same DDL is revision a1c47f9b2e08.
+    # Dropping the schema takes audit_logs and its immutability triggers with
+    # it, so the control must be re-applied on every schema creation. Leaving
+    # that to a separate manual step means the audit trail is silently mutable
+    # after any reseed -- which is exactly when nobody would notice. On the
+    # migrated path the same DDL is revision a1c47f9b2e08.
+    #
+    # Bound to `eng` -- the engine this function just built the schema on --
+    # rather than opening a `session_scope()`. Two ways of reaching a database
+    # in one function are two things that can point at different databases, and
+    # they did: a caller that redirected the engine got its tables in one place
+    # and its audit triggers in another, leaving the schema it asked for
+    # unarmed and a database it never mentioned altered.
+    from sqlalchemy.orm import Session
+
     from scripts.harden_db import harden
-    with session_scope() as s:
+    with Session(eng) as s:
         harden(s)
+        s.commit()
 
 
 def build() -> dict:

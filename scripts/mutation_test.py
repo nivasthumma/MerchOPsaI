@@ -713,6 +713,7 @@ TOUCHED: set[str] = set()
 # by asking what changed in `app/` since this commit, and that question is
 # meaningless against the wrong one.
 MEASURED_TREE: str | None = None
+MEASURED_CLEAN: bool | None = None
 
 
 def _hms(seconds: float) -> str:
@@ -768,10 +769,22 @@ def main() -> int:
         return 1
     LOCK.write_text(_lock_text())
 
-    global MEASURED_TREE
+    global MEASURED_TREE, MEASURED_CLEAN
     head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                           cwd=ROOT, capture_output=True, text=True)
     MEASURED_TREE = head.stdout.strip() or None
+    # And whether the code about to be measured IS that commit. Captured here,
+    # before the first mutation makes the tree dirty by design.
+    #
+    # A hash alone says which commit was checked out, not what was in the
+    # files: a score taken with uncommitted edits present is a score for a tree
+    # nobody else has, and recording only the hash makes it indistinguishable
+    # from one taken on the commit itself. That is ADR-0035's second failure --
+    # an artifact with no conditions attached -- in the artifact that ADR was
+    # written to produce.
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "app", "alembic"],
+                           cwd=ROOT, capture_output=True, text=True)
+    MEASURED_CLEAN = dirty.returncode == 0 and not dirty.stdout.strip()
 
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
@@ -905,6 +918,7 @@ def _write_report(rows, caught_n: int, mutations) -> None:
     REPORT.write_text(json.dumps({
         "generated_at": datetime.now(UTC).isoformat(),
         "tree": MEASURED_TREE,
+        "tree_clean": MEASURED_CLEAN,
         "complete": len(mutations) == len(MUTATIONS),
         "defined": len(MUTATIONS),
         "run": len(mutations),

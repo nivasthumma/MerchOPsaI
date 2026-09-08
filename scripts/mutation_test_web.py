@@ -38,15 +38,18 @@ which is why this one prints a table at the end AND a line as it goes.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 LOCK = ROOT / ".mutation-web-in-progress"
+REPORT = ROOT / "data" / "mutation_report_web.json"
 
 # (label, file relative to the repository root, find, replace)
 #
@@ -275,6 +278,7 @@ def main() -> int:
         print(f"{label:<52} {status:<10} {line}")
 
     survivors = [label for label, status, _ in rows if status == "SURVIVED"]
+    _write_report(rows, survivors, mutations, selectors)
     print()
     print(f"RESULT: {len(rows) - len(survivors)}/{len(rows)} mutations caught")
     if survivors:
@@ -284,6 +288,45 @@ def main() -> int:
         return 1
     print("Every injected defect was detected.")
     return 0
+
+
+def _write_report(rows, survivors, mutations, selectors) -> None:
+    """Record the run, so the published score can be checked against it.
+
+    The same reason `mutation_test.py` writes one, and the same field that
+    matters most: `complete`. A filtered run measures a subset and its ratio is
+    not the project's frontend mutation score, so recording WHICH kind of run
+    produced this stops `mutation_test_web.py money` being read later as though
+    it had covered everything.
+
+    Git-ignored, like the backend report. It measures a tree rather than
+    describing one, so a checkout that has not run it has nothing to be stale.
+    """
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True)
+    # Whether the code measured was the code that commit names.
+    #
+    # A hash alone says which commit was checked out, not what was in the
+    # files. A score taken with uncommitted edits present is a score for a tree
+    # nobody else has, and recording only the hash makes it indistinguishable
+    # from one taken on the commit itself. ADR-0035's second failure exactly:
+    # an artifact with no conditions attached.
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "web/src"],
+                           cwd=ROOT, capture_output=True, text=True)
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    REPORT.write_text(json.dumps({
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tree": head.stdout.strip() or None,
+        "tree_clean": dirty.returncode == 0 and not dirty.stdout.strip(),
+        "complete": not selectors,
+        "defined": len(MUTATIONS),
+        "run": len(rows),
+        "caught": sum(1 for _, status, _ in rows if status == "CAUGHT"),
+        "survived": survivors,
+        "mutants": [{"label": label, "status": status, "suite": line}
+                    for label, status, line in rows],
+    }, indent=2) + "\n")
+    print(f"wrote {REPORT.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":

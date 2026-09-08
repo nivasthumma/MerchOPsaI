@@ -10,6 +10,7 @@ data/evaluation_report.json
 # Committing it would version a stale number and start a merge conflict
 # per run. `scripts/check_counts.py` reads it where it is produced.
 data/mutation_report.json
+data/mutation_report_web.json
 .mutation-in-progress
 .vercel
 .vercel_python_packages/

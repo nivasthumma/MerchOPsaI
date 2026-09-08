@@ -193,21 +193,40 @@ def evaluation_result() -> dict | None:
     return json.loads(p.read_text())
 
 
-def _app_changed_since(tree: str | None) -> list[str] | None:
-    """Commits touching `app/` since `tree`, or None if it cannot be compared.
+def _changed_since(tree: str | None, *paths: str) -> list[str] | None:
+    """Commits touching `paths` since `tree`, or None if it cannot be compared.
 
-    A mutation score measures `app/`. Everything else in a commit -- CI config,
-    the Makefile, docs, a lock file -- leaves it exactly as valid as when it
-    was taken, and refusing on those would silence a two-hour measurement over
-    a typo fix.
+    A mutation score measures the code it mutated. Everything else in a commit
+    -- CI config, the Makefile, docs, a lock file -- leaves it exactly as valid
+    as when it was taken, and refusing on those would silence a two-hour
+    measurement over a typo fix.
     """
     if not tree:
         return None
-    r = subprocess.run(["git", "log", "--format=%h", f"{tree}..HEAD", "--", "app"],
+    r = subprocess.run(["git", "log", "--format=%h", f"{tree}..HEAD", "--", *paths],
                        cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
         return None          # unknown commit -- shallow clone, or rewritten history
     return [c for c in r.stdout.split() if c]
+
+
+def _app_changed_since(tree: str | None) -> list[str] | None:
+    """What the backend mutation score measures: `app/`, and the migration the
+    harness also mutates."""
+    return _changed_since(tree, "app", "alembic")
+
+
+def web_mutation_result() -> dict | None:
+    """The last recorded FRONTEND run, or None where none was recorded here.
+
+    Optional for the same reason the backend one is, and gated for the same
+    reason too: a score published beside a harness that produced no artifact is
+    a number somebody read off a terminal once.
+    """
+    p = ROOT / "data" / "mutation_report_web.json"
+    if not p.exists():
+        return None
+    return json.loads(p.read_text())
 
 
 def mutation_result() -> dict | None:
@@ -417,6 +436,16 @@ def main() -> int:
         # and only drift IN THE MEASURED CODE refuses.
         drift = _app_changed_since(run.get("tree"))
         stamp = f"{run['caught']}/{run['run']} caught, tree {run['tree']}"
+        # Reported, not refused, and only when the harness recorded it. A
+        # backend run is over two hours, so refusing here would mean re-running
+        # it to publish a number the run already measured correctly -- and
+        # reports written before the field existed carry None, which is "not
+        # recorded" rather than "was dirty". The frontend gate refuses instead,
+        # because three minutes is a reasonable thing to ask for.
+        if run.get("tree_clean") is False:
+            stamp += " (measured with uncommitted changes in app/)"
+        elif "tree_clean" not in run:
+            stamp += " (run predates the clean-tree stamp)"
         if drift is None:
             print(f"mutation:  {stamp} (cannot compare to HEAD)")
         elif drift:
@@ -462,6 +491,57 @@ def main() -> int:
                 Claim("README.md", r"· (\d+) by unit tests alone",
                       len(run.get("mutants", [])) - by_scenario,
                       "the mutants caught by the test suite alone"),
+            ]
+
+    web_run = web_mutation_result()
+    if web_run is None:
+        print("frontend:  no run recorded here (data/mutation_report_web.json "
+              "absent) -- the published result is not checked")
+    elif not web_run["complete"]:
+        print(f"frontend:  last run was FILTERED ({web_run['run']} of "
+              f"{web_run['defined']} mutants) -- the published result is not "
+              f"checked against it")
+    else:
+        # No `app/`-drift equivalent. A frontend run is three minutes, so
+        # unlike the two-hour backend one there is no reason to accept a score
+        # measured against a tree that has moved: `web/src` changing is exactly
+        # when the answer could change, and re-running is cheap.
+        drift = _changed_since(web_run.get("tree"), "web/src")
+        stamp = f"{web_run['caught']}/{web_run['run']} caught, tree {web_run['tree']}"
+        # A hash says which commit was checked out, not what was in the files.
+        # Refused rather than annotated: a frontend run is three minutes, so
+        # "re-run it on the committed tree" is a reasonable thing to ask, and a
+        # score for a tree nobody else has is not a published number.
+        # `is not True`, not `is False`: a report written before the harness
+        # recorded this carries no field at all, and absence of provenance is
+        # not evidence of provenance -- the same rule this file already applies
+        # to evaluation reports predating their own stamp.
+        if web_run.get("tree_clean") is not True:
+            why = ("web/src had uncommitted changes when it was measured"
+                   if web_run.get("tree_clean") is False
+                   else "the run did not record whether web/src was clean")
+            print(f"frontend:  refusing {web_run['tree']} -- {why}, so the "
+                  f"score is not known to be for that commit. Re-run "
+                  f"`make mutants-web`.")
+            web_run = None
+        elif drift is None:
+            print(f"frontend:  {stamp} (cannot compare to HEAD)")
+        elif drift:
+            print(f"frontend:  refusing {web_run['tree']} -- web/src has changed "
+                  f"in {len(drift)} commit(s) since it was measured "
+                  f"({', '.join(drift[:3])}{'…' if len(drift) > 3 else ''}). "
+                  f"Re-run `make mutants-web`.")
+            web_run = None
+        else:
+            print(f"frontend:  {stamp}, {web_run['generated_at'][:10]}")
+        if web_run is not None:
+            claims += [
+                Claim("README.md", r"(\d+)/\d+ frontend mutations caught",
+                      web_run["caught"],
+                      "the caught-mutant count for the frontend suite"),
+                Claim("README.md", r"\d+/(\d+) frontend mutations caught",
+                      web_run["run"],
+                      "the frontend mutant total"),
             ]
 
     problems = check(claims)

@@ -41,6 +41,29 @@ describe("agent activity", () => {
     expect(items[4]).toHaveAttribute("data-state", "blocked");
   });
 
+  it("never draws a step with another state's mark", () => {
+    // The glyph is the only thing most readers actually look at, and it was
+    // asserted nowhere: `data-state` was pinned, the screen-reader text was
+    // pinned, and the mark itself was free to say anything. A frontend mutation
+    // run replaced ✕ with ✓ and all 311 tests passed — a failed financial step
+    // drawn with a tick, which is the single worst thing this list can do.
+    //
+    // Every distinct state in the fixture, not a sample: a table of marks is
+    // exactly where two entries drift into each other.
+    render(<AgentActivity steps={STEPS} />);
+    const items = screen.getAllByRole("listitem");
+    const mark = (i: number) =>
+      items[i].querySelector(".act-glyph")!.textContent;
+
+    expect(mark(1)).toBe("✓");   // done
+    expect(mark(2)).toBe("✕");   // failed — NOT the done mark
+    expect(mark(4)).toBe("⏸");   // blocked
+    // And no two states share one. A mark that means two things carries no
+    // information, whatever it is.
+    const marks = [mark(1), mark(2), mark(4)];
+    expect(new Set(marks).size).toBe(marks.length);
+  });
+
   it("says what each state means rather than announcing a glyph", () => {
     // A red mark meaning "it failed" and one meaning "we are waiting on you"
     // are different claims and must not sound alike.

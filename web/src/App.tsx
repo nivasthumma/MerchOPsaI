@@ -4,8 +4,8 @@ import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import {
-  LadderMark, LandingHeader, ScreenCarousel, SECTIONS, SectionHead, StateMark,
-  useReveal,
+  ForkDiagram, LadderMark, LandingHeader, LimitMark, ScreenCarousel, SECTIONS,
+  SectionHead, StateMark, useReveal,
 } from "./components/Landing";
 import { ThemeToggle } from "./components/Theme";
 import { CommandPalette } from "./components/CommandPalette";
@@ -515,14 +515,24 @@ function Landing({ health }: { health: Health | null }) {
                      title="The provider accepting is not the money moving">
           A refund call returns <code>200 OK</code> with a refund id. Most
           systems record that as done. It is not done — it is <b>submitted</b>.
-          A provider can accept a request and apply less than was asked, or
-          nothing at all, and the response looks identical either way.
         </SectionHead>
-        <p className="lp-lede">
-          Worse is when the response never arrives. A system that guesses there
-          either refunds twice, or tells a merchant their customer was paid
-          when they were not.
-        </p>
+        {/* The diagram is the argument, not an illustration of it: one
+            response, three things that can have happened to the money, and
+            nothing in the response saying which. */}
+        <div className="lp-split">
+          <ForkDiagram />
+          <div className="lp-split-copy">
+            <p className="lp-lede">
+              A provider can accept a request and apply less than was asked, or
+              nothing at all, and the response looks identical either way.
+            </p>
+            <p className="lp-lede">
+              Worse is when the response never arrives. A system that guesses
+              there either refunds twice, or tells a merchant their customer
+              was paid when they were not.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section id="ladder" ref={rLadder}>
@@ -590,6 +600,28 @@ function Landing({ health }: { health: Health | null }) {
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
+
+        {/* The command itself, and what it prints. A section claiming its
+            numbers are reproducible and then only restating them is asking to
+            be taken at its word; this is the check that would fail the build,
+            and every figure in it is one the check gates. */}
+        <figure className="lp-term">
+          <figcaption>
+            <span className="lp-term-dots" aria-hidden="true"><i /><i /><i /></span>
+            make counts
+          </figcaption>
+          {/* A line per element, not one text node with newlines in it: JSX
+              trims the whitespace at the ends of its lines, so a transcript
+              written that way renders as a single run-on line. */}
+          <pre><code>
+            <span className="ln"><b>$</b> make counts</span>
+            <span className="ln">
+              {"measured:  627 python tests · 306 vitest · 167 scenarios · 88 mutants"}
+            </span>
+            <span className="ln">{"browser:   13 Playwright tests defined"}</span>
+            <span className="ln ok">✓ published numbers match what the tree measures</span>
+          </code></pre>
+        </figure>
       </section>
 
       <section id="limits" ref={rLimits}>
@@ -602,15 +634,15 @@ function Landing({ health }: { health: Health | null }) {
               says execution is mocked and that the controls around it are
               unchanged. Saying it twice on one page is how a disclosure starts
               reading as boilerplate. */}
-          <li><b>No refund has ever reached Razorpay.</b> Not once, in any
+          <li><LimitMark /><b>No refund has ever reached Razorpay.</b> Not once, in any
             environment — so every claim on this page about verification is a
             claim about a mock provider answering honestly.</li>
-          <li><b>Reconciliation is a sweep, not a daemon.</b> An UNKNOWN action
+          <li><LimitMark /><b>Reconciliation is a sweep, not a daemon.</b> An UNKNOWN action
             is re-read on a schedule somebody has to run.</li>
-          <li><b>21 of 590 payments are externally mapped</b>, and not one
+          <li><LimitMark /><b>21 of 590 payments are externally mapped</b>, and not one
             mapping has been confirmed against a real provider. Null means
             nobody checked.</li>
-          <li><b>The reasoning model has never run in anger.</b> The default
+          <li><LimitMark /><b>The reasoning model has never run in anger.</b> The default
             planner is deterministic, which is what makes the evaluation
             reproducible and also a weaker test of the agent.</li>
         </ul>

@@ -146,6 +146,22 @@ describe("token gate", () => {
     }
   });
 
+  it("prints the check's transcript as separate lines, not one run-on line", async () => {
+    // JSX trims the whitespace at the ends of its lines, so a transcript
+    // written as one text node with newlines in it renders as a single line
+    // running off the side of the box -- which is exactly what it did.
+    health.mockResolvedValue(OK);
+    renderApp();
+    await screen.findByRole("navigation", { name: "On this page" });
+    const term = document.querySelector(".lp-term pre")!;
+    const lines = term.querySelectorAll(".ln");
+    expect(lines).toHaveLength(4);
+    expect(lines[0].textContent).toContain("make counts");
+    // The figures here are gated by `scripts/check_counts.py` against what the
+    // tree measures; this only checks they reached the page at all.
+    expect(lines[1].textContent).toMatch(/^measured: {2}\d+ python tests/);
+  });
+
   it("renders the route once a token is supplied, and forgets it on sign-out", async () => {
     health.mockResolvedValue(OK);
     renderSignIn();

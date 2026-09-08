@@ -347,3 +347,72 @@ export function LandingHeader({ tools }: { tools: ReactNode }) {
     </header>
   );
 }
+
+/** One response, three truths.
+ *
+ *  The section beside this says a `200 OK` is not a business outcome. The
+ *  drawing is the argument: one response fans out to three different things
+ *  that can have happened to the money, and nothing in the response tells you
+ *  which. Saying that takes a paragraph; showing it takes a fork.
+ *
+ *  The connectors draw themselves on reveal, left to right, because the order
+ *  is the point -- the request, then the acknowledgement, then the divergence.
+ */
+export function ForkDiagram() {
+  const T = (x: number, y: number, s: string, cls = "") => (
+    <text x={x} y={y} className={`fd-t ${cls}`}>{s}</text>
+  );
+  const outcomes: Array<[number, string, string, string]> = [
+    [34, "SUCCESS", "var(--ok)", "the money moved"],
+    [116, "PARTIAL", "var(--warn)", "less than was asked"],
+    [198, "UNKNOWN", "var(--unknown)", "no answer ever came"],
+  ];
+  return (
+    <svg viewBox="0 0 582 262" className="fd" role="img"
+         aria-label={"One 200 OK response, and the three different things that "
+                   + "can have happened to the money behind it."}>
+      {/* the call */}
+      <rect x="2" y="106" width="126" height="46" rx="10"
+            fill="var(--surface-2)" stroke="var(--border-strong)" />
+      {T(20, 127, "POST")}
+      {T(20, 142, "/refunds", "fd-dim")}
+
+      {/* the acknowledgement -- the only thing the caller is ever handed */}
+      <rect x="176" y="106" width="140" height="46" rx="10"
+            fill="var(--surface)" stroke="var(--accent-border)" strokeWidth="1.4" />
+      {T(194, 127, "200 OK", "fd-acc")}
+      {T(194, 142, "rfnd_9c2f", "fd-dim")}
+
+      <path d="M128 129h44" fill="none" stroke="var(--border-strong)" strokeWidth="1.6"
+            className="fd-w" style={{ "--d": "0ms" } as CSSProperties} />
+      <path d="M168 125l6 4-6 4z" fill="var(--border-strong)" />
+
+      {outcomes.map(([y, name, colour, note], n) => (
+        <g key={name}>
+          {/* A curve rather than an elbow: three elbows out of one node read as
+              a decision tree, and nothing here decided anything. */}
+          <path d={`M316 129C348 129 352 ${y + 22} 386 ${y + 22}`}
+                fill="none" stroke={colour} strokeWidth="1.6" opacity="0.75"
+                className="fd-w" style={{ "--d": `${180 + n * 130}ms` } as CSSProperties} />
+          <rect x="386" y={y} width="192" height="44" rx="10"
+                fill="var(--surface)" stroke={colour} strokeOpacity="0.5" />
+          <rect x="386" y={y} width="3" height="44" rx="1.5" fill={colour} />
+          <text x="404" y={y + 20} className="fd-t" fill={colour}>{name}</text>
+          {T(404, y + 35, note, "fd-dim")}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** The mark beside each limit: a ring that was never closed. */
+export function LimitMark() {
+  return (
+    <svg viewBox="0 0 18 18" width="15" height="15" aria-hidden="true" className="lp-limit-mark">
+      <circle cx="9" cy="9" r="7" fill="none" stroke="var(--warn)" strokeWidth="1.6"
+              strokeDasharray="3 3.4" />
+      <path d="M9 5.4v4.4" stroke="var(--warn)" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="9" cy="12.4" r="0.95" fill="var(--warn)" />
+    </svg>
+  );
+}

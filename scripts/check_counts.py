@@ -286,13 +286,31 @@ def main() -> int:
             Claim(lp, r"<b>(\d+)</b><span>Automated tests", py + web,
                   "the landing page's combined test total"),
         ]
+    # The landing page prints this script's own output as evidence that its
+    # figures are reproducible. A transcript of a check, published with numbers
+    # the check does not gate, is the most confident way to be wrong on a page.
+    claims += [
+        Claim(lp, r"measured:  (\d+) python tests", py,
+              "the published transcript's python test count"),
+        Claim(lp, r"python tests · \d+ vitest · (\d+) scenarios", scen,
+              "the published transcript's scenario count"),
+        Claim(lp, r"scenarios · (\d+) mutants", mut,
+              "the published transcript's mutant count"),
+    ]
+    if web is not None:
+        claims.append(
+            Claim(lp, r"python tests · (\d+) vitest", web,
+                  "the published transcript's vitest count"))
 
     e2e = e2e_test_count()
     if e2e:
         print(f"browser:   {e2e} Playwright tests defined")
-        claims.append(
+        claims += [
             Claim("README.md", r"all (\d+) browser journeys", e2e,
-                  "the browser-journey count"))
+                  "the browser-journey count"),
+            Claim(lp, r"browser:   (\d+) Playwright tests defined", e2e,
+                  "the published transcript's browser-test count"),
+        ]
 
     if web is not None:
         claims += [

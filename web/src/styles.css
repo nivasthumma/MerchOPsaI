@@ -1444,7 +1444,15 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
      A page whose header floats 58px below the top of the window has a gap
      where its header should be. */
   padding: 0 clamp(18px, 4vw, 40px) clamp(48px, 7vw, 88px);
-  display: grid; gap: clamp(28px, 4.4vw, 50px);
+  /* `minmax(0, 1fr)`, not the implicit `auto`: a grid column's default minimum
+     is min-content, so a single section that will not shrink below its content
+     stretches this track past the max-width above it. Nothing overflows
+     visibly -- `.landing-page` clips -- so what it produces instead is a
+     fourth card outside the clip and a full-width header offset by the
+     difference, because every percentage inside resolves against the
+     stretched track rather than the box. */
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: clamp(30px, 3.4vw, 40px);
 }
 
 /* --- the landing header --------------------------------------------------
@@ -1566,7 +1574,7 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 
 /* --- the measured band -------------------------------------------------- */
 .lp-stats {
-  display: grid; gap: 0; margin-top: 26px;
+  display: grid; gap: 0; margin-top: 20px;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   border: 1px solid var(--border); border-radius: var(--r-lg);
   background: var(--surface); overflow: hidden;
@@ -1591,15 +1599,20 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
                color: var(--text-2); font-size: 13px; }
 
 /* --- what it does not do ------------------------------------------------ */
-.lp-limits { list-style: none; margin: 26px 0 0; padding: 0; display: grid; gap: 14px; }
+/* Two columns where there is room. Four limits down the left of a wide page
+   left the right half empty and made the section twice as tall as it needed to
+   be -- and this is the section a reader is least likely to scroll for. */
+.lp-limits {
+  list-style: none; margin: 20px 0 0; padding: 0;
+  display: grid; gap: 14px clamp(24px, 4vw, 56px);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+}
 .lp-limits li {
-  position: relative; padding-left: 22px; color: var(--text-2);
-  max-width: 66ch; line-height: 1.6;
+  position: relative; padding-left: 26px; color: var(--text-2);
+  line-height: 1.6;
 }
-.lp-limits li::before {
-  content: ""; position: absolute; left: 0; top: 11px;
-  width: 11px; height: 1.5px; border-radius: 2px; background: var(--warn);
-}
+/* The mark is drawn now (an unclosed ring around an exclamation), so the
+   dash this used to paint would sit under it. */
 .lp-limits b { color: var(--text); font-weight: 600; }
 
 .lp-hero {
@@ -1696,10 +1709,31 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
    label that section carries in the header nav, and the rule beside it is
    drawn rather than a border so it can stop at the text instead of running the
    width of the column. */
-.lp-sec-head { max-width: 62ch; }
+/* Heading and lede side by side, not stacked.
+ *
+ * Stacked, a section head was a kicker, two lines of display type and two
+ * lines of lede -- four rows of text down the left with the right half of the
+ * page empty, and a section that came to roughly a screenful for one heading.
+ * Side by side it is two rows, it uses the width the page already has, and
+ * more than one section fits in view at a time.
+ *
+ * No measure on the head itself: a `ch` here is measured in the head's own
+ * font -- body size -- so a cap in `ch` clamps the 30px display heading and
+ * wraps headings that fit the page with room to spare. The measure belongs on
+ * the running text, which is the only part of a head that needs one. */
+.lp-sec-head {
+  display: grid; gap: 6px clamp(24px, 4vw, 56px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: baseline;
+}
+.lp-sec-head > .lp-kicker { grid-column: 1 / -1; }
+.lp-sec-head > .lp-lede { max-width: 62ch; margin-top: 0; }
+@media (max-width: 860px) {
+  .lp-sec-head { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
 .lp-kicker {
   display: flex; align-items: center; gap: 10px;
-  margin: 0 0 12px; font-family: var(--mono); font-size: 10.5px;
+  margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px;
   letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent);
 }
 .lp-kicker::after {
@@ -1716,7 +1750,6 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
   transition: opacity 420ms 40ms cubic-bezier(0.2, 0, 0.2, 1),
               transform 420ms 40ms cubic-bezier(0.2, 0, 0.2, 1);
 }
-.lp-sec-head .lp-lede { margin-top: 14px; }
 
 /* the four states */
 .lp-h2 {
@@ -1728,7 +1761,7 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 }
 .lp-lede { margin: 12px 0 0; color: var(--text-2); max-width: 58ch; }
 .lp-cards {
-  display: grid; gap: 12px; margin-top: 24px;
+  display: grid; gap: 12px; margin-top: 20px;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 .lp-card {
@@ -1855,7 +1888,7 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
   .lp-hero.is-entering > *,
   .lp-cards.is-stagger > *,
   .lp-stats.is-stagger > div,
-  .lp-kicker,
+  .lp-kicker, .lp-term .ln, .fd-w,
   .lp-topwrap, .lp-topwrap .lp-top, .lp-nav::before, .lp-brand span,
   .lp-progress {
     animation: none !important; transition: none !important;
@@ -2242,3 +2275,78 @@ p a:not(.linkish) {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* --- the problem, drawn ---------------------------------------------------
+   Diagram beside the copy rather than above it: the fork IS the paragraph, and
+   a reader who takes the picture first should not have to scroll to find out
+   what it is about. */
+.lp-split {
+  display: grid; gap: clamp(20px, 3.4vw, 40px); margin-top: 20px;
+  grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+  align-items: center;
+}
+@media (max-width: 900px) { .lp-split { grid-template-columns: minmax(0, 1fr); } }
+.lp-split-copy { display: grid; gap: 14px; }
+.lp-split-copy .lp-lede { margin: 0; }
+
+.fd {
+  width: 100%; height: auto; max-width: 560px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); padding: 10px;
+}
+.fd-t {
+  font-family: var(--mono); font-size: 11.5px; fill: var(--text);
+  letter-spacing: 0.02em;
+}
+.fd-t.fd-dim { fill: var(--text-dim); font-size: 10.5px; }
+.fd-t.fd-acc { fill: var(--accent); }
+
+/* The connectors draw themselves, in the order the thing happens: the call,
+   the acknowledgement, then the three answers it cannot distinguish. Held at
+   full length until the observer arrives, so a page whose JavaScript never
+   runs shows a finished diagram rather than three stubs. */
+[data-reveal="pending"] .fd-w { stroke-dasharray: 220; stroke-dashoffset: 220; }
+[data-reveal="in"] .fd-w {
+  stroke-dasharray: 220; stroke-dashoffset: 0;
+  transition: stroke-dashoffset 620ms var(--d, 0ms) cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+/* --- the limits, marked --------------------------------------------------- */
+.lp-limit-mark { position: absolute; left: 0; top: 4px; flex: none; }
+
+/* --- the check, as it prints ---------------------------------------------
+   A section claiming its numbers are reproducible and then only restating them
+   is asking to be taken at its word. Every figure inside is gated by the check
+   the transcript shows. */
+.lp-term {
+  margin: 18px 0 0; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow);
+}
+.lp-term figcaption {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.lp-term-dots { display: flex; gap: 5px; }
+.lp-term-dots i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong);
+}
+.lp-term pre {
+  margin: 0; padding: 14px 16px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+  color: var(--text-2); background: transparent;
+}
+.lp-term .ln { display: block; white-space: pre; }
+/* The lines print one after another, the way the command does. Held at the
+   finished state until the observer runs, so no JavaScript means a finished
+   transcript rather than an empty box. */
+[data-reveal="pending"] .lp-term .ln { opacity: 0; }
+[data-reveal="in"] .lp-term .ln { opacity: 1; transition: opacity 260ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(2) { transition-delay: 220ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(3) { transition-delay: 380ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(4) { transition-delay: 560ms; }
+.lp-term code { font: inherit; color: inherit; background: none; padding: 0; }
+.lp-term b { color: var(--accent); font-weight: 600; }
+.lp-term .ok { color: var(--ok); }

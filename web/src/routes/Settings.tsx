@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext } from "react-router";
 import { api } from "../api/client";
 import type { Health, Principal } from "../api/types";
 import { SectionHead } from "../components/Bits";

@@ -44,22 +44,143 @@ authority.**
 ```
 src/
   api/client.ts     typed fetch wrapper: auth header, error normalisation
-  api/types.ts      response shapes, mirroring app/api/main.py
-  App.tsx           shell, run-configuration banners, token gate
+  api/types.ts      response shapes, mirroring app/api/schemas.py
+  App.tsx           shell, run-configuration banners, token gate, nav IA
+  hooks/
+    useLiveRefresh  the ONE polling loop (see below)
   routes/
+    CommandCenter   home: what needs attention, revenue health, the funnel
+    Actions         the Action Center — five sections, UNKNOWN as work
+    Recovery        the revenue ledger: at risk → recoverable → attempted → recovered
+    PaymentLifecycle  §7 — one payment end to end; where a searched id lands
+    Incidents       open incidents, filtered and saved-view
+    IncidentDetail  the decision workspace (what happened → ... → verification)
     Investigate     ask a question, read findings and grounding
     TaskDetail      approval gate, actions, verification, replay, audit trace
-    Scenarios       browse and run the 106 evaluation scenarios
+    Scenarios       browse and run the evaluation scenarios
     Operations      reconciliation sweep and the escalated operator queue
-  components/Bits   status pills, money formatting, error banners
+  components/
+    Bits            money formatting, error banners, copyable ids
+    Status          the ONE status vocabulary (see below)
+    LiveBar         when the data was last good, and whether it still is
 ```
+
+## Responsive and accessible, where it is checkable
+
+jsdom does no layout, so nothing here can assert what a 375px viewport *looks*
+like. What is asserted is the contract the CSS depends on, which is the half a
+change breaks silently.
+
+**P1-11.** Below 760px a `table.stacked` stops being a grid and becomes one
+block per row, each cell labelled by the header it belongs to. The Action Center
+is twelve columns wide; on a phone the previous treatment was a horizontal
+scrollbar with a table hidden behind it, and reading a refund's verification
+state meant swiping past six columns. A cell may be marked
+`data-priority="low"` and dropped entirely at that width — and a test asserts
+that nothing which asserts something about money ever is.
+
+**P1-12.** `role="dialog" aria-modal="true"` is a promise that everything
+outside the dialog is inert, and **both** dialogs in this app declared it while
+keeping different halves of it. The action drawer kept none: focus stayed on
+the row behind, Escape did nothing, Tab walked off into the supposedly-inert
+page, and a keyboard user could open it and not get out. The command palette
+focused its input and stopped there.
+
+`hooks/useModalFocus` is the one implementation, for the same reason
+`useLiveRefresh` is: a rule written twice is a rule that holds in one place.
+Focus moves in, Tab wraps at both ends, Escape closes, and focus returns to
+whatever opened it — `<body>` otherwise, which makes the next Tab restart from
+the top of the page. Where focus lands is the caller's choice and worth
+choosing: the drawer takes the panel, because its first control is Close and
+landing there announces "close" before saying what was opened; the palette
+takes its input, because typing is the entire reason to open it.
+
+## What a failure says about the world — P1-13
+
+The plan asks that a provider failure "explicitly state that no unsafe retry
+occurred". An operator's real question is narrower and harder: *did this happen
+or not*, and their default assumption after seeing an error is that it did not.
+For a write that failed after being sent, that assumption is exactly wrong.
+
+So `ApiError` carries the request method and derives an `effect`:
+
+    refused     a 4xx — the server decided, nothing ran
+    read-only   a read; whatever happened to it, it changed nothing
+    unknown     a write that failed at the transport or with a 5xx. It may
+                have been applied.
+
+The banner states the consequence under the error rather than leaving it to the
+reader, and never behind a disclosure: the operator who does not expand it is
+the one most likely to press the button again. The `unknown` copy points at the
+Action Center, because this system already has a name and a queue for that
+state.
+
+Refusing to send for want of a token is `refused`, not `read-only` — nothing
+was sent at all, which is a stronger claim and the right one to make.
+
+## No optimistic financial success — P1-14
+
+Re-verify is the button people press *because* an outcome is unresolved, and it
+was reporting `Re-verify done.` in a green tone on an HTTP 200. Re-verification
+can come back UNKNOWN. Green there tells an operator the question was answered
+when all that happened is that it was asked.
+
+It now renders what the read found, and the tone is the load-bearing part —
+a green toast is a claim that the matter is settled:
+
+    SUCCESS   ok     the money moved
+    FAILED    warn   settled, and correct: it did not take effect, nothing is
+                     outstanding. Not red — red would file it beside the states
+                     that need somebody.
+    PARTIAL   warn   the provider reflects less than was requested
+    UNKNOWN   warn   still unestablished — and it says nothing was re-issued,
+                     because "unknown" on its own invites a second press
+
+## Two things that are deliberately singular
+
+**`hooks/useLiveRefresh`.** Three screens each grew their own polling loop and each got
+a different subset of the rules right — pause on a hidden tab, refresh on return, never
+overlap two requests, show when the data was last good, distinguish paused from
+disconnected, never fake activity. A list of rules implemented three times is a list
+implemented once and imitated twice, so there is one hook and it has its own tests.
+
+The rule that matters most: **a failed poll does not blank the screen.** An operator
+reading a queue when the API hiccups keeps the queue and is told it is stale. Losing it
+would be worse, because an empty queue is the most reassuring thing this application can
+say and it must never be said by accident.
+
+It also **backs off while the API is failing** — doubling from the screen's own
+cadence, capped at a minute. The Action Center polls every four seconds; against
+a dead API that is fifteen requests a minute per open tab, from every operator
+who had it open when it went down, none of which can succeed. The cap exists so
+a recovered API is noticed within a minute rather than by a screen that has
+quietly stretched to a ten-minute poll behind a live-looking indicator. One
+success ends the backoff outright rather than stepping down, or the busiest
+screen would stay the slowest. The freshness bar says the interval out loud,
+because a slowed screen must not read as a frozen one.
+
+**`components/Status`.** Thirteen statuses appear across these screens, and every one
+now has a tone, a business-language label, a *shape*, and a sentence saying what it
+asserts. The shape is not decoration: a red dot meaning "it failed" and a red dot
+meaning "we do not know" are the same dot, and those are opposite claims about whether
+money moved.
 
 ## Test
 
 ```bash
-npm test             # 39 Vitest tests, jsdom, no API required
+npm test             # 293 Vitest tests, jsdom, no API required
 npm run test:watch
 ```
+
+> **One fixture is not a live response, despite the header above saying they are.**
+> `task.json` carries `intent: duplicate_payment` *and* a completed, approved,
+> verified refund. No single request produces both: the deterministic planner sets
+> `intent`/`recommendation`/`agent_confidence` only on the revenue-investigation path,
+> and that path proposes no refund. It is a composite, assembled or captured under
+> older behaviour, and three test files read it. Splitting it into two genuinely
+> captured fixtures — one completed-with-conclusion, one completed-refund — is real
+> work and is not done. Found 2026-09-07 while adding P0-08; left as it was rather
+> than reshaped, because reshaping it silently changes what those three files cover.
 
 The tests cover the places where a frontend bug would misrepresent a financial state
 rather than merely look wrong:
@@ -72,8 +193,84 @@ rather than merely look wrong:
 | Approval | The approve button stays enabled — authorization is the server's call; a refusal shows its code; the task is reloaded rather than trusting the response |
 | Replay | Zero external calls reads as correct; a non-zero count reads as a defect |
 | Shell | The mock adapter, the deterministic planner, and a development signing secret are each stated before anyone can act |
+| Action Center | An action is in exactly one section — including the case that broke it, an escalated action a later re-verification settled; the attempt limit is read from the response rather than copied; a pending approval is not rendered as an action |
+| Live refresh | A failed poll keeps the data and does not advance the freshness stamp; a hidden tab pauses and refreshes on return; two requests never overlap; a changed filter refetches at once; a failing API is backed off, the backoff is capped, widening it never itself triggers a fetch, and one success clears it |
+| Funnel | A later stage never draws wider than an earlier one, even when handed figures that invert |
+| Incident | The page is ordered as the decision is made; a single evidence source is stated to corroborate nothing; a rule that publishes no baseline says so rather than showing a zero |
+| Lifecycle | Events render in the server's order and are never re-sorted into the sequence they "usually" occur in; a policy-gated tool call is not shown as failed; an unmapped payment says it cannot be executed against rather than showing a dash |
+| Small screens (P1-11) | Every cell of a stacked table carries the header it belongs to, because the header row is not rendered at that width; no cell asserting something about money is ever marked droppable; every label matches a real column |
+| Verification outcome (P1-14) | Re-verify reports what the read FOUND, never that it ran: a still-UNKNOWN result is not given a success tone, a verified FAILED is settled rather than an alarm, and PARTIAL is distinguished from both |
+| Failure consequence (P1-13) | A failed request says whether anything happened: a read changed nothing, a 4xx was refused before doing anything, and a write that failed *after* being sent is honestly `unknown` and points at the UNKNOWN queue rather than inviting a second press |
+| Dialogs (P1-12) | `aria-modal` is kept rather than claimed, by both dialogs from one hook: focus moves in, Escape closes, Tab wraps at both ends — including in a dialog with nothing focusable in it — and focus returns to whatever opened it |
 
 They are not in CI (see ADR-0015), so they gate a developer's machine, not a merge.
+
+## Browser E2E — §22
+
+```bash
+make e2e-install     # once, to fetch Chromium
+make e2e             # stands up its own DB and API, runs, tears down
+```
+
+Five journeys, from the plan: revenue degradation, approval, rejection, UNKNOWN,
+replay. They exist because everything else here tests a **layer** — the scenario
+suite grades the agent, the integration tests exercise the API, Vitest renders
+components against captured fixtures. All of those can pass while a route
+renders nothing, a field is read under a name the server stopped sending, or a
+button posts somewhere that moved.
+
+Two rules they follow, which are the product's rules:
+
+- **Nothing is asserted about money that the server did not say.** Where a test
+  checks a refund happened it checks the verification state the API returned,
+  not a green tick — a tick is a rendering of a claim, not the claim.
+- **C and E assert a negative.** "No external call was made" is exactly what a
+  UI bug can violate while looking entirely correct.
+
+They run against their **own** database, for the same reason `tests/conftest.py`
+refuses to share one: these approve refunds, and pointed at the development
+database they would destroy whatever somebody had open. Journey D needs an
+action whose outcome is genuinely unestablished, which no API can produce on
+purpose — `scripts/run_e2e.sh` plants one through the real execution path with
+the timeout injector, so the journey asserts the presentation of something that
+actually reached UNKNOWN.
+
+Writing them found four wrong assumptions in one sitting, all mine, none of
+which any other test could have surfaced: `Baseline` matches four elements on
+the incident page; approving is deliberately **two** clicks (the button arms and
+relabels itself "Confirm — this moves money"); the replay controls are behind a
+`role="tab"`, not a button; and the replay count is `external_calls_made`, not
+`external_calls`. That last one is the exact failure this suite is for — caught
+in the test rather than the product, which is the same lesson either way.
+
+## Accessibility, measured — P1-12
+
+The Vitest suite pins what jsdom can see: a status carries a shape and not only
+a colour, a dialog keeps the promise `aria-modal` makes, a stacked table labels
+every cell. What jsdom cannot see is anything needing layout or paint, and P1-12
+names one of those outright: **contrast**.
+
+`e2e/accessibility.spec.ts` scans five screens plus the error state with axe, in
+**both themes**, against the WCAG A and AA rules. Narrowed to those rather than
+everything axe knows, for the reason the ruff config gives: a gate that fires on
+things nobody agreed to is a gate people learn to bypass.
+
+It found three real defects on its first run, none of which any jsdom test could
+have reached:
+
+- **`--text-dim` at 4.17:1 on a tinted strip cell.** Nothing in the palette was
+  wrong — its comment says 4.9:1 and that is true, *on `--surface`*. The class
+  that tints the background did not change the text colour, so the ratio was
+  measured against a surface the text no longer sits on. Fixed with
+  `--text-dim-on-tint`.
+- **A link distinguishable only by colour** (1.58:1 against the prose around
+  it). "No colour-only meaning" was already this application's rule for every
+  status; a link was not an exception to it, it had just never been checked.
+  Links in prose are underlined.
+- **A skeleton that promised a name it could not have.** `aria-label` on a bare
+  `<div>` is prohibited by ARIA — an element with no role cannot take an
+  accessible name — so the label was ignored and every loading state was silent
+  to a screen reader. Now `role="status"` with the bars marked decorative.
 
 ## Build
 

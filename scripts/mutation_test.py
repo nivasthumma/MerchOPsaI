@@ -11,9 +11,11 @@ cannot leave the working tree modified.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.integrity import HARNESS_ENV, MARKER
@@ -284,10 +286,21 @@ MUTATIONS = [
         "        return self.max_wall_clock_seconds  # MUTANT",
     ),
     (
+        # The anchor carries `abandoned_cutoff` because it has to. `escalate_exhausted`
+        # was added with an identical two-line predicate, the anchor matched twice, and
+        # the harness reported a broken anchor -- which is the harness being subject to
+        # the same drift it exists to detect, exactly as the note above predicted. The
+        # cutoff line appears only in `find_unsettled`, which is the branch this mutant
+        # is about.
         "reconciliation: stop looking at claims nobody finished",
         "app/verification/reconciler.py",
-        "                        and_(AgentAction.verification_state.is_(None),",
-        "                        and_(False, AgentAction.verification_state.is_(None),  # MUTANT",
+        "                        and_(AgentAction.verification_state.is_(None),\n"
+        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.updated_at <= abandoned_cutoff),",
+        "                        and_(False,  # MUTANT\n"
+        "                             AgentAction.verification_state.is_(None),\n"
+        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.updated_at <= abandoned_cutoff),",
     ),
     # ---------------------------------------------------------- ADR-0031
     (
@@ -946,6 +959,108 @@ MUTATIONS = [
         "    auth.revoke_all_for(session, row[\"id\"])",
         "    pass  # MUTANT",
     ),
+
+    # --- the mapping layer (MerchantOps §6, plan P0-02) --------------------
+    (
+        # The direction §6 is actually about. With ownership unchecked, one
+        # merchant's synthetic id resolves against another merchant's payment,
+        # which is a refund placed on somebody else's money.
+        "mapping: stop checking who owns the payment being resolved",
+        "app/integrations/mapping.py",
+        "    if owner != merchant_id:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        # A mapping is only meaningful within one provider universe. Ignoring
+        # the environment makes a Test Mode id resolve for a live process and
+        # the reverse -- the failure this table was introduced to make
+        # impossible.
+        "mapping: resolve without regard to the provider environment",
+        "app/integrations/mapping.py",
+        # `record_mapping` carries a byte-identical WHERE clause, so the anchor
+        # reaches up to the SELECT list, which differs. Only `resolve` is under
+        # test here -- a write that ignores the environment is refused by
+        # `uq_mapping_payment_provider_env`, a read that ignores it is not
+        # refused by anything.
+        "        FROM provider_mappings\n"
+        "        WHERE payment_id = :p AND provider = :prov AND environment = :env",
+        "        FROM provider_mappings\n"
+        "        WHERE payment_id = :p AND provider = :prov  -- MUTANT",
+    ),
+    (
+        # A retired mapping must not execute. Treating it as live is how an id
+        # somebody deliberately withdrew gets money moved against it.
+        "mapping: execute against a retired mapping",
+        "app/integrations/mapping.py",
+        "    if row[\"status\"] != \"ACTIVE\":",
+        "    if False:  # MUTANT",
+    ),
+
+    # --- reconciliation as durable work (plan P0-04, P0-15) ---------------
+    (
+        # Never escalating turns the stopping rule off: an action nothing can
+        # settle is re-read forever and never reaches a human, which is the
+        # failure UNKNOWN exists to prevent restated one level up.
+        "reconciliation: never give up, so nothing ever reaches a human",
+        "app/verification/schedule.py",
+        "    return action.verify_attempts >= MAX_ATTEMPTS",
+        "    return False  # MUTANT",
+    ),
+    (
+        # The repair pass is what guarantees an action that reached the limit
+        # by some route other than the sweep's own last pass is still handed
+        # over. Without it such an action appears in neither queue.
+        "reconciliation: stop repairing actions that ran out of attempts elsewhere",
+        "app/verification/reconciler.py",
+        "    for action in stuck:",
+        "    for action in []:  # MUTANT",
+    ),
+    (
+        # Escalating a settled action hands a human a finished job, and does it
+        # for every action that took five attempts to succeed.
+        "reconciliation: escalate actions that already settled",
+        "app/verification/schedule.py",
+        "    if is_settled(action.verification_state):\n        return False",
+        "    if False:  # MUTANT\n        return False",
+    ),
+
+    # --- detection §12 ------------------------------------------------------
+    (
+        # The load-bearing decision in the failure-spike rule. The lost revenue
+        # is already on the degradation incident; claiming it again roughly
+        # doubles the at-risk figure on the Command Center.
+        "detection: let a diagnostic rule claim revenue that is already counted",
+        "app/detection/rules.py",
+        "            revenue_at_risk_minor=0,\n            signals={\n"
+        "                **_canonical(baseline=prev, observed=cur,",
+        "            revenue_at_risk_minor=cur * 100000,  # MUTANT\n            signals={\n"
+        "                **_canonical(baseline=prev, observed=cur,",
+    ),
+    (
+        # Three failures becoming six is a doubling and is noise. Without the
+        # floor the rule raises an incident for every rare error code.
+        "detection: drop the volume floor under the failure-spike rule",
+        "app/detection/rules.py",
+        "        if cur < MIN_FAILURE_VOLUME:",
+        "        if False:  # MUTANT",
+    ),
+    (
+        # Reporting the whole refunded total describes ordinary business as an
+        # incident: a merchant who always refunds £10k would be told £25k is at
+        # risk the week they refund £25k.
+        "detection: report total refunds rather than the excess over baseline",
+        "app/detection/rules.py",
+        "    excess_value = max(0, cur_v - prev_v)",
+        "    excess_value = cur_v  # MUTANT",
+    ),
+    (
+        # A merchant's first week of refunds is not an anomaly, and calling it
+        # one greets every new account with an incident.
+        "detection: treat a first week of refunds as unusual",
+        "app/detection/rules.py",
+        "    if prev_n == 0 and prev_v == 0:\n        # No baseline",
+        "    if False:  # MUTANT\n        # No baseline",
+    ),
 ]
 
 
@@ -981,6 +1096,27 @@ def run_tests() -> tuple[bool, str]:
     return r.returncode == 0, (line[-1] if line else "no output")
 
 
+# Written at the end of every run, complete or filtered.
+# `data/evaluation_report.json` is the model for this: the number a
+# README publishes should come out of a file something produced, not out
+# of somebody's memory of a terminal that has since scrolled away. It is
+# git-ignored for the same reason its sibling is -- it is a measurement of
+# a tree, not a property of one, and committing it would put a stale
+# number under version control and start a merge conflict per run.
+REPORT = ROOT / "data" / "mutation_report.json"
+
+# Every file this run has rewritten. The end-of-run check compares against THIS
+# rather than against whole directories -- see `_verify_tree_restored`.
+TOUCHED: set[str] = set()
+# The commit the run MEASURES, captured before the first mutation rather
+# than when the report is written. The report used to record HEAD at the
+# end, which on a run lasting two and a half hours is whatever somebody
+# committed while it worked -- so it claimed to have measured a tree it
+# had never seen. `check_counts.py` decides whether the score still holds
+# by asking what changed in `app/` since this commit, and that question is
+# meaningless against the wrong one.
+MEASURED_TREE: str | None = None
+
 # The same path `app.integrity` refuses to start on, and the flag that exempts
 # this process from it. Imported rather than repeated: a guard naming a
 # different file from the one written here would be a guard that never fires.
@@ -1010,7 +1146,11 @@ def _hold(lock: Path, relpath: str | None, original: str | None) -> None:
         "note": "Mutation test in progress. Source files are being rewritten.",
         "file": relpath,
         "original": original,
-    }))
+        # Progress, for the human reading `make mutants-status` rather than for
+        # the recovery path. A run of this length gets asked "how far in is it?"
+        # and the answer used to be unavailable without reading the log.
+        "rewritten_so_far": sorted(TOUCHED),
+    }, indent=2))
 
 
 def _recover(lock: Path) -> bool:
@@ -1078,6 +1218,15 @@ def main() -> int:
         return 1
     _hold(LOCK, None, None)
 
+    # Captured BEFORE the first mutation. `_write_report` records it as the
+    # tree this score describes, and `check_counts.py` asks what changed in
+    # `app/` since it to decide whether the score still holds -- a question
+    # that is meaningless against a commit made while the run was working.
+    global MEASURED_TREE
+    _head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                           capture_output=True, text=True)
+    MEASURED_TREE = _head.stdout.strip() or None
+
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
     # counts as a survivor, fifty minutes into a run. Checking first turns that
@@ -1111,6 +1260,7 @@ def main() -> int:
             survivors.append(label)
             continue
         try:
+            TOUCHED.add(relpath)
             # Recorded before the write, so a kill between the two lines still
             # leaves the lock naming a file that is not yet mutated -- which
             # restores to a no-op rather than to the wrong content.
@@ -1180,6 +1330,20 @@ def main() -> int:
 
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
+    _write_report(rows, caught_n, mutations)
+
+    # The evaluation report on disk now describes the LAST MUTANT's run -- a
+    # deliberately broken tree. `run_suite` already deletes it before each
+    # mutant so a stale file can never be misread as that mutant's result; the
+    # same argument applies at the end, and did not used to. Left behind, it
+    # makes `scripts/check_counts.py` report "scenarios-passed is published as
+    # 167, measured 166" with nothing on screen explaining that the 166 came
+    # from code somebody deliberately broke two hours ago.
+    stale = ROOT / "data" / "evaluation_report.json"
+    if stale.exists():
+        stale.unlink()
+        print(f"removed {stale.relative_to(ROOT)} -- it described a mutant, "
+              f"not this tree. Re-run `make eval` for a real one.")
     graded = len(mutations) - len(invalid)
     print(f"RESULT: {caught_n}/{graded} mutations caught"
           + (f" ({len(invalid)} not graded)" if invalid else ""))
@@ -1200,6 +1364,40 @@ def main() -> int:
         return 1
     print("Every injected defect was detected.")
     return 0
+
+
+def _write_report(rows, caught_n: int, mutations) -> None:
+    """Record the run so a published number can be checked against it.
+
+    `complete` is the field that matters. A filtered run measures a subset and
+    its ratio is not the project's mutation score; recording WHICH kind of run
+    this was is what stops a `scripts/mutation_test.py webhooks` result being
+    read later as though it covered everything.
+
+    `tree` is the commit the run measured. A report is a measurement of one
+    tree, and a reader comparing it to a different tree should be able to see
+    that rather than infer it.
+    """
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    REPORT.write_text(json.dumps({
+        "generated_at": datetime.now(UTC).isoformat(),
+        "tree": MEASURED_TREE,
+        "complete": len(mutations) == len(MUTATIONS),
+        "defined": len(MUTATIONS),
+        "run": len(mutations),
+        "caught": caught_n,
+        "survived": [label for label, status, _, _ in rows if status == "SURVIVED"],
+        "mutants": [
+            {"label": label, "status": status, "caught_by": detail,
+             # The scenarios that graded it red, which is what separates a
+             # mutant a scenario catches from one only a unit test does -- the
+             # distinction every honest reading of the score depends on.
+             "scenarios": [x for x in who.replace("…", "").split(", ") if x]}
+            for label, status, detail, who in rows
+        ],
+    }, indent=2) + "\n")
+    print(f"wrote {REPORT.relative_to(ROOT)}")
+
 
 
 # What each mutated file said before this run touched it, recorded as the run

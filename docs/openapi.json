@@ -90,6 +90,124 @@
         "title": "AccessReviewEntry",
         "type": "object"
       },
+      "ActionCenter": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalRow"
+            },
+            "title": "Awaiting Approval",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ActionCenterCounts"
+          },
+          "escalated": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Escalated",
+            "type": "array"
+          },
+          "executing": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Executing",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "recently_completed": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Recently Completed",
+            "type": "array"
+          },
+          "reconciliation_policy": {
+            "$ref": "#/components/schemas/ReconciliationPolicy"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "shown": {
+            "$ref": "#/components/schemas/ActionCenterCounts"
+          },
+          "unknown": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Unknown",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "merchant_id",
+          "awaiting_approval",
+          "executing",
+          "unknown",
+          "escalated",
+          "recently_completed",
+          "counts",
+          "shown",
+          "limit",
+          "reconciliation_policy",
+          "sections"
+        ],
+        "title": "ActionCenter",
+        "type": "object"
+      },
+      "ActionCenterCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "awaiting_approval": {
+            "title": "Awaiting Approval",
+            "type": "integer"
+          },
+          "escalated": {
+            "title": "Escalated",
+            "type": "integer"
+          },
+          "executing": {
+            "title": "Executing",
+            "type": "integer"
+          },
+          "recently_completed": {
+            "title": "Recently Completed",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "awaiting_approval",
+          "executing",
+          "unknown",
+          "escalated",
+          "recently_completed"
+        ],
+        "title": "ActionCenterCounts",
+        "type": "object"
+      },
       "ActionDetail": {
         "additionalProperties": false,
         "properties": {
@@ -266,6 +384,331 @@
         "title": "ActionDetail",
         "type": "object"
       },
+      "ActionRow": {
+        "additionalProperties": false,
+        "description": "One action in the Action Center, in every section that lists actions.\n\nDeliberately one shape for all four action sections. A per-section model is\nhow \"amount_minor\" comes to mean the requested amount in one column and the\nverified amount in another.",
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "amount_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Minor"
+          },
+          "approval_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Decision"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "escalated": {
+            "default": false,
+            "title": "Escalated",
+            "type": "boolean"
+          },
+          "escalated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Escalated At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Expires At"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Last Verified At"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "next_verify_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Next Verify At"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Latency Ms"
+          },
+          "recovery_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Candidate Id"
+          },
+          "required_signatures": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required Signatures"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Level"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Payment Id"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Request"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Updated At"
+          },
+          "verification_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Latency Ms"
+          },
+          "verification_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification State"
+          },
+          "verify_attempts": {
+            "title": "Verify Attempts",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "merchant_id",
+          "action_type",
+          "status",
+          "verify_attempts"
+        ],
+        "title": "ActionRow",
+        "type": "object"
+      },
       "ActionView": {
         "additionalProperties": false,
         "description": "The action as it appears inside a task.",
@@ -371,6 +814,116 @@
           "verify_attempts"
         ],
         "title": "ActionView",
+        "type": "object"
+      },
+      "ActivityEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "event_type",
+          "payload"
+        ],
+        "title": "ActivityEvent",
+        "type": "object"
+      },
+      "ActivityStep": {
+        "additionalProperties": false,
+        "description": "One step of the agent's operational progress \u2014 plan P0-08.\n\n`state` is the claim: `done` happened and worked, `failed` happened and did\nnot, `blocked` is waiting on a person, `running` is in flight, `pending` was\nexpected and not reached. A UI narrows on these.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "done",
+              "failed",
+              "blocked",
+              "running",
+              "pending"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "state"
+        ],
+        "title": "ActivityStep",
         "type": "object"
       },
       "AgentActivity": {
@@ -611,6 +1164,50 @@
           "signed_by"
         ],
         "title": "ApprovalView",
+        "type": "object"
+      },
+      "AttentionCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "approvals_expired": {
+            "title": "Approvals Expired",
+            "type": "integer"
+          },
+          "approvals_pending": {
+            "title": "Approvals Pending",
+            "type": "integer"
+          },
+          "critical_incidents": {
+            "title": "Critical Incidents",
+            "type": "integer"
+          },
+          "escalated_actions": {
+            "title": "Escalated Actions",
+            "type": "integer"
+          },
+          "open_incidents": {
+            "title": "Open Incidents",
+            "type": "integer"
+          },
+          "running_tasks": {
+            "title": "Running Tasks",
+            "type": "integer"
+          },
+          "unknown_actions": {
+            "title": "Unknown Actions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approvals_pending",
+          "approvals_expired",
+          "unknown_actions",
+          "escalated_actions",
+          "open_incidents",
+          "critical_incidents",
+          "running_tasks"
+        ],
+        "title": "AttentionCounts",
         "type": "object"
       },
       "CampaignBudget": {
@@ -928,6 +1525,102 @@
         "title": "CandidateView",
         "type": "object"
       },
+      "CommandCenter": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityEvent"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "attention": {
+            "$ref": "#/components/schemas/AttentionCounts"
+          },
+          "by_incident": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentExposure"
+            },
+            "title": "By Incident",
+            "type": "array"
+          },
+          "by_method": {
+            "items": {
+              "$ref": "#/components/schemas/MethodExposure"
+            },
+            "title": "By Method",
+            "type": "array"
+          },
+          "funnel": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStage"
+            },
+            "title": "Funnel",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "revenue": {
+            "$ref": "#/components/schemas/RevenueHealth"
+          }
+        },
+        "required": [
+          "generated_at",
+          "merchant_id",
+          "revenue",
+          "funnel",
+          "attention",
+          "by_incident",
+          "by_method",
+          "activity"
+        ],
+        "title": "CommandCenter",
+        "type": "object"
+      },
+      "ComponentHealth": {
+        "additionalProperties": true,
+        "description": "One dependency's verdict.\n\n`extra=\"forbid\"` is relaxed here alone: each check attaches the facts that\nmake its own verdict actionable \u2014 mapping coverage, webhook counts, the\nreconciliation backlog \u2014 and a fixed union of every check's extras would be\na model that has to be edited every time a check learns something new.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "detail",
+          "required",
+          "latency_ms"
+        ],
+        "title": "ComponentHealth",
+        "type": "object"
+      },
       "CorrelationTrace": {
         "additionalProperties": false,
         "description": "\u00a758's complete trace: everything one operation touched, in one ordering.",
@@ -1164,6 +1857,7 @@
       },
       "EscalatedAction": {
         "additionalProperties": false,
+        "description": "One row of the reconciliation work queue \u2014 plan P0-04.\n\nEvery field the plan names is here, because a queue that lists identifiers\nis not a work queue: age (`created_at`), amount, provider, external\nreference, last known state, attempts, last check, next retry, escalation,\nowner, and the incident and task it came from.\n\nTimestamps are `object` rather than `str` on the fields that come straight\nout of a `text()` query: those arrive as `datetime` and are serialised by\nFastAPI. Declaring them `str` would coerce and change the wire format of a\nresponse the frontend already parses.",
         "properties": {
           "action_type": {
             "title": "Action Type",
@@ -1179,6 +1873,40 @@
               }
             ],
             "title": "Amount Minor"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "escalated": {
+            "default": false,
+            "title": "Escalated",
+            "type": "boolean"
+          },
+          "escalated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Escalated At"
           },
           "external_payment_id": {
             "anyOf": [
@@ -1206,9 +1934,71 @@
             "title": "Id",
             "type": "string"
           },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Last Verified At"
+          },
           "merchant_id": {
             "title": "Merchant Id",
             "type": "string"
+          },
+          "next_verify_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Next Verify At"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
           },
           "target_payment_id": {
             "anyOf": [
@@ -1348,6 +2138,45 @@
         "title": "EvidenceGraph",
         "type": "object"
       },
+      "EvidenceRow": {
+        "additionalProperties": false,
+        "description": "One piece of evidence, as `app/tools/contracts.Evidence` produces it.\n\nDeclared because `evidence: list` -- a bare list -- says \"array of\nanything\" in the OpenAPI document, so a client generates `unknown[]` and\nthe compile-time contract check has nothing to check. `untrusted` in\nparticular is the \u00a736 injection tag, and a consumer that cannot see it in\nthe schema cannot be expected to honour it.\n\n`value` stays `Any` on purpose: it is a tool's finding, and a rate, a\ncount, an id and a free-text string are all legitimate. That is an open\nfield by nature rather than one nobody got round to.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "untrusted": {
+            "default": false,
+            "title": "Untrusted",
+            "type": "boolean"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "key",
+          "source"
+        ],
+        "title": "EvidenceRow",
+        "type": "object"
+      },
       "FailureClassView": {
         "additionalProperties": false,
         "description": "MerchantOps \u00a756. A code says what broke; this says whether trying again\nis even the question.",
@@ -1372,7 +2201,10 @@
             "type": "string"
           },
           "evidence": {
-            "items": {},
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRow"
+            },
             "title": "Evidence",
             "type": "array"
           },
@@ -1406,7 +2238,6 @@
           "owning_subsystem",
           "recommended_next_action",
           "correlation_id",
-          "evidence",
           "is_classified"
         ],
         "title": "FailureClassView",
@@ -1545,6 +2376,31 @@
           "kind"
         ],
         "title": "FindingView",
+        "type": "object"
+      },
+      "FunnelStage": {
+        "additionalProperties": false,
+        "description": "One stage of the recovery funnel \u2014 P1-03.\n\nOrdered and named server-side so at-risk can never be rendered as\nrecovered by a client that arranged six loose numbers itself.",
+        "properties": {
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "label",
+          "amount_minor"
+        ],
+        "title": "FunnelStage",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1842,9 +2698,70 @@
         "title": "IncidentCounts",
         "type": "object"
       },
+      "IncidentExposure": {
+        "additionalProperties": false,
+        "description": "One incident's row in the ledger breakdown.\n\nDeclared, rather than left as the `dict` it used to be, because an\nundeclared field is an undeclared TYPE. `recoverable_minor` reached the\nwire as the string `\"2798847\"` while the identically-named field one level\nup was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a\nbigint, psycopg2 turns that into `Decimal`, and a model that says `dict`\ngives pydantic nothing to coerce it against. Money on a revenue ledger,\ntwo types, one response.\n\nNothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a\nnumeric string -- which is exactly why it survived. The first `reduce` over\nthese rows would have concatenated instead of adding.",
+        "properties": {
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "incident_type": {
+            "title": "Incident Type",
+            "type": "string"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "revenue_at_risk_minor": {
+            "title": "Revenue At Risk Minor",
+            "type": "integer"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "incident_type",
+          "severity",
+          "status",
+          "title",
+          "revenue_at_risk_minor",
+          "recoverable_minor",
+          "recovered_minor"
+        ],
+        "title": "IncidentExposure",
+        "type": "object"
+      },
       "IncidentList": {
         "additionalProperties": false,
         "properties": {
+          "applied_view": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied View"
+          },
           "incidents": {
             "items": {
               "$ref": "#/components/schemas/IncidentSummary"
@@ -1852,9 +2769,27 @@
             "title": "Incidents",
             "type": "array"
           },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "shown": {
+            "default": 0,
+            "title": "Shown",
+            "type": "integer"
+          },
           "total_revenue_at_risk_minor": {
             "title": "Total Revenue At Risk Minor",
             "type": "integer"
+          },
+          "views": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SavedView"
+            },
+            "title": "Views",
+            "type": "array"
           }
         },
         "required": [
@@ -1867,6 +2802,20 @@
       "IncidentSummary": {
         "additionalProperties": false,
         "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ActionRow"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
           "confidence": {
             "anyOf": [
               {
@@ -1931,8 +2880,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/EvidenceRow"
                 },
                 "type": "array"
               },
@@ -2043,8 +2991,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/TimelineEntry"
                 },
                 "type": "array"
               },
@@ -2099,6 +3046,27 @@
         "title": "IncidentTrace",
         "type": "object"
       },
+      "InstanceReadiness": {
+        "additionalProperties": false,
+        "description": "`/ready` \u2014 whether this instance can do work, not whether it is alive.\n\nNamed apart from `Readiness` because both branches of the spine/trunk merge\ndefined a model by that name and they are not the same shape: this one is\n`/ready`'s two-field answer, and `Readiness` is `/readiness`'s per-component\nreport. Sharing the name meant the later definition silently won and the\nother endpoint returned a 500 on response validation.",
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "checks"
+        ],
+        "title": "InstanceReadiness",
+        "type": "object"
+      },
       "InvestigateResult": {
         "additionalProperties": false,
         "properties": {
@@ -2134,16 +3102,14 @@
           },
           "by_incident": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/IncidentExposure"
             },
             "title": "By Incident",
             "type": "array"
           },
           "by_method": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/MethodExposure"
             },
             "title": "By Method",
             "type": "array"
@@ -2153,7 +3119,9 @@
             "type": "integer"
           },
           "invariants_broken": {
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Invariants Broken",
             "type": "array"
           },
@@ -2193,6 +3161,168 @@
           "invariants_broken"
         ],
         "title": "LedgerView",
+        "type": "object"
+      },
+      "LifecycleEvent": {
+        "additionalProperties": false,
+        "description": "One link in \u00a77's chain. Every entry is a row that exists, with its own\ntimestamp \u2014 never an inferred step.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "id",
+          "label"
+        ],
+        "title": "LifecycleEvent",
+        "type": "object"
+      },
+      "LifecyclePayment": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "amount_refunded_minor": {
+            "title": "Amount Refunded Minor",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "error_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Reason"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Id"
+          },
+          "refund_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Status"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchant_id",
+          "amount_minor",
+          "currency",
+          "method",
+          "status",
+          "amount_refunded_minor"
+        ],
+        "title": "LifecyclePayment",
         "type": "object"
       },
       "LiveEventList": {
@@ -2346,6 +3476,25 @@
         "title": "LiveEventView",
         "type": "object"
       },
+      "Liveness": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checked_at"
+        ],
+        "title": "Liveness",
+        "type": "object"
+      },
       "Me": {
         "additionalProperties": false,
         "properties": {
@@ -2497,6 +3646,36 @@
           "at"
         ],
         "title": "MessageView",
+        "type": "object"
+      },
+      "MethodExposure": {
+        "additionalProperties": false,
+        "description": "One payment method's row in the ledger breakdown. Same story as\n`IncidentExposure`, same fix.",
+        "properties": {
+          "candidates": {
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "recoverable_minor",
+          "recovered_minor",
+          "candidates"
+        ],
+        "title": "MethodExposure",
         "type": "object"
       },
       "MetricView": {
@@ -2894,6 +4073,219 @@
         "title": "OperationalMetrics",
         "type": "object"
       },
+      "PaymentLifecycle": {
+        "additionalProperties": false,
+        "description": "MerchantOps \u00a77 \u2014 a payment traceable through its complete lifecycle.",
+        "properties": {
+          "action_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Action Ids",
+            "type": "array"
+          },
+          "correlation_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Correlation Ids",
+            "type": "array"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/LifecycleEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "external_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Payment Id"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "incident_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Incident Ids",
+            "type": "array"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/LifecyclePayment"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "stages": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stages",
+            "type": "array"
+          },
+          "task_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "payment",
+          "events",
+          "stages",
+          "generated_at"
+        ],
+        "title": "PaymentLifecycle",
+        "type": "object"
+      },
+      "PendingApprovalRow": {
+        "additionalProperties": false,
+        "description": "An approval no action exists for yet \u2014 the money has not moved.\n\nSeparate from `ActionRow` because there is genuinely no action row to\ndescribe: the claim is not made until the approval clears. Modelling it as\nan action with null everything would tell an operator an action exists.",
+        "properties": {
+          "action_payload": {
+            "additionalProperties": true,
+            "title": "Action Payload",
+            "type": "object"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Created At"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "evidence": {
+            "default": [],
+            "items": {},
+            "title": "Evidence",
+            "type": "array"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {}
+            ],
+            "title": "Expires At"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "required_signatures": {
+            "title": "Required Signatures",
+            "type": "integer"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "signatures": {
+            "title": "Signatures",
+            "type": "integer"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Request"
+          }
+        },
+        "required": [
+          "approval_id",
+          "task_id",
+          "action_type",
+          "action_payload",
+          "risk_level",
+          "decision",
+          "required_signatures",
+          "signatures",
+          "expired"
+        ],
+        "title": "PendingApprovalRow",
+        "type": "object"
+      },
       "PermissionView": {
         "additionalProperties": false,
         "properties": {
@@ -3171,21 +4563,43 @@
       },
       "Readiness": {
         "additionalProperties": false,
-        "description": "`/ready` \u2014 whether this instance can do work, not whether it is alive.",
         "properties": {
-          "checks": {
-            "additionalProperties": true,
-            "title": "Checks",
+          "blocking": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking",
+            "type": "array"
+          },
+          "checked_at": {
+            "title": "Checked At",
+            "type": "string"
+          },
+          "components": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ComponentHealth"
+            },
+            "title": "Components",
             "type": "object"
           },
-          "ready": {
-            "title": "Ready",
-            "type": "boolean"
+          "degraded": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Degraded",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
           }
         },
         "required": [
-          "ready",
-          "checks"
+          "status",
+          "checked_at",
+          "components",
+          "blocking",
+          "degraded"
         ],
         "title": "Readiness",
         "type": "object"
@@ -3257,6 +4671,25 @@
           "details"
         ],
         "title": "ReconcileReport",
+        "type": "object"
+      },
+      "ReconciliationPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "on_exhaustion": {
+            "title": "On Exhaustion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_attempts",
+          "on_exhaustion"
+        ],
+        "title": "ReconciliationPolicy",
         "type": "object"
       },
       "RefreshRequest": {
@@ -3446,6 +4879,58 @@
           "success"
         ],
         "title": "ReplayStep",
+        "type": "object"
+      },
+      "RevenueHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "at_risk_minor": {
+            "title": "At Risk Minor",
+            "type": "integer"
+          },
+          "attempted_minor": {
+            "title": "Attempted Minor",
+            "type": "integer"
+          },
+          "failed_minor": {
+            "title": "Failed Minor",
+            "type": "integer"
+          },
+          "invariants_broken": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Invariants Broken",
+            "type": "array"
+          },
+          "outstanding_minor": {
+            "title": "Outstanding Minor",
+            "type": "integer"
+          },
+          "recoverable_minor": {
+            "title": "Recoverable Minor",
+            "type": "integer"
+          },
+          "recovered_minor": {
+            "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "unknown_minor": {
+            "title": "Unknown Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "at_risk_minor",
+          "recoverable_minor",
+          "attempted_minor",
+          "recovered_minor",
+          "failed_minor",
+          "unknown_minor",
+          "outstanding_minor",
+          "invariants_broken"
+        ],
+        "title": "RevenueHealth",
         "type": "object"
       },
       "ReverifyResult": {
@@ -3669,6 +5154,42 @@
           "workflow"
         ],
         "title": "RunVersions",
+        "type": "object"
+      },
+      "SavedView": {
+        "additionalProperties": false,
+        "description": "One saved view \u2014 plan P1-05. Declared server-side so that \"My attention\"\ncannot mean one thing in a pasted link and another in the sidebar.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "hint",
+          "filter",
+          "count"
+        ],
+        "title": "SavedView",
         "type": "object"
       },
       "ScenarioCheck": {
@@ -3908,6 +5429,90 @@
           "revoked"
         ],
         "title": "ScimTokenSummary",
+        "type": "object"
+      },
+      "SearchHit": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "route"
+        ],
+        "title": "SearchHit",
+        "type": "object"
+      },
+      "SearchResults": {
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query",
+          "results",
+          "truncated"
+        ],
+        "title": "SearchResults",
         "type": "object"
       },
       "SetPermissionsRequest": {
@@ -4284,6 +5889,14 @@
             "title": "Actions",
             "type": "array"
           },
+          "activity": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ActivityStep"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
           "agent_confidence": {
             "anyOf": [
               {
@@ -4556,6 +6169,159 @@
         "title": "TaskView",
         "type": "object"
       },
+      "TimelineDetail": {
+        "additionalProperties": false,
+        "description": "The keys an incident timeline entry may carry.\n\nA closed set, and not a guess at one: `app/api/main.py` filters the audit\npayload against exactly this list before it reaches the response. Declaring\nthe fields rather than the dict is what makes the OpenAPI document say what\na timeline entry can actually contain.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "intervention": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervention"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          }
+        },
+        "title": "TimelineDetail",
+        "type": "object"
+      },
+      "TimelineEntry": {
+        "additionalProperties": false,
+        "description": "One row of an incident's timeline. Every entry is a recorded event with\nits own timestamp -- never an inferred step.\n\n`detail` was annotated `str | None` on the first attempt at typing this,\nand the suite failed immediately with\n`input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,\nand that is the argument for declaring these fields rather than leaving\nthem as `dict`: a wrong type fails loudly at the boundary, where an absent\none fails silently in a consumer.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/TimelineDetail",
+            "default": {}
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "at",
+          "event"
+        ],
+        "title": "TimelineEntry",
+        "type": "object"
+      },
       "TokenPair": {
         "additionalProperties": false,
         "properties": {
@@ -4630,7 +6396,9 @@
           },
           "evidence": {
             "default": [],
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRow"
+            },
             "title": "Evidence",
             "type": "array"
           },
@@ -5055,7 +6823,9 @@
           },
           "reverified": {
             "default": [],
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Reverified",
             "type": "array"
           },
@@ -5250,6 +7020,63 @@
           }
         },
         "summary": "Get Access Review"
+      }
+    },
+    "/actions": {
+      "get": {
+        "description": "The Action Center \u2014 plan P0-03.\n\nOne read, five sections, one instant. A browser that assembled this from\n`/approvals`, `/actions/escalated` and `/incidents` would be showing counts\nfrom three different moments, and the moments diverge exactly when the\nnumbers are moving.\n\nDeclared above `/actions/{action_id}`: FastAPI matches in declaration order,\nand a parameterised path declared first would swallow this one.",
+        "operationId": "action_center_view_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionCenter"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Action Center View"
       }
     },
     "/actions/escalated": {
@@ -5879,6 +7706,53 @@
         "summary": "Get Campaign"
       }
     },
+    "/command-center": {
+      "get": {
+        "description": "The home screen \u2014 plan P0-05.\n\nRevenue health, the recovery funnel, what is waiting on a human, and the\nlive activity feed, in one merchant-scoped read. The funnel arrives as an\nordered list of named stages rather than six loose figures, because P1-03's\nrule \u2014 at-risk must never read as recovered \u2014 is easiest to keep true by\nnever handing a client the chance to arrange them itself.",
+        "operationId": "command_center_view_command_center_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandCenter"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Command Center View"
+      }
+    },
     "/config/llm-provider": {
       "post": {
         "description": "Switch between providers that are already configured.\n\nDeliberately narrow. It selects among providers the process can already\nreach; it never accepts a credential. CONTRACT \u00a737 keeps secrets in the\nenvironment, and a browser form is not that.\n\nThe override does not survive a restart, deliberately: persisting it would\nmake the active provider a piece of durable state that no environment\nvariable explains, which is a worse trade.\n\nWhere it applies depends on the deployment, and the response says which.\nWith `REDIS_URL` set it is shared, so the switch applies to every replica.\nWithout it the override is process-local and this switched the provider for\nwhichever replica happened to serve the request -- an operator switching to\nthe deterministic planner would then watch the model keep being used by the\nothers. `applies_to` is `fleet` or `this_replica_only`, because those are\ndifferent outcomes and the operator is entitled to know which one happened.",
@@ -6251,7 +8125,7 @@
     },
     "/incidents": {
       "get": {
-        "description": "The operations console. Scoped to the caller's merchant, ordered by\nrevenue at risk \u2014 the largest problem is the one to open first.",
+        "description": "The operations console \u2014 plan P1-05. Scoped to the caller's merchant,\nordered by revenue at risk: the largest problem is the one to open first.\n\nFiltering happens in SQL. A console that fetches every incident and filters\nin the browser gets slower as the merchant gets busier, and puts the\nmerchant scope and the filter in two different places.\n\n`view` names one of the saved views, which are declared server-side\n(`app.incidents.filters.SAVED_VIEWS`) so that \"My attention\" cannot mean one\nthing in a pasted link and another in the sidebar. A view a client asks for\nand nobody declares is a 422 rather than an unfiltered list \u2014 silently\nshowing everything would read as though the view matched every incident.\n\nThe unfiltered call is unchanged and still takes the fast path, so nothing\nthat used this endpoint before pays for the filtering it does not use.",
         "operationId": "list_incidents_incidents_get",
         "parameters": [
           {
@@ -6261,6 +8135,170 @@
             "schema": {
               "default": false,
               "title": "Include Closed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "View"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "incident_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Incident Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "payment_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Method"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_amount_minor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Amount Minor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_age_hours",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Age Hours"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unresolved",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unresolved",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approval_required",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Approval Required",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_unknown",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Has Unknown",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "escalated",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Escalated",
               "type": "boolean"
             }
           },
@@ -6688,6 +8726,25 @@
         "summary": "Get Incident Trace"
       }
     },
+    "/liveness": {
+      "get": {
+        "description": "MerchantOps \u00a711. The process is running \u2014 nothing more.\n\nUnauthenticated and dependency-free on purpose. A liveness probe that\ntouches the database restarts the API when the database blips, which is the\none response guaranteed not to help.",
+        "operationId": "liveness_probe_liveness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness Probe"
+      }
+    },
     "/me": {
       "get": {
         "description": "Who the caller is, as the server understands it.\n\nThe client never asserts this. It is returned so an interface can show the\nacting identity \u2014 the same screen behaves differently for an owner and an\nanalyst, and an operator should not have to infer which one they are.",
@@ -7035,6 +9092,109 @@
         "summary": "Sweep Notifications"
       }
     },
+    "/payments/{payment_id}/lifecycle": {
+      "get": {
+        "description": "One payment, end to end \u2014 MerchantOps \u00a77.\n\n`/trace/{correlation_id}` answers \"everything one OPERATION touched\". This\nanswers \"everything that ever touched this PAYMENT\", which is a different\nquestion and the one an operator has when a customer is on the phone: a\npayment's life spans several operations with several correlation ids, and\nnothing joined them.\n\n404 rather than 403 for another merchant's payment: existence is not leaked.",
+        "operationId": "get_payment_lifecycle_payments__payment_id__lifecycle_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_id",
+            "required": true,
+            "schema": {
+              "title": "Payment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentLifecycle"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Payment Lifecycle"
+      }
+    },
+    "/readiness": {
+      "get": {
+        "description": "MerchantOps \u00a711. Every dependency, checked, with a per-component verdict.\n\nReturns 503 when a *required* component is down, so a load balancer can act\non the status line without parsing the body. `degraded` is 200: the API can\nstill serve, and taking it out of rotation for a stopped cron sweep would\nremove the one interface an operator has for finding out about the stopped\ncron sweep.\n\n**Two audiences, two bodies.** A probe cannot hold a token, so the verdicts\nare unauthenticated. The operational detail behind them \u2014 mapping coverage,\nhow far the sweep is behind, which payments drifted \u2014 is not: those are the\nsame shape of fact `/metrics/prometheus` already refuses to serve without a\nscrape token, and drawing the line in a different place here for no reason\nwould be an inconsistency an attacker gets to choose between.\n\nA valid bearer token therefore widens the response. An absent or invalid one\nnarrows it rather than refusing: a probe presenting nothing must still get\nits verdict, and a probe presenting a stale token must not start failing the\ndeployment's health check.",
+        "operationId": "readiness_probe_readiness_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Readiness Probe"
+      }
+    },
     "/ready": {
       "get": {
         "description": "Readiness, which is a different question from `/health`.\n\n`/health` reports the process's posture -- which provider, which adapter,\nwhat budget -- and answers without touching anything. That makes it a\nliveness probe: if it returns, the process is alive and should not be\nrestarted.\n\nIt is the wrong probe to route traffic on. A container whose database is\nunreachable, or whose schema is behind the code deployed over it, is alive\nand cannot serve a request. Sending it traffic produces 500s that look like\nan application fault.\n\nSo this one asks the two questions that decide whether this instance can do\nwork: can it reach the database, and is the schema at the revision this code\nexpects. Returns 503 when either fails, because an orchestrator reads the\nstatus code and not the body.\n\nDeliberately unauthenticated, like `/health`: a probe cannot hold a bearer\ntoken, and what it discloses is whether the service works -- which anyone\nwho can reach it discovers by sending a request anyway. It reports no\nconfiguration and no data.",
@@ -7044,7 +9204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Readiness"
+                  "$ref": "#/components/schemas/InstanceReadiness"
                 }
               }
             },
@@ -8095,6 +10255,63 @@
           }
         },
         "summary": "Scim Replace User"
+      }
+    },
+    "/search": {
+      "get": {
+        "description": "One box, every identifier \u2014 plan P1-06.\n\nExact match only. Every identifier in this system is pasted rather than\ntyped, and a prefix search over payment ids invites acting on whichever row\nsorted first.",
+        "operationId": "global_search_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Global Search"
       }
     },
     "/sso": {

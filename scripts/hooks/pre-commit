@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Installed by `make hooks`. Refuses a commit that would record a mutant.
+#
+# The harness reverts every mutation itself and verifies the tree afterwards.
+# Neither stops a commit made WHILE it runs, and that is not hypothetical: on
+# 2026-09-08 a `git add -A` during a run pushed the mutation that removes the
+# human approval gate on high-risk financial actions.
+exec "$(git rev-parse --show-toplevel)/scripts/check_no_mutants.py" --staged

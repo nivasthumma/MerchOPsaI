@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { EscalatedAction, ReconcileReport } from "../api/types";
 import {
   Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   isVerificationState, VerificationPill, When,
 } from "../components/Bits";
+import { LiveBar } from "../components/LiveBar";
 import { useToast } from "../components/Toast";
+import { useLiveRefresh } from "../hooks/useLiveRefresh";
 
 export default function Operations() {
-  const [rows, setRows] = useState<EscalatedAction[] | null>(null);
   const [report, setReport] = useState<ReconcileReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [params, setParams] = useSearchParams();
@@ -20,43 +21,27 @@ export default function Operations() {
     else next.delete("scope");
     setParams(next, { replace: true });
   };
-  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [live, setLive] = useState(true);
   const [minAge, setMinAge] = useState(30);
   const [error, setError] = useState<ApiError | null>(null);
   const toast = useToast();
 
-  const load = useCallback(async () => {
-    try {
-      // 5 is the escalation line; 0 is everything still unsettled, including
-      // the actions the sweep has not given up on. Showing only the former
-      // leaves an operator blind to work in progress.
-      setRows(await api.escalated(escalatedOnly ? 5 : 0));
-      setFetchedAt(new Date().toISOString());
-    } catch (e) {
-      setError(e as ApiError);
-    }
-  }, [escalatedOnly]);
-
-  useEffect(() => { void load(); }, [load]);
-
   // This queue changes without anyone touching this tab: a cron sweep settles
   // something, another operator approves a refund. A stale work list is worse
   // than an empty one, because it looks current.
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const tick = () => { if (!document.hidden) void load(); };
-    const start = () => { if (!timer) timer = setInterval(tick, 15000); };
-    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
-    const onVisibility = () => {
-      if (document.hidden) { setLive(false); stop(); }
-      else { setLive(true); void load(); start(); }
-    };
-    setLive(!document.hidden);
-    if (!document.hidden) start();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => { stop(); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [load]);
+  //
+  // The loop used to live here — visibility handling, an interval, a fetched-at
+  // stamp — and was one of three hand-rolled copies, each with a different
+  // subset of the rules right. Plan P0-06 asks for one bounded hook and this
+  // now uses it.
+  //
+  // 5 is the escalation line; 0 is everything still unsettled, including the
+  // actions the sweep has not given up on. Showing only the former leaves an
+  // operator blind to work in progress.
+  const live = useLiveRefresh<EscalatedAction[]>(
+    () => api.escalated(escalatedOnly ? 5 : 0),
+    { intervalMs: 15000, deps: [escalatedOnly] });
+  const rows = live.data;
+  const load = live.refresh;
 
   async function sweep() {
     setBusy(true);
@@ -191,11 +176,6 @@ export default function Operations() {
 
       <div className="card">
         <SectionHead title="Operator queue" count={rows ? `${rows.length}` : undefined}>
-          <span className="muted" style={{ fontSize: 12 }}>
-            {fetchedAt ? <>read <When iso={fetchedAt} /></> : null}
-            {live ? <span className="pill ok" style={{ marginLeft: 8 }}>live</span>
-                  : <span className="pill neutral" style={{ marginLeft: 8 }}>paused</span>}
-          </span>
           <div className="filters" style={{ margin: 0 }}>
             <button aria-pressed={escalatedOnly} onClick={() => setScope("escalated")}>
               Escalated
@@ -205,6 +185,7 @@ export default function Operations() {
             </button>
           </div>
         </SectionHead>
+        <LiveBar live={live} what="the queue" />
         <p className="sub">
           {escalatedOnly
             ? "Actions the sweep could not settle within its attempt limit — five tries. Escalated rather than swept forever, so nothing sits unresolved and invisible."

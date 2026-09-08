@@ -35,6 +35,14 @@
   --text: #0f1f1a;               /* 17.1:1 on surface */
   --text-2: #46584f;             /*  7.6:1 on surface */
   --text-dim: #64766d;           /*  4.9:1 on surface — labels, keys, timestamps */
+  /* The same grey on a TINTED background is a different measurement, and the
+     ops strip tints its own cells: `--text-dim` on `--danger-soft` at 9.5px
+     came out at 4.17:1, below AA. Nothing in the palette was wrong — 4.9:1 is
+     true, on `--surface`, which is where it was measured. The class that
+     changed the background did not change the text.
+     Only findable by measuring what was actually painted, which is what
+     `e2e/accessibility.spec.ts` now does. */
+  --text-dim-on-tint: #4d5b54;   /*  6.2:1 on --danger-soft and --warn-soft */
 
   --accent: #175e4c;             /*  7.7:1 on surface */
   --accent-hover: #12503f;
@@ -82,6 +90,10 @@
     --text: #e3ebe6;             /* 14.9:1 on surface */
     --text-2: #9bafa6;           /*  7.7:1 on surface */
     --text-dim: #7b8f86;         /*  5.2:1 on surface — was the weakest value */
+    /* Already 5.1:1 and 5.3:1 on the dark tints, so it needs no darker
+       sibling — the failure was light-theme only. Defined anyway so the rule
+       below has one meaning in both themes rather than a fallback in one. */
+    --text-dim-on-tint: #7b8f86;
 
     --accent: #6fc3a3;           /*  8.5:1 on surface */
     --accent-hover: #8ad4b8;
@@ -174,6 +186,11 @@ pre {
 .frame > .shell { max-width: none; margin: 0; padding: 14px 16px 64px; width: 100%; }
 /* Signed out there is no rail, so the form should not sit hard against the left. */
 .frame:not(:has(.rail)) { grid-template-columns: minmax(0, 1fr); }
+/* An empty rail is 252px of "Nothing yet." beside the densest tables in the
+   application, on every screen, for as long as somebody has opened no tasks --
+   which is the whole of a first session. It keeps its full width once there is
+   something in it to read, because then it is doing its job. */
+.frame:has(.rail-empty) { grid-template-columns: 186px minmax(0, 1fr); }
 .frame:not(:has(.rail)) > .shell { margin: 0 auto; }
 
 /* ---- the operations strip ------------------------------------------------
@@ -195,6 +212,10 @@ pre {
 }
 .strip-cell b { font-size: 11.5px; letter-spacing: -0.02em; color: var(--text);
                 font-weight: 600; text-transform: none; }
+/* A tinted cell needs a label colour measured against the tint, not against
+   the surface it no longer sits on. */
+.strip-cell.warn,
+.strip-cell.danger { color: var(--text-dim-on-tint); }
 .strip-cell.warn { background: var(--warn-soft); }
 .strip-cell.warn b { color: var(--warn-ink); }
 .strip-cell.danger { background: var(--danger-soft); }
@@ -370,7 +391,12 @@ header.top {
 }
 .top-inner {
   max-width: none; margin: 0; padding: 8px 16px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  display: flex; align-items: center; flex-wrap: wrap;
+  /* Separate axes. The nav is wide enough that `top-right` wraps below it on a
+     laptop, and a 16px row gap turned that wrap into a band of empty header --
+     the identity on the left, the controls on the right, and a void between
+     them that read as a layout fault rather than as a second row. */
+  column-gap: 16px; row-gap: 4px;
 }
 
 .logo { display: flex; align-items: center; gap: 10px; margin-right: auto; }
@@ -544,6 +570,36 @@ label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 
 .pill.danger  { background: var(--danger-soft);  color: var(--danger);  border-color: var(--danger-border); }
 .pill.unknown { background: var(--unknown-soft); color: var(--unknown); border-color: var(--unknown-border); }
 .pill.neutral { background: var(--surface-2);    color: var(--text-dim); border-color: var(--border); }
+
+/* --- incident severity ---------------------------------------------------
+   `data-sev` is set on the incident page, the incidents list and the
+   dashboard, and had no rule behind it anywhere: CRITICAL, HIGH, MEDIUM and
+   LOW all rendered as the same plain uppercase text. An operator scanning a
+   list of five incidents could not see which one was critical without reading
+   every row.
+
+   Toned like the pills, and reusing their tokens rather than new colours --
+   severity and risk are the same question asked about different things, and
+   two vocabularies for one idea is how a console stops being scannable. The
+   word itself is still the label, so this adds a cue rather than replacing
+   one (P1-08). `--warn-ink`, not `--warn`: the fill colour lands near 3:1 as
+   text on its own tint. */
+[data-sev] {
+  display: inline-flex; align-items: center; padding: 2px 9px;
+  border-radius: 999px; border: 1px solid transparent;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+}
+[data-sev="CRITICAL"] { background: var(--danger-soft);  color: var(--danger);
+                        border-color: var(--danger-border); }
+[data-sev="HIGH"]     { background: var(--danger-soft);  color: var(--danger);
+                        border-color: var(--danger-border); }
+[data-sev="MEDIUM"]   { background: var(--warn-soft);    color: var(--warn-ink);
+                        border-color: var(--warn-border); }
+[data-sev="LOW"]      { background: var(--surface-2);    color: var(--text-dim);
+                        border-color: var(--border); }
+/* CRITICAL is the only one that should stop an eye travelling down a column. */
+[data-sev="CRITICAL"] { font-weight: 700; box-shadow: inset 2px 0 0 var(--danger); }
 /* UNKNOWN is a live state, not a finished one. The pulse says "still open"
    without implying anything about which way it will resolve. */
 .pill.unknown::before {
@@ -1266,36 +1322,1105 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
 .transcript pre { margin: 0; max-height: 16rem; overflow: auto; font-size: .78rem;
                   white-space: pre-wrap; word-break: break-word; }
 
+/* Scoped under .live-feed at the spine/trunk merge: CommandCenter's
+   .feed list uses .feed-what too, and these rules would have dimmed and
+   truncated it. Same reasoning as the note below about .timeline/.ev. */
 /* --- §62 / §65 live timeline -------------------------------------------
    Deliberately NOT `.timeline`/`.ev`: those belong to the incident detail
    page, where `.ev` is the event NAME rather than the row. Sharing them
    would have let a change on this screen restyle that one. */
 .live-feed { list-style: none; margin: 0; padding: 0; }
-.feed-row { display: grid; gap: .7rem; align-items: baseline; padding: .3rem 0;
+.live-feed .feed-row { display: grid; gap: .7rem; align-items: baseline; padding: .3rem 0;
             grid-template-columns: 5.5rem 12rem 1fr auto auto;
             border-bottom: 1px solid var(--line); font-size: .85rem; }
-.feed-at { font-variant-numeric: tabular-nums; color: var(--text-dim);
+.live-feed .feed-at { font-variant-numeric: tabular-nums; color: var(--text-dim);
            font-size: .78rem; }
 /* The event name is the one thing a reader scans down the column, so it is the
    monospaced, weighted element and everything else defers to it. */
-.feed-name { font-family: ui-monospace, monospace; font-weight: 600;
+.live-feed .feed-name { font-family: ui-monospace, monospace; font-weight: 600;
              font-size: .78rem; }
-.feed-what { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;
+.live-feed .feed-what { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis;
              white-space: nowrap; }
-.feed-links { display: flex; gap: .5rem; font-size: .75rem; }
-.feed-ago { color: var(--text-dim); font-size: .75rem; white-space: nowrap; }
+.live-feed .feed-links { display: flex; gap: .5rem; font-size: .75rem; }
+.live-feed .feed-ago { color: var(--text-dim); font-size: .75rem; white-space: nowrap; }
 
 /* Tone follows the same vocabulary as the rest of the app: clay only where
    money is about to move, green only where something was verified. */
-.feed-ok    .feed-name { color: var(--ok); }
-.feed-warn  .feed-name { color: var(--warn); }
-.feed-info  .feed-name { color: var(--accent); }
-.feed-muted .feed-name { color: var(--text-dim); }
+.live-feed .feed-ok    .feed-name { color: var(--ok); }
+.live-feed .feed-warn  .feed-name { color: var(--warn); }
+.live-feed .feed-info  .feed-name { color: var(--accent); }
+.live-feed .feed-muted .feed-name { color: var(--text-dim); }
 
 @media (max-width: 720px) {
   /* The links and the relative time are the first things to go: on a narrow
      screen the name and its one-line summary are what the feed is for. */
-  .feed-row { grid-template-columns: 4.5rem 1fr; }
-  .feed-what { grid-column: 1 / -1; white-space: normal; }
-  .feed-links, .feed-ago { display: none; }
+  .live-feed .feed-row { grid-template-columns: 4.5rem 1fr; }
+  .live-feed .feed-what { grid-column: 1 / -1; white-space: normal; }
+  .live-feed .feed-links, .live-feed .feed-ago { display: none; }
 }
+
+/* ==========================================================================
+   Operations console — plan P0-03, P0-05, P0-06, P1-01, P1-08, P1-12.
+
+   Restrained on purpose (P1-09): no gradients behind financial values, no
+   glow, no animation that is not reporting something real. A figure that
+   shimmers reads as live even when the request behind it failed.
+   ========================================================================== */
+
+/* --- P1-01: the nav groups --------------------------------------------- */
+.tab-group { display: inline-flex; align-items: center; gap: 2px; }
+.tab-group + .tab-group { margin-left: 6px; padding-left: 8px;
+                          border-left: 1px solid var(--border); }
+.tab-group-label {
+  font-size: 9.5px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-dim); padding: 0 4px; user-select: none;
+}
+@media (max-width: 1100px) {
+  /* The group labels are orientation, not navigation. On a narrow header the
+     destinations matter and the headings are what gives way — hidden rather
+     than wrapped, so the tabs stay on one scrollable row. */
+  .tab-group-label { display: none; }
+  .tab-group + .tab-group { margin-left: 2px; padding-left: 4px; }
+}
+
+/* --- P1-12: text for assistive tech only, never a visual-only meaning --- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* The glyph inside a status pill. A shape as well as a colour, so the state
+   survives greyscale and colour blindness (P1-12: no colour-only meaning). */
+.pill-glyph { margin-right: 5px; font-size: 11px; opacity: 0.85; }
+
+/* --- P0-06: the freshness line ----------------------------------------- */
+.livebar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 6px 10px; font-size: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: var(--text-2);
+}
+.livedot { width: 7px; height: 7px; border-radius: 50%; flex: none;
+           background: var(--text-dim); }
+.livedot.is-live { background: var(--ok); }
+.livedot.is-paused { background: var(--text-dim); }
+.livedot.is-error { background: var(--danger); }
+.livebar .linkish { margin-left: auto; }
+
+/* --- tiles: the attention row and the revenue figures ------------------ */
+.tiles {
+  display: grid; gap: 10px; margin: 0 0 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.tile {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); color: inherit; text-decoration: none;
+}
+a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft);
+               text-decoration: none; }
+.tile-n {
+  font-family: var(--display);
+  font-size: 30px; font-weight: 600; line-height: 1.05;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.tile-l { display: flex; align-items: center; gap: 6px;
+          font-size: 12px; color: var(--text-2); }
+.tile-g { font-size: 11px; line-height: 1; }
+
+/* The tone the tile carries, in place of a pill that used to repeat its own
+   label. A left edge rather than a fill: four filled cards compete with each
+   other and with the money below them, and this row's job is to be scanned,
+   not to shout. */
+.tile.t-warn    { border-left: 3px solid var(--warn); }
+.tile.t-warn    .tile-g { color: var(--warn-ink); }
+.tile.t-unknown { border-left: 3px solid var(--unknown); }
+.tile.t-unknown .tile-g { color: var(--unknown); }
+.tile.t-danger  { border-left: 3px solid var(--danger); }
+.tile.t-danger  .tile-g { color: var(--danger); }
+.tile.t-info    { border-left: 3px solid var(--accent); }
+.tile.t-info    .tile-g { color: var(--accent); }
+.tile.t-ok      { border-left: 3px solid var(--ok); }
+.tile.t-ok      .tile-g { color: var(--ok); }
+
+/* Zero is not work. Three queues at zero and one at five rendered identically,
+   so the eye had to read four numbers to find the one that mattered. The count
+   stays full size -- it is still the answer to "how many" -- and everything
+   else recedes. */
+.tile.is-quiet             { background: transparent; }
+.tile.is-quiet .tile-n     { color: var(--text-dim); font-weight: 500; }
+.tile.is-quiet .tile-g     { opacity: 0.45; }
+
+/* --- the public landing, signed out --------------------------------------
+   Same address and same port as the console: `/` is this page until a token
+   exists, and the Command Center after. The sign-in panel stays in the
+   document rather than behind a route, so "Sign in" is a scroll rather than a
+   navigation.
+
+   Everything comes from the theme tokens, so it holds in light and dark. A
+   marketing page can commit to one visual world; a product that follows the
+   viewer's theme cannot. */
+/* The page itself, outside the console's shell. It sets its own ground and
+   its own measure, because it is not a screen of the application -- it is the
+   front door. */
+.landing-page {
+  min-height: 100vh;
+  /* The header breaks out to the window edge with a viewport-width rule; this
+     keeps that from ever becoming a horizontal scrollbar. */
+  overflow-x: clip;
+  background:
+    radial-gradient(1100px 520px at 78% -6%,
+                    color-mix(in srgb, var(--accent) 10%, transparent), transparent 62%),
+    radial-gradient(760px 460px at 6% 4%,
+                    color-mix(in srgb, var(--unknown) 7%, transparent), transparent 58%),
+    var(--bg);
+}
+.landing {
+  max-width: 1180px; margin: 0 auto;
+  /* No padding above: the header is the first thing, and it carries its own.
+     A page whose header floats 58px below the top of the window has a gap
+     where its header should be. */
+  padding: 0 clamp(18px, 4vw, 40px) clamp(48px, 7vw, 88px);
+  /* `minmax(0, 1fr)`, not the implicit `auto`: a grid column's default minimum
+     is min-content, so a single section that will not shrink below its content
+     stretches this track past the max-width above it. Nothing overflows
+     visibly -- `.landing-page` clips -- so what it produces instead is a
+     fourth card outside the clip and a full-width header offset by the
+     difference, because every percentage inside resolves against the
+     stretched track rather than the box. */
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: clamp(30px, 3.4vw, 40px);
+}
+
+/* --- the landing header --------------------------------------------------
+   Full width and sticky. Full width because a bar that stops short of the
+   window edge reads as a floating panel that happens to be at the top rather
+   than as the page's header; sticky because the way in is at the far end of a
+   long page and should never be more than a glance away. Opaque rather than
+   blurred: the page behind it is a tinted gradient, and translucency over a
+   gradient smears. */
+.lp-topwrap {
+  position: sticky; top: 0; z-index: 30;
+  /* Out of the page's measure and across the window. `.landing-page` clips the
+     inline axis so this cannot make the document scroll sideways. */
+  width: 100vw; margin-inline: calc(50% - 50vw);
+  background: color-mix(in srgb, var(--bg) 88%, var(--surface));
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--t), box-shadow var(--t), background var(--t);
+}
+/* The header only draws its edge once there is page above it to separate from.
+   At rest it is part of the hero; in motion it is a bar over content. */
+.lp-topwrap.is-stuck {
+  border-bottom-color: var(--border);
+  background: color-mix(in srgb, var(--bg) 94%, var(--surface));
+  box-shadow: 0 14px 34px -26px color-mix(in srgb, var(--text) 55%, transparent);
+}
+.lp-top {
+  max-width: 1180px; margin: 0 auto;
+  display: flex; align-items: center; gap: 14px 26px;
+  padding: 15px clamp(18px, 4vw, 40px);
+}
+/* The header keeps ONE height.
+   It used to condense on stick, which meant every offset measured against it
+   had two answers: `scroll-margin-top` was computed from the tall header,
+   the page then scrolled and the header became short, and the section landed
+   ten pixels lower than the spy's line -- so the first section a reader
+   clicked scrolled correctly and lit nothing. The stuck state still reads as
+   one, through the edge and the shadow, without moving anything. */
+
+.lp-brand {
+  display: flex; align-items: center; gap: 11px; margin: 0;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--text); font-weight: 500;
+  text-decoration: none;
+}
+/* The mark reads as a small piece of hardware rather than a logo: a filled
+   tile with a hairline ring and a soft cast, which is the one flourish on the
+   page. It lifts a degree under the pointer -- the only hint that the brand is
+   also the way back to the top. */
+.lp-brand span {
+  width: 28px; height: 28px; border-radius: 9px; letter-spacing: 0;
+  display: grid; place-items: center; font-size: 14px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-hover));
+  color: var(--bg-elev);
+  box-shadow: 0 0 0 1px var(--accent-border),
+              0 6px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: transform var(--t), box-shadow var(--t);
+}
+.lp-brand:hover span {
+  transform: translateY(-1px) rotate(-4deg);
+  box-shadow: 0 0 0 1px var(--accent-border),
+              0 10px 22px -8px color-mix(in srgb, var(--accent) 85%, transparent);
+}
+
+/* The section spy. One pill slides between the links rather than each link
+   painting its own -- a single moving object is legible where five fading in
+   and out is a flicker. Its position comes from measured layout, so it holds
+   when the labels wrap or change length. */
+.lp-nav {
+  position: relative; margin-inline: auto;
+  display: flex; gap: 2px; flex-wrap: wrap;
+  padding: 4px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.lp-nav::before {
+  content: ""; position: absolute; z-index: 0;
+  inset-block: 4px; left: 0; width: var(--ind-w, 0);
+  transform: translateX(var(--ind-x, 0));
+  border-radius: 999px; background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+  opacity: 0; transition: transform 320ms cubic-bezier(0.2, 0, 0.15, 1),
+                          width 320ms cubic-bezier(0.2, 0, 0.15, 1),
+                          opacity 180ms;
+}
+.lp-nav[data-ind="on"]::before { opacity: 1; }
+.lp-nav a {
+  position: relative; z-index: 1; padding: 7px 13px; border-radius: 999px;
+  color: var(--text-2); text-decoration: none; font-size: 13.5px;
+  white-space: nowrap; transition: color var(--t);
+}
+.lp-nav a:hover { color: var(--text); }
+.lp-nav a.on { color: var(--accent); }
+/* Below the width the pills need, the header keeps brand and sign-in: the foot
+   of the page carries the same links for a reader who wants them. */
+@media (max-width: 1100px) { .lp-nav { display: none; } }
+
+.lp-tools { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+/* The console's icon button is sized for a dense toolbar; here it sits beside
+   a 38px call to action and has to match it. */
+.lp-tools .icon-btn {
+  width: 38px; height: 38px; font-size: 15px; border-radius: var(--r);
+}
+.lp-tools .icon-btn:active { transform: scale(0.94); }
+.theme-btn svg { display: block; }
+
+/* How far down the page the reader is, driven by the scroller itself. No
+   scroll handler, and where the browser has no scroll timeline it is simply
+   absent -- a progress line is worth no JavaScript running on every frame. */
+.lp-progress { display: none; }
+@supports (animation-timeline: scroll()) {
+  .lp-progress {
+    display: block; height: 2px; width: 100%; transform-origin: 0 50%;
+    background: linear-gradient(90deg, var(--accent), var(--unknown));
+    animation: lpProgress linear both;
+    animation-timeline: scroll(root block);
+  }
+  @keyframes lpProgress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+}
+
+.lp-btn.sm { padding: 9px 16px; font-size: 14px; }
+
+/* --- sections ----------------------------------------------------------- */
+/* --- one section to a screen ---------------------------------------------
+   Following a nav entry lands on a section, and that section owns the screen:
+   nothing of the next one shows, so there is never a second section heading
+   under the header competing with the one you asked for.
+
+   `svh` rather than `vh` because on a phone `vh` is the viewport with the
+   browser chrome retracted -- a section sized in it is taller than the screen
+   the reader actually has, and the next heading creeps back in.
+
+   `min-height`, not `height`: a section with more content than fits simply
+   grows. Content sits at the TOP of the space, not centred in it -- centred,
+   a section scrolled to from the nav put four hundred pixels of nothing
+   between the header and the heading the reader had just asked for.
+
+   `--lp-head` is the header's measured height, published by `LandingHeader`;
+   the fallback is its height at rest, for the moment before the observer runs.
+   A constant was five pixels short at 1440 and eighteen behind at 1024, where
+   the pill row wraps and the bar is half again as tall. */
+.landing section {
+  scroll-margin-top: calc(var(--lp-head, 72px) + 36px);
+  min-height: calc(100svh - var(--lp-head, 72px) - 36px);
+  display: flex; flex-direction: column; justify-content: flex-start;
+  /* Sections settle on their own starts when a reader scrolls freely too --
+     proximity, not mandatory, so it assists the scroll rather than seizing
+     it. */
+  scroll-snap-align: start;
+}
+/* The hero sets its own two-column layout and the carousel its own height;
+   neither wants a flex column, and both already fill a screen. */
+.landing section.lp-hero { display: grid; }
+@media (max-width: 940px) { .landing section.lp-hero { display: grid; } }
+html { scroll-snap-type: y proximity; }
+@media (prefers-reduced-motion: reduce) { html { scroll-snap-type: none; } }
+
+/* --- the measured band -------------------------------------------------- */
+.lp-stats {
+  display: grid; gap: 0; margin-top: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); overflow: hidden;
+}
+.lp-stats > div { padding: 22px; }
+.lp-stats > div + div { border-left: 1px solid var(--border); }
+@media (max-width: 760px) {
+  .lp-stats > div + div { border-left: 0; border-top: 1px solid var(--border); }
+}
+.lp-stats b {
+  display: block; font-family: var(--display); font-weight: 600;
+  font-size: clamp(26px, 3vw, 34px); line-height: 1;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
+.lp-stats i { font-style: normal; color: var(--text-dim); }
+.lp-stats span {
+  display: block; margin-top: 10px; font-family: var(--mono);
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.lp-stats em { display: block; margin-top: 4px; font-style: normal;
+               color: var(--text-2); font-size: 13px; }
+
+/* --- what it does not do ------------------------------------------------ */
+/* Two columns where there is room. Four limits down the left of a wide page
+   left the right half empty and made the section twice as tall as it needed to
+   be -- and this is the section a reader is least likely to scroll for. */
+.lp-limits {
+  list-style: none; margin: 20px 0 0; padding: 0;
+  display: grid; gap: 14px clamp(24px, 4vw, 56px);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+}
+.lp-limits li {
+  position: relative; padding-left: 26px; color: var(--text-2);
+  line-height: 1.6;
+}
+/* The mark is drawn now (an unclosed ring around an exclamation), so the
+   dash this used to paint would sit under it. */
+.lp-limits b { color: var(--text); font-weight: 600; }
+
+.lp-hero {
+  display: grid; gap: clamp(26px, 5vw, 52px);
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+  align-items: center;
+  padding: clamp(6px, 1.6vw, 18px) 0 0;
+}
+@media (max-width: 940px) { .lp-hero { grid-template-columns: minmax(0, 1fr); } }
+
+.lp-eyebrow {
+  margin: 0 0 18px; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent);
+}
+.lp-h1 {
+  margin: 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(32px, 5vw, 54px); line-height: 1.02;
+  letter-spacing: -0.032em; text-wrap: balance; max-width: 14ch;
+}
+.lp-h1 span { display: block; color: var(--accent); }
+.lp-sub {
+  margin: 22px 0 0; color: var(--text-2); font-size: clamp(15.5px, 1.5vw, 17.5px);
+  line-height: 1.6; max-width: 46ch;
+}
+.lp-sub b { color: var(--text); font-weight: 600; }
+
+.lp-cta { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+.lp-btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 12px 20px; border-radius: var(--r); font-weight: 600; font-size: 15px;
+  text-decoration: none; background: var(--accent); color: var(--on-warn);
+  border: 1px solid var(--accent);
+}
+.lp-btn:hover { background: var(--accent-hover); }
+.lp-btn.ghost {
+  background: transparent; color: var(--text); border-color: var(--border-strong);
+}
+.lp-btn.ghost:hover { border-color: var(--text-dim); }
+
+.lp-ticks {
+  list-style: none; margin: 26px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 8px 26px;
+  color: var(--text-2); font-size: 14px;
+}
+.lp-ticks li { display: flex; align-items: center; gap: 8px; }
+.lp-ticks b { color: var(--accent); }
+
+/* the panel: one refund, climbing */
+.lp-panel {
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); overflow: hidden; box-shadow: var(--shadow);
+}
+.lp-panel-top {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+}
+.lp-panel-top b { color: var(--text); font-weight: 500; }
+.lp-tag {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--unknown);
+}
+.lp-tag i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--unknown);
+}
+.lp-steps { list-style: none; margin: 0; padding: 0; }
+.lp-steps li {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 12px; align-items: baseline; padding: 12px 16px;
+}
+.lp-steps li + li { border-top: 1px solid var(--border); }
+.lp-steps .g.ok   { color: var(--ok); }
+.lp-steps .g.hold { color: var(--warn-ink); }
+.lp-steps .g.unk  { color: var(--unknown); }
+.lp-steps .t { color: var(--text); font-size: 14px; }
+.lp-steps .t small {
+  display: block; color: var(--text-dim); font-size: 12px;
+  font-family: var(--mono); margin-top: 3px;
+}
+.lp-steps .v {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-dim); white-space: nowrap;
+}
+.lp-steps .v.is-unk { color: var(--unknown); }
+.lp-panel-foot {
+  margin: 0; border-top: 1px solid var(--border); background: var(--surface-2);
+  padding: 13px 16px; color: var(--text-2); font-size: 13px; line-height: 1.55;
+}
+.lp-panel-foot b { color: var(--unknown); font-weight: 600; }
+
+/* --- section heads --------------------------------------------------------
+   Every section opens the same way: kicker, heading, lede. The kicker is the
+   label that section carries in the header nav, and the rule beside it is
+   drawn rather than a border so it can stop at the text instead of running the
+   width of the column. */
+/* Heading and lede side by side, not stacked.
+ *
+ * Stacked, a section head was a kicker, two lines of display type and two
+ * lines of lede -- four rows of text down the left with the right half of the
+ * page empty, and a section that came to roughly a screenful for one heading.
+ * Side by side it is two rows, it uses the width the page already has, and
+ * more than one section fits in view at a time.
+ *
+ * No measure on the head itself: a `ch` here is measured in the head's own
+ * font -- body size -- so a cap in `ch` clamps the 30px display heading and
+ * wraps headings that fit the page with room to spare. The measure belongs on
+ * the running text, which is the only part of a head that needs one. */
+.lp-sec-head {
+  display: grid; gap: 6px clamp(24px, 4vw, 56px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: baseline;
+}
+.lp-sec-head > .lp-kicker { grid-column: 1 / -1; }
+.lp-sec-head > .lp-lede { max-width: 62ch; margin-top: 0; }
+@media (max-width: 860px) {
+  .lp-sec-head { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+.lp-kicker {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 4px; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent);
+}
+.lp-kicker::after {
+  content: ""; height: 1px; width: 44px; flex: none;
+  background: linear-gradient(90deg, var(--accent-border), transparent);
+}
+/* It arrives a beat before the heading it names — the one place on the page
+   where the order of two lines is worth animating, because the kicker is the
+   answer to "what is this section" and the heading is the answer to "what does
+   it say". */
+[data-reveal="pending"] .lp-kicker { opacity: 0; transform: translateY(6px); }
+[data-reveal="in"] .lp-kicker {
+  opacity: 1; transform: none;
+  transition: opacity 420ms 40ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 420ms 40ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* the four states */
+.lp-h2 {
+  margin: 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(22px, 2.8vw, 30px); letter-spacing: -0.022em;
+  /* Display type inheriting the body's 1.6 leading opened a gap between the
+     two lines of a wrapped heading wide enough to read as two headings. */
+  line-height: 1.14; text-wrap: balance;
+}
+.lp-lede { margin: 12px 0 0; color: var(--text-2); max-width: 58ch; }
+.lp-cards {
+  display: grid; gap: 12px; margin-top: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.lp-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: var(--r); padding: 16px 18px;
+}
+.lp-card h4 {
+  margin: 0 0 7px; font-family: var(--mono); font-size: 11.5px;
+  letter-spacing: 0.11em; font-weight: 600;
+}
+.lp-card p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.55; }
+.lp-card.c-ok      { border-left-color: var(--ok); }
+.lp-card.c-ok      h4 { color: var(--ok); }
+.lp-card.c-failed  { border-left-color: var(--danger); }
+.lp-card.c-failed  h4 { color: var(--danger); }
+.lp-card.c-partial { border-left-color: var(--warn); }
+.lp-card.c-partial h4 { color: var(--warn-ink); }
+.lp-card.c-unknown { border-left-color: var(--unknown); background: var(--unknown-soft); }
+.lp-card.c-unknown h4 { color: var(--unknown); }
+
+/* --- landing: motion ------------------------------------------------------
+   Transform and opacity only, which are the two properties a browser animates
+   on the compositor. The resting state is VISIBLE: an element is only hidden
+   once `data-reveal="pending"` has been set by the observer, so a page whose
+   JavaScript never runs shows its content rather than a blank, and so does a
+   screenshot taken before it does. */
+[data-reveal="pending"] { opacity: 0; transform: translateY(14px); }
+[data-reveal="in"] {
+  opacity: 1; transform: none;
+  transition: opacity 520ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 520ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { opacity: 1 !important; transform: none !important;
+                  transition: none !important; }
+}
+
+/* --- landing: the console, as it renders --------------------------------- */
+.lp-shots { padding-top: 4px; }
+.carousel {
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); overflow: hidden; box-shadow: var(--shadow);
+}
+/* The frame holds its own height from the first slide, so the page does not
+   jump as slides swap or as a lazy image arrives. */
+.carousel-frame { position: relative; aspect-ratio: 1360 / 850; background: var(--surface-2); }
+.slide {
+  position: absolute; inset: 0; margin: 0;
+  opacity: 0; transition: opacity 620ms cubic-bezier(0.2, 0, 0.2, 1);
+  pointer-events: none;
+}
+.slide[data-on="true"] { opacity: 1; pointer-events: auto; }
+.slide img { display: block; width: 100%; height: 100%; object-fit: cover;
+             object-position: top center; }
+@media (prefers-reduced-motion: reduce) { .slide { transition: none; } }
+
+.carousel-bar {
+  display: flex; align-items: center; gap: 16px 24px; flex-wrap: wrap;
+  padding: 14px 18px; border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.carousel-said { min-width: 0; }
+.carousel-said b { display: block; font-size: 14.5px; color: var(--text); }
+.carousel-said span { display: block; margin-top: 2px; color: var(--text-2);
+                      font-size: 13.5px; line-height: 1.5; max-width: 66ch; }
+.carousel-dots { margin-left: auto; display: flex; gap: 8px; }
+.carousel-dots button {
+  width: 9px; height: 9px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: transparent;
+  cursor: pointer; transition: background var(--t), border-color var(--t),
+                               transform var(--t);
+}
+.carousel-dots button:hover { border-color: var(--text-dim); }
+.carousel-dots button.on {
+  background: var(--accent); border-color: var(--accent); transform: scale(1.25);
+}
+
+/* --- landing: entrance and stagger ---------------------------------------
+   The hero is already on screen when the page loads, so it enters on load
+   rather than on scroll -- waiting for an observer to fire on something the
+   reader is already looking at is how a page appears broken for 300ms.
+
+   Everything below is transform and opacity, and every rule is neutralised
+   under `prefers-reduced-motion` at the foot of this block. */
+.lp-hero.is-entering > * { animation: lpRise 620ms cubic-bezier(0.2, 0, 0.2, 1) both; }
+.lp-hero.is-entering > *:nth-child(2) { animation-delay: 110ms; }
+@keyframes lpRise { from { opacity: 0; transform: translateY(16px); } }
+
+/* Cards arrive in sequence once their section is revealed, so a row reads
+   left to right the way the numbers on it are meant to. */
+.lp-cards.is-stagger > * { transition: opacity 460ms cubic-bezier(0.2, 0, 0.2, 1),
+                                       transform 460ms cubic-bezier(0.2, 0, 0.2, 1); }
+[data-reveal="pending"] .lp-cards.is-stagger > * {
+  opacity: 0; transform: translateY(12px);
+}
+[data-reveal="in"] .lp-cards.is-stagger > * { opacity: 1; transform: none; }
+[data-reveal="in"] .lp-cards.is-stagger > *:nth-child(1) { transition-delay: 60ms; }
+[data-reveal="in"] .lp-cards.is-stagger > *:nth-child(2) { transition-delay: 140ms; }
+[data-reveal="in"] .lp-cards.is-stagger > *:nth-child(3) { transition-delay: 220ms; }
+[data-reveal="in"] .lp-cards.is-stagger > *:nth-child(4) { transition-delay: 300ms; }
+
+/* The measured figures arrive one cell at a time, left to right.
+ *
+ * These used to count up, driven by an animated `@property` feeding a CSS
+ * counter. It was removed: `content: counter()` is generated content, so the
+ * only copy of "167" lived in a stylesheet -- invisible to a screen reader,
+ * unassertable by a test, and outside the check that fails the build when a
+ * published number and the tree disagree. These are the numbers on the page
+ * that most have to be true. They stay real text and move as a group. */
+.lp-stats.is-stagger > div {
+  transition: opacity 460ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 460ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+[data-reveal="pending"] .lp-stats.is-stagger > div {
+  opacity: 0; transform: translateY(12px);
+}
+[data-reveal="in"] .lp-stats.is-stagger > div { opacity: 1; transform: none; }
+[data-reveal="in"] .lp-stats.is-stagger > div:nth-child(1) { transition-delay: 60ms; }
+[data-reveal="in"] .lp-stats.is-stagger > div:nth-child(2) { transition-delay: 140ms; }
+[data-reveal="in"] .lp-stats.is-stagger > div:nth-child(3) { transition-delay: 220ms; }
+[data-reveal="in"] .lp-stats.is-stagger > div:nth-child(4) { transition-delay: 300ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero.is-entering > *,
+  .lp-cards.is-stagger > *,
+  .lp-stats.is-stagger > div,
+  .lp-kicker, .lp-term .ln, .fd-w,
+  .lp-topwrap, .lp-topwrap .lp-top, .lp-nav::before, .lp-brand span,
+  .lp-progress {
+    animation: none !important; transition: none !important;
+    opacity: 1 !important; transform: none !important;
+  }
+}
+
+/* --- landing: the drawn marks -------------------------------------------- */
+.lp-card-mark { display: grid; grid-template-columns: 40px minmax(0, 1fr);
+                gap: 14px; align-items: start; }
+.lp-mark { flex: none; }
+/* The evidence step is the only one that reads as finished, and the ring
+   settles rather than appearing -- one small movement at the end of a sequence
+   the reader has just scanned left to right. */
+[data-reveal="in"] .lp-mark.is-evidence rect[fill*="--ok"] { animation: rung 420ms both; }
+[data-reveal="in"] .lp-mark.is-evidence path { animation: tick 420ms 260ms both; }
+@keyframes rung { from { opacity: 0; transform: translateX(-3px); } }
+@keyframes tick { from { opacity: 0; transform: scale(0.85); transform-origin: 21px 18px; } }
+
+.lp-state-mark { display: block; margin-bottom: 10px; }
+/* UNKNOWN's ring is broken, and it turns -- slowly, once the card is on
+   screen. Nothing else on this page moves on its own, which is what makes the
+   one unresolved state the thing your eye returns to. */
+[data-reveal="in"] .lp-card.c-unknown .lp-state-mark circle {
+  animation: sweep 9s linear infinite; transform-origin: 20px 20px;
+}
+@keyframes sweep { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lp-mark rect, .lp-mark path, .lp-state-mark circle { animation: none !important; }
+}
+
+/* --- landing: the foot --------------------------------------------------- */
+.lp-foot { border-top: 1px solid var(--border); padding-top: 26px;
+           display: grid; gap: 12px; }
+.lp-foot-nav { display: flex; flex-wrap: wrap; gap: 6px 4px; }
+.lp-foot-nav a { padding: 6px 12px; border-radius: var(--r-sm);
+                 color: var(--text-2); text-decoration: none; font-size: 14px; }
+.lp-foot-nav a:hover { color: var(--text); background: var(--surface-2); }
+.lp-foot-note { margin: 0; color: var(--text-dim); font-size: 13px; }
+
+/* --- the sign-in page ----------------------------------------------------
+   Its own address, and a split: the left half states what this is and stays
+   dark in either theme, the right half is the form on a plain ground.
+
+   The dark half is a fixed palette rather than a token one -- it is the same
+   ink in light mode and dark mode, so the page reads as one designed object
+   instead of two halves that swap places when the OS theme changes. Contrast
+   is fixed with it, which is why it can be checked once and trusted. */
+.auth-page { min-height: 100vh; background: var(--bg); }
+.auth {
+  min-height: 100vh;
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+}
+@media (max-width: 900px) { .auth { grid-template-columns: minmax(0, 1fr); } }
+
+.auth-aside {
+  position: relative; overflow: hidden;
+  padding: clamp(32px, 5vw, 64px);
+  display: flex; flex-direction: column; gap: 26px;
+  background: #0c1a15;   /* deliberate constant: not a theme token */
+  color: #e6efea;
+}
+.auth-aside::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(760px 460px at 80% 0%, rgba(111,195,163,0.16), transparent 60%),
+    radial-gradient(560px 420px at 6% 96%, rgba(167,139,250,0.12), transparent 62%),
+    repeating-linear-gradient(0deg, transparent 0 55px, rgba(255,255,255,0.02) 55px 56px);
+}
+.auth-aside > * { position: relative; }
+
+.auth-brand {
+  display: inline-flex; align-items: center; gap: 11px; align-self: start;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: #e6efea; text-decoration: none;
+}
+.auth-brand span {
+  width: 28px; height: 28px; border-radius: 9px; letter-spacing: 0;
+  display: grid; place-items: center; font-size: 14px;
+  background: linear-gradient(150deg, #6fc3a3, #4f9b7f); color: #06120d;
+  box-shadow: 0 0 0 1px #2c5a49, 0 8px 22px -10px #6fc3a3;
+}
+.auth-quote {
+  margin: auto 0 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(28px, 3.4vw, 42px); line-height: 1.04;
+  letter-spacing: -0.03em; text-wrap: balance; max-width: 15ch;
+}
+.auth-quote span { display: block; color: #6fc3a3; }
+.auth-quote-sub {
+  margin: 0; color: #9fb3aa; font-size: 15.5px; line-height: 1.6; max-width: 42ch;
+}
+.auth-states {
+  list-style: none; margin: 0 0 auto; padding: 22px 0 0;
+  border-top: 1px solid #1e3029; display: grid; gap: 11px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em;
+  color: #cfdcd6;
+}
+.auth-states li { display: flex; align-items: baseline; gap: 10px; }
+.auth-states b { font-size: 12px; width: 12px; }
+.auth-states em {
+  font-style: normal; color: #7d9187; letter-spacing: 0;
+  font-family: var(--sans); font-size: 12.5px; margin-left: 4px;
+}
+.auth-states .ok { color: #6fc3a3; }
+.auth-states .danger { color: #ff7a6b; }
+.auth-states .warn { color: #e8933f; }
+.auth-states .unknown { color: #a78bfa; }
+.auth-back {
+  color: #9fb3aa; text-decoration: none; font-size: 13.5px; align-self: start;
+}
+.auth-back:hover { color: #e6efea; }
+
+/* The form half. Plain ground, one thing to do. */
+.auth-form {
+  display: grid; place-items: center;
+  padding: clamp(32px, 5vw, 64px);
+  background: var(--bg-elev);
+}
+.auth-form .signin-panel {
+  border: 0; box-shadow: none; background: transparent; padding: 0;
+  max-width: 420px;
+}
+
+/* --- the sign-in screen --------------------------------------------------
+   The first screen anybody sees. It was a form card pinned to the left of an
+   otherwise empty page; it now centres and leads with what the product is for,
+   because this is the one screen where a reader has nothing else to look at.
+
+   Everything comes from the theme tokens, so it holds in light and dark — the
+   landing page commits to one dark world, the product cannot. */
+.signin {
+  display: grid; place-items: center;
+  min-height: 0;
+  padding: clamp(20px, 5vw, 56px) 0;
+}
+.signin-panel {
+  width: 100%; max-width: 620px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: clamp(26px, 4vw, 44px);
+  box-shadow: var(--shadow);
+}
+.signin-mark {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 26px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--text-dim);
+}
+.signin-mark span {
+  width: 24px; height: 24px; border-radius: 7px;
+  display: grid; place-items: center; letter-spacing: 0;
+  background: var(--accent-soft); border: 1px solid var(--accent-border);
+  color: var(--accent); font-size: 13px;
+}
+.signin-h {
+  margin: 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(24px, 3.4vw, 33px); line-height: 1.08;
+  letter-spacing: -0.025em; text-wrap: balance;
+}
+.signin-sub {
+  margin: 16px 0 0; color: var(--text-2); font-size: 15.5px;
+  line-height: 1.6; max-width: 52ch;
+}
+/* The field is the point of the screen, so it gets the panel's only fill. */
+.signin-field {
+  margin-top: 28px; padding: 18px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: grid; gap: 10px;
+}
+.signin-field label {
+  font-size: 12.5px; color: var(--text-dim);
+}
+.signin-field input { width: 100%; margin: 0; }
+.signin-field button { justify-self: start; }
+.signin-note {
+  margin: 18px 0 0; font-size: 13px; line-height: 1.6; color: var(--text-dim);
+  max-width: 58ch;
+}
+.signin-states {
+  list-style: none; margin: 26px 0 0; padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+.signin-states li { display: flex; align-items: center; gap: 7px; }
+.signin-states b { font-size: 12px; }
+.signin-states .ok      { color: var(--ok); }
+.signin-states .danger  { color: var(--danger); }
+.signin-states .warn    { color: var(--warn-ink); }
+.signin-states .unknown { color: var(--unknown); }
+
+/* --- P1-03: the recovery funnel ---------------------------------------- */
+/* Widths are proportions of the first stage, computed in the component, so a
+   later stage can never draw wider than an earlier one. The rule is carried by
+   the geometry rather than by anyone remembering it. */
+.funnel { list-style: none; margin: 0; padding: 0;
+          display: flex; flex-direction: column; gap: 10px; }
+.funnel-head { display: flex; justify-content: space-between; align-items: baseline;
+               font-size: 13px; margin-bottom: 4px; }
+.funnel-label { color: var(--text-2); font-weight: 500; }
+.funnel-track { height: 8px; border-radius: 4px; background: var(--surface-3);
+                overflow: hidden; }
+.funnel-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+
+/* --- the live activity feed -------------------------------------------- */
+.feed { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.feed li { display: flex; gap: 12px; align-items: baseline;
+           padding: 5px 0; border-bottom: 1px solid var(--border); }
+.feed li:last-child { border-bottom: 0; }
+.feed-when { color: var(--text-dim); font-size: 12px; flex: none; }
+.feed-what { flex: 1; }
+
+/* --- P1-04: the action detail drawer ----------------------------------- */
+.drawer-scrim {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.35);
+  display: flex; justify-content: flex-end;
+}
+.drawer {
+  width: min(520px, 100%); height: 100%; overflow-y: auto;
+  padding: 20px; background: var(--surface);
+  border-left: 1px solid var(--border); box-shadow: var(--shadow-lg, none);
+  display: flex; flex-direction: column; gap: 14px;
+}
+@media (max-width: 700px) {
+  /* P1-11: on a small screen a side drawer is a sliver. It becomes a sheet. */
+  .drawer-scrim { align-items: flex-end; }
+  .drawer { width: 100%; height: auto; max-height: 88vh;
+            border-left: 0; border-top: 1px solid var(--border);
+            border-radius: var(--r) var(--r) 0 0; }
+}
+
+/* An approval past its window. Struck through rather than merely greyed: it
+   cannot execute, and "looks a bit faded" is not that claim. */
+tr.is-stale td { opacity: 0.62; }
+
+/* P1-12: motion is a preference, and every animation here is decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .funnel-fill, .tile, a.tile { transition: none; }
+}
+
+/* --- P0-08: agent activity ---------------------------------------------
+   Operational progress, built server-side from recorded rows. Restrained
+   deliberately: this is a list of things that happened, and animating it
+   would make a completed run look like a running one. */
+.activity-wrap { margin: 0 0 14px; }
+.activity-wrap > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-dim); padding: 4px 0;
+}
+.activity-wrap > summary .count { margin-left: 6px; font-family: var(--mono); }
+
+.activity { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; }
+.activity li {
+  display: grid; gap: 4px 10px; align-items: baseline;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  padding: 4px 0; border-bottom: 1px solid var(--border);
+}
+.activity li:last-child { border-bottom: 0; }
+.act-glyph { text-align: center; font-size: 11px; }
+.act-label { min-width: 0; }
+/* Wraps under the label rather than beside it: a reason an operator cannot
+   read is a reason that is not there. */
+.act-detail { grid-column: 2 / -1; font-size: 12px; }
+.act-at { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* Colour is on the glyph, never on the label alone — the glyph is already a
+   distinct shape per state, so meaning survives greyscale (P1-12). */
+.activity li[data-state="done"]    .act-glyph { color: var(--ok); }
+.activity li[data-state="failed"]  .act-glyph { color: var(--danger); }
+.activity li[data-state="blocked"] .act-glyph { color: var(--warn); }
+.activity li[data-state="running"] .act-glyph { color: var(--accent); }
+.activity li[data-state="pending"] .act-glyph { color: var(--text-dim); }
+
+/* A visual break inside the filter row, between the state filters and the
+   severity ones. Presentational only — the group's aria-label already says
+   what the row is, and a separator that announced itself would be noise. */
+.filter-sep {
+  width: 1px; align-self: stretch; margin: 0 4px;
+  background: var(--border);
+}
+
+/* --- MerchantOps §7: the payment lifecycle chain ------------------------
+   A list of facts in time order. Deliberately not a decorated timeline with a
+   connecting spine: a spine implies each step caused the next, and an
+   out-of-order provider event is precisely the case where that is false. */
+.chain { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.chain li {
+  display: grid; gap: 2px 10px; align-items: baseline;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.chain li:last-child { border-bottom: 0; }
+.chain-mark { text-align: center; color: var(--text-dim); }
+.chain-body { min-width: 0; }
+.chain-label { display: block; }
+.chain-detail { display: block; font-size: 12px; word-break: break-word; }
+.chain-when { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* The stages that assert something about money get a tone; the rest stay
+   neutral. Colour is never the only signal — each stage also has its own
+   glyph, and the stage name is in the accessible name. */
+.chain li[data-stage="verification"] .chain-mark { color: var(--ok); }
+.chain li[data-stage="incident"]     .chain-mark { color: var(--danger); }
+.chain li[data-stage="approval"]     .chain-mark { color: var(--warn); }
+.chain li[data-stage="action"]       .chain-mark { color: var(--accent); }
+.chain li[data-stage="refund"]       .chain-mark { color: var(--warn); }
+
+@media (max-width: 640px) {
+  /* P1-11: the timestamp drops under the label rather than squeezing it. */
+  .chain li { grid-template-columns: 18px minmax(0, 1fr); }
+  .chain-when { grid-column: 2; }
+}
+
+/* ======================================================================
+   P1-11 — dense tables become priority views on a small screen.
+
+   The plan is specific: "convert dense tables into priority views + detail
+   drawers on smaller screens." A horizontal scrollbar is not that. The Action
+   Center is twelve columns wide; on a phone that is a scrollbar with a table
+   hidden behind it, and an operator reading a refund's verification state has
+   to swipe past six columns to reach it.
+
+   So below 760px a `table.stacked` stops being a grid and becomes one block
+   per row, each cell labelled by the header it belongs to. The header text
+   comes from `data-label` on the cell, which the component supplies — headers
+   are `display:none` at this width, so `<th>` cannot supply it, and reading it
+   out of the DOM would be a layout-dependent trick.
+
+   PRIORITY is the other half. `data-priority="low"` hides a cell entirely at
+   this width: an id an operator can copy from the drawer does not need to be
+   in a list they are scanning under pressure. Nothing that asserts something
+   about money is ever marked low.
+   ====================================================================== */
+@media (max-width: 760px) {
+  table.stacked thead { display: none; }
+  table.stacked, table.stacked tbody, table.stacked tr, table.stacked td {
+    display: block; width: auto;
+  }
+  table.stacked tr {
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  table.stacked tr:last-child { border-bottom: 0; }
+  table.stacked td {
+    display: grid; grid-template-columns: 11ch minmax(0, 1fr);
+    gap: 10px; align-items: baseline;
+    padding: 3px 0; border: 0;
+  }
+  table.stacked td::before {
+    content: attr(data-label);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  /* A cell with no label is a full-width row — the actions cell, typically. */
+  table.stacked td:not([data-label]) { grid-template-columns: 1fr; }
+  table.stacked td[data-priority="low"] { display: none; }
+
+  /* The scroll shadow is meaningless once nothing scrolls sideways. */
+  .table-wrap:has(table.stacked)::after { display: none; }
+  .table-wrap:has(table.stacked) { border: 0; }
+}
+
+/* P1-13. What a failure means for the state of the world, under the failure
+   itself. Quieter than the headline because it is the explanation, not the
+   alarm — but never hidden behind a disclosure: an operator who does not
+   expand it is the operator most likely to press the button again. */
+.banner-consequence {
+  margin-top: 6px; font-size: 12px; opacity: 0.9; max-width: 78ch;
+}
+
+/* --- P1-12: a link in prose must not rely on colour ---------------------
+   axe measured the accent against the muted text around it at 1.58:1, where
+   3:1 is the floor for distinguishing a link by colour alone. Underlining is
+   the fix the rule expects and the one this design should have had anyway:
+   "no colour-only meaning" is already the rule for every status in this
+   application, and a link is not an exception to it.
+
+   Scoped to prose. Links that are already unambiguous by position — a nav
+   tab, a table cell that is nothing but an identifier, a chip — are left
+   alone, because underlining everything is how underlining stops meaning
+   anything. */
+.empty a,
+.sub a,
+p a:not(.linkish) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* --- the problem, drawn ---------------------------------------------------
+   Diagram beside the copy rather than above it: the fork IS the paragraph, and
+   a reader who takes the picture first should not have to scroll to find out
+   what it is about. */
+.lp-split {
+  display: grid; gap: clamp(20px, 3.4vw, 40px); margin-top: 20px;
+  grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+  align-items: center;
+}
+@media (max-width: 900px) { .lp-split { grid-template-columns: minmax(0, 1fr); } }
+.lp-split-copy { display: grid; gap: 14px; }
+.lp-split-copy .lp-lede { margin: 0; }
+
+.fd {
+  width: 100%; height: auto; max-width: 560px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); padding: 10px;
+}
+.fd-t {
+  font-family: var(--mono); font-size: 11.5px; fill: var(--text);
+  letter-spacing: 0.02em;
+}
+.fd-t.fd-dim { fill: var(--text-dim); font-size: 10.5px; }
+.fd-t.fd-acc { fill: var(--accent); }
+
+/* The connectors draw themselves, in the order the thing happens: the call,
+   the acknowledgement, then the three answers it cannot distinguish. Held at
+   full length until the observer arrives, so a page whose JavaScript never
+   runs shows a finished diagram rather than three stubs. */
+[data-reveal="pending"] .fd-w { stroke-dasharray: 220; stroke-dashoffset: 220; }
+[data-reveal="in"] .fd-w {
+  stroke-dasharray: 220; stroke-dashoffset: 0;
+  transition: stroke-dashoffset 620ms var(--d, 0ms) cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+/* --- the limits, marked --------------------------------------------------- */
+.lp-limit-mark { position: absolute; left: 0; top: 4px; flex: none; }
+
+/* --- the check, as it prints ---------------------------------------------
+   A section claiming its numbers are reproducible and then only restating them
+   is asking to be taken at its word. Every figure inside is gated by the check
+   the transcript shows. */
+.lp-term {
+  margin: 18px 0 0; border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow);
+}
+.lp-term figcaption {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+.lp-term-dots { display: flex; gap: 5px; }
+.lp-term-dots i {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong);
+}
+.lp-term pre {
+  margin: 0; padding: 14px 16px; overflow-x: auto;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.75;
+  color: var(--text-2); background: transparent;
+}
+.lp-term .ln { display: block; white-space: pre; }
+/* The lines print one after another, the way the command does. Held at the
+   finished state until the observer runs, so no JavaScript means a finished
+   transcript rather than an empty box. */
+[data-reveal="pending"] .lp-term .ln { opacity: 0; }
+[data-reveal="in"] .lp-term .ln { opacity: 1; transition: opacity 260ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(2) { transition-delay: 220ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(3) { transition-delay: 380ms; }
+[data-reveal="in"] .lp-term .ln:nth-child(4) { transition-delay: 560ms; }
+.lp-term code { font: inherit; color: inherit; background: none; padding: 0; }
+.lp-term b { color: var(--accent); font-weight: 600; }
+.lp-term .ok { color: var(--ok); }

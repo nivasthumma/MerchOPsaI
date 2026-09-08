@@ -20,11 +20,27 @@ setup:      ; python3 -m venv .venv && $(PY) -m pip install -q -r requirements.t
 setup-dev:  ; $(PY) -m pip install -q -r requirements-dev.txt --require-hashes
 
 # Regenerate the locks after editing requirements*.in. Needs `uv`.
+# `requirements.txt` is the OUTPUT here -- pinned and hashed -- not a
+# declaration. The inputs are the `.in` files.
 lock:
 	uv pip compile requirements.in --generate-hashes --python-version 3.12 -o requirements.txt
 	uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 -o requirements-dev.txt
+	uv pip compile requirements-runtime.in --generate-hashes --python-version 3.12 -o requirements-runtime.txt
+	uv pip compile api/requirements.in --generate-hashes --python-version 3.12 -o api/requirements.txt
+
+# Take newer versions deliberately. Without `--upgrade`, uv keeps the pins
+# that are already there.
+lock-upgrade:
+	uv pip compile requirements.in --generate-hashes --python-version 3.12 --upgrade -o requirements.txt
+	uv pip compile requirements-dev.in --generate-hashes --python-version 3.12 --upgrade -o requirements-dev.txt
+	uv pip compile requirements-runtime.in --generate-hashes --python-version 3.12 --upgrade -o requirements-runtime.txt
+	uv pip compile api/requirements.in --generate-hashes --python-version 3.12 --upgrade -o api/requirements.txt
 seed:       ; $(PY) scripts/seed_data.py
 spike:      ; $(PY) scripts/razorpay_spike.py
+# Ask the provider whether each mapping points at the payment we think it
+# does. Refuses to stamp `verified_at` against the mock, which reads our
+# own table and therefore agrees by construction.
+confirm-mappings: ; $(PY) scripts/confirm_mappings.py
 api:        ; PYTHONPATH=. .venv/bin/uvicorn app.api.main:app --reload --port 8000
 ui:         ; PYTHONPATH=. .venv/bin/streamlit run ui/streamlit_app.py
 test:       ; PYTHONPATH=. $(PY) -m pytest tests -q
@@ -53,6 +69,10 @@ ps:         ; docker compose ps
 # the same DATABASE_URL the application does rather than one typed twice.
 seed-docker: ; docker compose exec api python scripts/seed_data.py
 mutants:    ; $(PY) scripts/mutation_test.py
+# Is a run in progress? Answered from the repository root, because
+# `ls .mutation-in-progress` is relative and reports "no run" from any
+# subdirectory -- which is how a live mutant got reverted mid-run once.
+mutants-status: ; @$(PY) scripts/check_no_mutants.py --status
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
 # Bring a real database to the current schema. Handles the three states a
@@ -75,21 +95,114 @@ provision:  ; PYTHONPATH=. $(PY) scripts/provision.py $(ARGS)
 # The gates CI runs, in the order CI runs them. `lint` and `audit` need the
 # dev tooling: `make setup-dev`.
 lint:       ; $(PY) -m ruff check .
+# The shell is code too. `run_e2e.sh` stands up a database, an API and a
+# browser, and its first shellcheck run found an environment prefix whose
+# expansion read the parent shell rather than the assignment beside it.
+lint-sh:    ; @test -x .venv/bin/shellcheck || $(PY) -m pip install -q shellcheck-py
+	.venv/bin/shellcheck scripts/*.sh
 lint-fix:   ; $(PY) -m ruff check . --fix
 audit:      ; $(PY) -m pip_audit -r requirements.txt --progress-spinner off && \
               $(PY) -m pip_audit -r requirements-dev.txt --progress-spinner off
+
+# The npm half, which did not exist. `make audit` has always checked the Python
+# dependencies and nothing ever checked the ones that reach a browser — which is
+# the half an attacker can read.
+#
+# Gated on what SHIPS (`--omit=dev`) and on high or above. Two deliberate
+# choices:
+#
+#   --omit=dev      a dev-server advisory is a real finding and a different
+#                   risk from one in the bundle a merchant loads. Both are
+#                   reported by `make web-audit-all`; only one blocks.
+#   --audit-level   high. The two moderates open today are assessed in the
+#                   README rather than waved through by a threshold that
+#                   happens to sit above them — the level says which findings
+#                   stop a build, not which ones are acceptable.
+web-audit:  ; cd web && npm audit --omit=dev --audit-level=high
+web-audit-all: ; cd web && npm audit
 # The tracked tree, and nothing else, must import. This is the check that
 # catches a file somebody wrote and never `git add`-ed -- the working directory
 # hides it, a fresh clone does not.
 cleanroom:  ; @$(PY) scripts/check_cleanroom.py
-ci:         ; SEED_FORCE=1 $(MAKE) seed && $(MAKE) harden && $(MAKE) lint && $(MAKE) cleanroom && $(MAKE) test && $(MAKE) eval
+# Every number this repository publishes, measured and compared to what the
+# README says. Three claims were found stale on the same afternoon, and one
+# line disagreed with another in the same file -- so the drift had been there
+# long enough for a second number to be written beside the first.
+counts:     ; @$(PY) scripts/check_counts.py
+# Does the evaluation suite assert what it appears to? A mistyped expect
+# key is silently dropped, and the scenario still passes -- contributing
+# to the 167/167 this repository publishes.
+scenarios:  ; @$(PY) scripts/check_scenarios.py
+# The fast pre-push subset, NOT everything CI runs -- the workflow also does
+# migrations against an unstamped database, the OpenAPI contract checks, the
+# frontend lint/typecheck/test/audit, the browser journeys, the dependency
+# lock and audit gates, and 88 mutants. Those need service containers, a
+# browser download and two hours; this needs a local Postgres and a minute.
+#
+# On its OWN database. `SEED_FORCE=1 make seed` drops the schema, so running
+# this used to destroy the development database -- the same defect the
+# evaluation suite had, one step earlier in the same target, and it survived
+# fixing that one because the fix was aimed at `eval` rather than at the class.
+# A check you run before pushing must not cost you the data you were working
+# on, or you stop running it.
+CI_DB ?= $(shell $(PY) -c "import os,sys; sys.path.insert(0,'.'); \
+	from scripts.dbutil import database_name, sibling_url; \
+	from app.config import Settings; \
+	u=os.environ.get('DATABASE_URL') or Settings().database_url; \
+	print(sibling_url(u, database_name(u)+'_ci'))")
+ci:
+	@$(PY) -c "import sys; sys.path.insert(0,'.'); \
+	from scripts.dbutil import database_name, ensure_database; \
+	u='$(CI_DB)'; \
+	print(f'ci database: {database_name(u)}' + (' (created)' if ensure_database(u) else ''))"
+	DATABASE_URL=$(CI_DB) SEED_FORCE=1 $(MAKE) seed
+	DATABASE_URL=$(CI_DB) $(MAKE) harden
+	$(MAKE) lint
+	$(MAKE) lint-sh
+	$(MAKE) cleanroom
+	$(MAKE) test
+	$(MAKE) scenarios
+	DATABASE_URL=$(CI_DB) $(MAKE) counts
+	DATABASE_URL=$(CI_DB) $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py
+# Bring a database somebody is going to LOOK at to a state where every
+# console screen has something on it: incidents, a recovery plan with
+# candidates, a task awaiting approval, an executed refund, an action left
+# UNKNOWN through the real path, and a rejection. Additive -- it never
+# seeds and never deletes, which is why it is not a flag on `seed`.
+demo-state: ; $(PY) scripts/demo_state.py
+# Install the pre-commit hook that refuses to record a mutant. Hooks are
+# not version-controlled by git, so this is opt-in -- which is why the same
+# check also runs in CI, where it protects everybody rather than whoever
+# remembered.
+hooks:      ; @cp scripts/hooks/pre-commit .git/hooks/pre-commit \
+	&& chmod +x .git/hooks/pre-commit \
+	&& echo 'installed .git/hooks/pre-commit'
 
 # --- React SPA (web/) — see ADR-0015 -------------------------------------
 web-setup:  ; cd web && npm install
 web:        ; cd web && npm run dev
 web-build:  ; cd web && npm run build
 web-test:   ; cd web && npm test
+# The frontend's ruff. `tsc` proves the types line up and says nothing
+# about an effect that reads a value it never declared -- which on a
+# polling console is a screen updating on the wrong schedule.
+web-lint:   ; cd web && npm run lint
+
+# Browser E2E — MerchantOps §22. Deliberately NOT part of `make ci`: it needs a
+# seeded database, a running API and a downloaded browser, and CI here has none
+# of the three (ADR-0015 already keeps the frontend suite out for the same
+# reason). This is the target that runs them on a machine that does.
+#
+#   make e2e-install     once, to fetch the browser
+#   make e2e             stands up its own database and API, runs, tears down
+#
+# `scripts/run_e2e.sh` stands the whole stack up against its OWN database and
+# takes it down again — these tests approve refunds, and pointing them at the
+# development database would destroy whatever somebody had open.
+e2e:        ; ./scripts/run_e2e.sh
+
+e2e-install: ; cd web && npx playwright install chromium
 
 # One process serving both, the way the deployment does. `api/index.py` routes
 # /api/* to the FastAPI app with the prefix stripped and everything else to the

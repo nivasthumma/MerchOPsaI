@@ -1958,7 +1958,15 @@
   # v2 §18 places correlation before the expensive step, not before the record.
   # An incident nobody opened is indistinguishable from one the system missed.
   expect:
-    incidents_created: 3
+    # 4 since feat/incident-spine merged into integration/trunk. That branch
+    # brought two rules this scenario was written without --
+    # `detect_failure_code_spike` and `detect_unusual_refund_activity` -- and
+    # the spike rule raises `UPI_COLLECT_TIMEOUT failures up 3.3x` alongside
+    # the degradation it is a symptom of. That is this scenario's own
+    # assertion, not an exception to it: correlation annotates and never
+    # suppresses, so a second signal becomes its own incident rather than
+    # being folded into the first.
+    incidents_created: 4
     incident_corroboration: {PAYMENT_DEGRADATION: 1}
     second_sweep_creates: 0
   detect_twice: true
@@ -2017,8 +2025,12 @@
     # No `investigate_first`, so nothing is assessed. Asserted as a count of
     # nulls rather than by the band grader finding nothing to look at — a
     # check that passes because it had no subject is not a check.
-    incidents_created: 3
-    unassessed_incidents: 3
+    # 4 for the same reason as COR-04: the merge added the failure-code-spike
+    # rule, and every incident is still unassessed because nothing investigates
+    # here. The property under test is "no band without an investigation",
+    # which is a statement about all of them however many there are.
+    incidents_created: 4
+    unassessed_incidents: 4
     # The correlation facts, by contrast, exist from detection onward.
     correlation_is_coherent: true
     incident_corroboration: {PAYMENT_DEGRADATION: 1}

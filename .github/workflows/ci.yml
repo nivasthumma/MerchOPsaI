@@ -96,7 +96,64 @@ jobs:
         # the separate `harden_db.py` step used to do here.
         run: PYTHONPATH=. python scripts/migrate.py
       - name: Run tests
-        run: pytest tests -q
+        # `--no-skips`, effectively. The one legitimate skip in this suite is
+        # the migration tests' "the role cannot create databases", which is a
+        # property of somebody's local Postgres and never of CI -- the service
+        # container's role owns the database. So a skip here means a test
+        # stopped running for a reason nobody chose, and `pytest -q` reports
+        # that as a quiet "N passed, 2 skipped" that reads like success.
+        #
+        # This was not hypothetical: a local run said "624 passed, 2 skipped"
+        # where every previous run said 626, and the summary named neither
+        # which two nor why.
+        run: |
+          # pipefail, or `tee` decides the exit code and a RED suite reports
+          # success. Actions' default shell is `bash -e`, which does not set it.
+          set -o pipefail
+          pytest tests -q | tee /tmp/pytest.txt
+          if grep -qE '[0-9]+ skipped' /tmp/pytest.txt; then
+            echo "::error::Tests were skipped in CI. A skipped test is a test that did not run:"
+            grep -E '[0-9]+ skipped' /tmp/pytest.txt
+            echo "Re-run with -rs to see which and why."
+            exit 1
+          fi
+
+      - name: The operator scripts still run
+        # Five entry points that nothing exercised. They are not library code
+        # -- they touch the models, the adapter, detection and the approval
+        # path directly -- so a renamed field breaks them silently and the
+        # first person to notice is whoever is demonstrating the system.
+        #
+        # `demo.py` is the §51 scripted walkthrough and is run LAST, on a
+        # freshly seeded database, because it needs duplicates nobody has
+        # refunded yet. It used to print "(no approval created — skipping)"
+        # and exit 0 in that situation, which let a viewer conclude they had
+        # seen the whole loop including the UNKNOWN section they had not.
+        #
+        # `razorpay_spike.py` is deliberately absent: it writes
+        # docs/assessment/razorpay-spike.md, and a CI step that dirties a
+        # tracked file is a CI step that fights the working-tree checks.
+        run: |
+          set -o pipefail
+          python scripts/demo_state.py > /dev/null
+          python scripts/confirm_mappings.py
+          python scripts/reconcile.py
+          SEED_FORCE=1 python scripts/seed_data.py > /dev/null
+          python scripts/demo.py > /dev/null
+          echo "demo_state, confirm_mappings, reconcile and demo all ran."
+
+      - name: Published numbers match the tree
+        # The README is the only thing most readers check, and a repository
+        # that publishes a number it cannot reproduce is making exactly the
+        # claim this project exists to refuse -- asserting a fact without
+        # reading it back. Three claims were stale when this was written, and
+        # one line in the file disagreed with another.
+        #
+        # Here rather than in `static` because collecting the Python suite
+        # needs a reachable database, and this job has one. The Vitest count is
+        # skipped where `web/node_modules` is absent; the `contract` job is
+        # where the frontend is installed.
+        run: python scripts/check_counts.py
 
   # ---------------------------------------------------------------- static analysis
   static:
@@ -129,6 +186,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: detect --no-banner --redact --verbose
+
+      - name: Lint the shell
+        # `scripts/run_e2e.sh` stands up a database, an API, a built bundle and
+        # a browser. Its first shellcheck run found a real one: an environment
+        # prefix where `E2E_API="$API_ORIGIN"` expanded the PARENT shell rather
+        # than the assignment on the line above it (SC2097/SC2098). It was
+        # correct only because API_ORIGIN happened to be set higher up; reorder
+        # that and the suite drives an empty origin while every journey still
+        # reports a result.
+        run: |
+          # The wheel ships the binary on PATH; there is no importable module.
+          pip install -q shellcheck-py
+          shellcheck scripts/*.sh
 
       - name: Lint
         # The rule set is curated in pyproject.toml rather than "everything
@@ -166,11 +236,81 @@ jobs:
           print("Every entrypoint imports from the tracked tree alone.")
           EOF
 
-      - name: Dependency vulnerabilities
-        # Advisory rather than blocking: a CVE published against a transitive
-        # dependency should reach whoever is on call, not fail an unrelated
-        # pull request at 3am. The nightly schedule is what makes it useful --
-        # it catches an advisory filed after the last commit.
+      - name: The DEPLOYED bundle imports from its own dependencies alone
+        # `api/requirements.txt` is what @vercel/python installs -- six direct
+        # requirements against the root set's thirteen, because a serverless
+        # bundle has a size limit and shipping pytest and Streamlit to
+        # production is how a 30-second cold start happens.
+        #
+        # Nothing checked it. The clean-room import above proves `api.index`
+        # imports with the FULL development set installed, which is a different
+        # claim: add an import to `app/` that needs a package only the root set
+        # carries and every job here stays green while the deploy breaks. So
+        # this installs the deployment lock and nothing else, into its own
+        # interpreter, and imports the entrypoint.
+        run: |
+          python -m venv /tmp/bundle
+          /tmp/bundle/bin/pip install -q --upgrade pip
+          /tmp/bundle/bin/pip install -q --require-hashes -r api/requirements.txt
+          MERCHANTOPS_NO_CLI_AUTH_PROBE=1 PYTHONPATH=. /tmp/bundle/bin/python -c "
+          import api.index
+          print('api.index imports from the deployment bundle alone.')
+          "
+
+      - name: No mutant is committed
+        # The check that would have caught it. `scripts/mutation_test.py`
+        # rewrites files under `app/` for two hours at a time, and on
+        # 2026-09-08 a `git add -A` during a run pushed
+        # `Decision.ALLOW,  # MUTANT` -- the mutation that removes the human
+        # approval gate on high-risk financial actions. It was found by reading
+        # `git show --name-only` afterwards, which is not a control.
+        #
+        # Compared against the harness's own MUTATIONS list rather than grepped
+        # for a marker, so it cannot drift from what the harness can apply.
+        run: python scripts/check_no_mutants.py
+
+      - name: The lock is current
+        # `uv pip compile` prefers the pins already in the output file, so
+        # recompiling is a no-op unless `requirements.txt` changed. That makes
+        # this a real check rather than a race against PyPI: it fails when
+        # somebody adds a dependency and does not regenerate, and stays quiet
+        # when an unrelated package publishes a release.
+        run: |
+          uv pip compile requirements.in --generate-hashes \
+            --python-version 3.12 -o requirements.txt -q
+          uv pip compile requirements-dev.in --generate-hashes \
+            --python-version 3.12 -o requirements-dev.txt -q
+          uv pip compile requirements-runtime.in --generate-hashes \
+            --python-version 3.12 -o requirements-runtime.txt -q
+          uv pip compile api/requirements.in --generate-hashes \
+            --python-version 3.12 -o api/requirements.txt -q
+          git diff --exit-code -- requirements.txt requirements-dev.txt \
+            requirements-runtime.txt api/requirements.txt \
+            || { echo "::error::A lock file is stale. Run 'make lock'."; exit 1; }
+
+      - name: Dependency vulnerabilities (what ships)
+        # BLOCKING, and only defensible because the set is pinned. It used to
+        # audit `requirements.txt`, whose `>=` constraints resolve to whatever
+        # PyPI has that morning -- so failing on it really would have failed
+        # unrelated pull requests at 3am, and it was left advisory for that
+        # reason and then never read. A locked set only changes when somebody
+        # changes it, so a finding here is either a new advisory against a
+        # version we chose (which the nightly schedule surfaces, and which
+        # somebody should look at) or a regression somebody just introduced.
+        run: |
+          pip-audit -r requirements-runtime.txt --progress-spinner off
+          # And the bundle that actually reaches production, which is a
+          # different and smaller set. Auditing only the development lock
+          # would be auditing the machine nobody deploys.
+          pip-audit -r api/requirements.txt --progress-spinner off
+
+      - name: Dependency vulnerabilities (the whole environment)
+        # Advisory, and a different question: `-r` audits the packages the
+        # application declares, and this audits everything actually installed
+        # -- including `pip` itself, which carried seven advisories when this
+        # was written and which no requirements-file audit can ever see.
+        # Not blocking, because the runner's own toolchain is not something a
+        # pull request can fix.
         continue-on-error: true
         run: |
           pip-audit -r requirements.txt --progress-spinner off
@@ -255,7 +395,10 @@ jobs:
           cache-dependency-path: requirements*.txt
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
+          # development runs -- a CI Node that differs from the one the
+          # suite is written against is a second environment nobody tests.
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install dependencies
@@ -283,8 +426,105 @@ jobs:
         # reads still fits what the server declares it sends.
         run: cd web && npm run typecheck
 
+      - name: Frontend lint
+        # The frontend's equivalent of the `static` job's ruff step, and
+        # curated the same way -- see `web/eslint.config.js`, which records the
+        # ten React-Compiler findings that were read and deliberately not
+        # adopted. What is enforced is rules-of-hooks and exhaustive-deps
+        # (promoted from the plugin's own "warn"), because an effect that reads
+        # an undeclared value is a queue refreshing on the wrong schedule.
+        run: cd web && npm run lint
+
       - name: Frontend tests
         run: cd web && npm test
+
+      - name: Frontend dependency vulnerabilities
+        # Blocking, unlike `pip-audit` above, and the difference is the
+        # threshold rather than a difference of opinion about noise. pip-audit
+        # reports every advisory at any severity, so failing on it would fail
+        # unrelated pull requests for a low-severity transitive finding. This
+        # gate fires only on HIGH or CRITICAL in a dependency that ships to the
+        # browser, which is small enough a set to be worth stopping for.
+        #
+        # The two moderate `react-router` advisories currently open are
+        # deliberately below this line -- they are assessed and documented in
+        # the README's known limitations rather than silenced here. `make
+        # web-audit-all` prints everything, including dev dependencies.
+        run: cd web && npm audit --omit=dev --audit-level=high
+
+  # ---------------------------------------------------------------- browser e2e
+  browser:
+    name: Browser journeys (§22)
+    # Only after the contract job: if the generated types are stale or the
+    # frontend does not compile, every journey fails for a reason that has
+    # nothing to do with the seams these exist to test.
+    needs: [contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: merchantops
+          POSTGRES_PASSWORD: merchantops
+          POSTGRES_DB: merchantops
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/setup-node@v5
+        with:
+          # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
+          # development runs -- a CI Node that differs from the one the
+          # suite is written against is a second environment nobody tests.
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: |
+          pip install -q --require-hashes -r requirements.txt
+          cd web && npm ci
+
+      - name: Install the browser
+        # Chromium only. The journeys test seams between our own layers, not
+        # rendering differences between engines, and three browsers would
+        # triple the run to re-answer the same question.
+        run: cd web && npx playwright install --with-deps chromium
+
+      - name: Run the five journeys and the accessibility scans
+        # `run_e2e.sh` owns the whole fixture: it creates its own database,
+        # seeds it, runs detection, plants the one UNKNOWN action journey D
+        # needs through the real execution path, starts the API and takes it
+        # all down again. Nothing here reaches into those steps, because a
+        # workflow that reimplements half the script is a second fixture to
+        # keep in step with the first.
+        env:
+          PY: python
+          E2E_DATABASE_URL: postgresql+psycopg2://merchantops:merchantops@127.0.0.1:5432/merchantops_e2e
+        run: ./scripts/run_e2e.sh
+
+      - name: Upload the trace of anything that failed
+        # `trace: "retain-on-failure"`. A browser failure read from a log line
+        # is a guess; the trace is the actual DOM, network and console at the
+        # moment it went wrong, and it is the only artifact that makes a
+        # once-a-week flake diagnosable.
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-trace
+          path: |
+            web/test-results/
+            web/playwright-report/
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------- scenario suite
   evaluate:
@@ -322,6 +562,19 @@ jobs:
             || { echo "::error::Seed is not deterministic — evaluation cannot be reproducible."; exit 1; }
           echo "Seed reproduces byte-identically."
 
+      - name: The suite asserts what it appears to
+        # Before running it, because a green 167/167 from scenarios that grade
+        # nothing is the most expensive kind of wrong. Four ways that happens
+        # and none is visible in the result: a mistyped `expect` key silently
+        # dropped, a field declared on `Expect` that `runner.py` never reads,
+        # an empty `expect`, and two scenarios sharing an id.
+        #
+        # `Expect` inherits pydantic's `extra="ignore"`, which is what makes
+        # the first one possible. `app/api/schemas.py` solved exactly that for
+        # responses with `extra="forbid"`; the evaluation schema never got the
+        # same treatment.
+        run: python scripts/check_scenarios.py
+
       - name: Run evaluation suite
         run: python scripts/run_scenarios.py
 
@@ -356,6 +609,15 @@ jobs:
               print(f"::error::Critical scenarios failed: {failed}")
               sys.exit(1)
           PY
+
+      - name: Published scenario numbers match the run
+        # Here rather than only in the `test` job, because this is where
+        # `data/evaluation_report.json` exists. Without it the README's
+        # "167/167 scenarios passed (critical: 110/110)" and its eleven
+        # per-category rows were compared to nothing -- the earlier check read
+        # the numerator and compared it to the YAML's TOTAL, so the line would
+        # have passed whether or not 167 actually did.
+        run: python scripts/check_counts.py
 
       - name: Summary
         if: always()
@@ -421,20 +683,19 @@ jobs:
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Each mutant re-runs the whole scenario suite AND the test suite, so the
-    # cost is (mutants x suites) and both keep growing: 126 mutants against 187
-    # scenarios and 919 tests is about 135 seconds each, so roughly five hours.
+    # cost is (mutants x suites) and both keep growing. The spine/trunk merge
+    # made the corpus the UNION of the two branches' mutants: 136, against the
+    # merged scenario and test suites.
     #
-    # Measured, not guessed, and the measurement is why this number moved. At
-    # `timeout-minutes: 50` this job could not have passed — it would have been
-    # cancelled a third of the way through and reported as a failure of the
-    # code rather than of the budget. It runs nightly and on pull requests, and
-    # a nightly job is allowed to take a night.
-    #
-    # Raised rather than trimmed, for the same reason as last time: dropping
-    # mutants to fit a timeout would be optimising the number this job exists to
-    # produce. What DID change is the waste — the scenario runner used to
-    # rebuild the schema per scenario, 1134 ms against 179 ms for a TRUNCATE,
-    # 187 times per mutant and 126 mutants per run.
+    # 360 is GitHub's ceiling for a hosted runner, and this job is already at
+    # it. The arithmetic is not comfortable: trunk measured 126 mutants at
+    # about 135 seconds each (roughly five hours) against a SMALLER suite than
+    # the merged one, and 136 mutants against a larger suite is more than that.
+    # This number is therefore a ceiling rather than a measurement, and the
+    # first full run after the merge is what settles it. If it is cancelled at
+    # 360, the fix is to shard the corpus across jobs or move to a larger
+    # runner -- not to drop mutants, which would be optimising away the number
+    # this job exists to produce.
     timeout-minutes: 360
     services:
       postgres:
@@ -465,6 +726,22 @@ jobs:
           # Uses the venv interpreter path by default; in CI the interpreter is
           # already on PATH.
           MERCHANTOPS_PYTHON="$(which python)" python scripts/mutation_test.py
+      - name: Published mutation result matches the run
+        # The number the README publishes, checked against the file the run
+        # just wrote -- here rather than in the `test` job because this is
+        # where the report exists. Everywhere else the check prints that no run
+        # was recorded and moves on, which is why a contributor does not have
+        # to sit through two hours to make the cheap check pass.
+        run: python scripts/check_counts.py
+
+      - name: Upload the mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: data/mutation_report.json
+          if-no-files-found: warn
+
       - name: Working tree must be unmodified
         run: |
           # Every mutation is reverted in a finally block. If anything survived

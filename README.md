@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-916%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-1086%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
-[![Mutations](https://img.shields.io/badge/mutations-113%20defined%20%C2%B7%20not%20re--measured-lightgrey.svg)](#-measured-results)
+[![Mutations](https://img.shields.io/badge/mutations-136%20defined%20%C2%B7%20not%20measured-lightgrey.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 916 tests · 187/187 scenarios · 113 mutants defined |
+| [📊 Measured results](#-measured-results) | 1086 tests · 187/187 scenarios · 136 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -92,7 +92,7 @@ and what is architecture.
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 187 scenarios + 113-mutant validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 187 scenarios + 136-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Notifications | Operator notifications on approval requested / expiring / expired, HIGH+ incidents, escalated actions, UNKNOWN verifications. Channels: log (always), email, Slack, signed outbound webhook. Recipients derived from the permissions the action requires (ADR-0042) | Quiet hours, per-user preferences, digests, escalation chains |
@@ -151,16 +151,48 @@ median task latency 49 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-113 mutants defined         not yet re-measured on this tree
+136 mutants defined         not yet measured on this tree
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes the better part of an hour. **No complete run has happened since
-`feat/incident-spine` and `feat/merchantops-v2` were merged** (ADR-0041), and the two
-branches' last complete runs measured different tree*s* — 77/78 and 78/78 against
-mutant sets that no longer exist, since the merged set is 113. Neither number
-describes what is here now, so neither is published. CI runs the full set nightly and
-on every pull request; that is where the figure for this tree will come from.*
+complete run takes hours. **No complete run has happened since
+`feat/incident-spine` merged into `integration/trunk`.** The two branches' last
+complete runs measured different trees against mutant sets that no longer exist
+— 88/88 on the spine and 113 defined on the trunk — and the merged set is 136.
+Neither number describes what is here now, so neither is published. CI runs the
+full set nightly and on every pull request; that is where the figure for this
+tree will come from.*
+
+**§22's five browser journeys run.** `make e2e` stands the whole stack up
+against its own database — seed, API, the built bundle behind `vite preview`,
+one Chromium — and drives detection→incident, the approval gate through to
+independent verification, a rejection, an UNKNOWN queue, and a replay. Two of
+them assert a **negative** — that no external call was made — which is the
+property a UI bug can violate while looking entirely correct.
+
+These run in CI as the `browser` job, through the same
+[`scripts/run_e2e.sh`](scripts/run_e2e.sh) that `make e2e` uses — one fixture,
+two machines, rather than a workflow that reimplements half the script and
+drifts from it. Not in `make ci`, deliberately: that is the check somebody runs
+before pushing, and a browser download plus a second Postgres database would
+make it slow enough to be skipped. §24 puts browser E2E before deploy, not
+before every commit. See [ADR-0034](docs/adr/0034-browser-e2e-runs-in-ci.md),
+which records this reversing the CI half of ADR-0015.
+
+**Accessibility is measured, not asserted.** The same suite scans five screens
+and the error state with axe in both themes, and found three real defects on its
+first run — a contrast ratio measured against a surface the text no longer sat
+on, a link distinguishable only by colour, and a loading skeleton that was
+silent to screen readers because ARIA prohibits `aria-label` on a bare `<div>`.
+None was reachable from jsdom.
+
+**§20's twenty mandatory adversarial scenarios are audited rather than assumed**
+— [`docs/adversarial-coverage.md`](docs/adversarial-coverage.md) counts what the
+suite covers. The one real gap it found — an out-of-order webhook, which §14
+requires handling and nothing exercised — is now closed by three tests, verified
+against a hand-applied "believe the payload" defect that turns them red. Two
+more (stale action, customer attempt limit) are covered by unit tests rather
+than as scenarios, and that distinction is recorded rather than smoothed over.
 
 *What is verified individually: the merchant-isolation mutant — the one a killed run
 left stranded in the working tree, and the reason `app/integrity.py` exists — was
@@ -387,17 +419,86 @@ Requires Python 3.12+ and PostgreSQL.
 ```bash
 createdb merchantops                     # or use the DATABASE_URL of your choice
 cp .env.example .env                     # optional; defaults work locally
-make setup                               # venv + dependencies
+make setup                               # venv + the locked dependencies
 make migrate                             # schema + the controls over it (ADR-0030)
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
-make test                                # 916 tests
-make eval                                # 167 scenarios, measured
+make demo-state                          # give the console something to show
+make test                                # 1086 tests
+make eval                                # 187 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
-make ci                                  # what CI runs: seed + harden + test + eval
+make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
+make hooks                               # pre-commit: refuse to record a mutant
+make mutants-status                      # is a mutation run in progress?
 ```
+
+`make hooks` installs one pre-commit hook, and it exists because of a specific
+failure. `scripts/mutation_test.py` rewrites files under `app/` in place for
+over two hours; every mutation is reverted in a `finally` and the tree is
+verified afterwards, but neither stops a commit made *while* a run is in
+flight. On 2026-09-08 a `git add -A` during a run pushed
+`Decision.ALLOW,  # MUTANT` — the mutation that removes the human approval gate
+on high-risk financial actions, which 49 scenarios exist to catch. It was found
+by reading `git show --name-only` afterwards, which is not a control.
+
+`make mutants-status` answers the companion question, and answers it from the
+repository root. `ls .mutation-in-progress` is a relative path: run from `web/`
+it reports no run in progress while one is ninety minutes in, and acting on
+that answer means reverting a file the harness is actively mutating. A question
+whose answer depends on which directory you are standing in is one that will
+eventually be answered wrongly.
+
+The check compares the file against the harness's own `MUTATIONS` list rather
+than grepping for a `# MUTANT` marker: a marker is a convention and conventions
+get forgotten, while the replacement strings are the exact text the harness can
+write. It runs in CI as well as in the hook — git does not version-control
+hooks, so the hook protects whoever installed it and CI protects everybody.
+
+`make demo-state` is the one worth knowing about before showing this to anybody.
+A freshly seeded database has 590 payments and no *operations* — no incidents
+until detection runs, no tasks, no approvals, no actions — so the console opens
+on a Command Center reporting nothing to attend to and an Action Center with
+five empty sections. That is the system working correctly and looking broken.
+
+It runs detection, plans recovery against the open incidents, and then produces
+one of each state the queues exist for: a task awaiting approval, an executed
+refund verified against the provider, an action left **UNKNOWN through the real
+execution path** with the timeout injector, and a rejection that makes zero
+external calls. The UNKNOWN one matters — writing `UNKNOWN` into the row
+directly would give a queue entry that never reached UNKNOWN the way the system
+does, which is a screenshot rather than a state.
+
+It is additive: it never seeds and never deletes, which is why it is a separate
+script rather than a flag on `seed`. Safe to run against a database somebody is
+already using.
+
+Every one of those is safe to run with the console open. **None of them was
+until 2026-09-08.** The evaluation suite drops and rebuilds the schema once per
+scenario and inherited `DATABASE_URL`, so `make eval` destroyed the development
+database 167 times; `make mutants` runs the suite per mutant and did it 88
+times over; and `make ci` began by force-seeding the same database. Anyone
+browsing at the time watched their open task become "Unknown task" with nothing
+connecting the two events.
+
+Each check now has its own database, created on demand: `<database>_eval` for
+the suite (`EVAL_DATABASE_URL` to override) and `<database>_ci` for `make ci`
+(`CI_DB`). `scripts/run_e2e.sh` had had one from the start and said why in a
+comment — the reasoning existed and had simply never been applied one directory
+across. `run_all()` additionally refuses to reset a database whose name does not
+look disposable, so bypassing the entry point cannot reintroduce it; the default
+makes the right thing happen and the guard makes the wrong thing impossible.
+
+`make ci` is **not** everything CI runs, and used to say it was. It is seed,
+harden, lint, clean-room import, tests, published-number check and evaluation —
+the part that is fast enough to run before pushing. CI additionally runs the
+migration driver against an unstamped database, the OpenAPI and generated-type
+contract checks, the frontend's lint, typecheck, tests and audit, the browser
+journeys and accessibility scans, the dependency lock and audit gates, and the
+88-mutant run. Those need Postgres service containers, a browser download and
+over two hours, which is why they are gated there and not here — and why the
+name was worth correcting rather than leaving as a claim nobody re-read.
 
 Run the services:
 
@@ -416,13 +517,36 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 182 Vitest tests
+make web-test                     # 324 Vitest tests
+make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
+make web-audit                    # npm audit, high and above
 ```
+
+`make web-lint` is the frontend's ruff, and curated the same way. `tsc --noEmit`
+proves the types line up and says nothing about a `useEffect` that reads a value it
+never declared — which, on three screens that poll through `useLiveRefresh`, is a
+queue refreshing on the wrong schedule behind a "live" indicator.
+
+What it enforces is deliberately small: rules-of-hooks, `exhaustive-deps` (promoted
+from the plugin's own *warn* to an error), unused variables, and the recommended
+TypeScript set. `eslint-plugin-react-hooks` v7's recommended set is largely the React
+Compiler rule set; turned on wholesale it reports ten findings here — six guarded
+`setState` calls in effects that clear derived state when its input disappears, two
+`Date.now()` reads during render, and the latest-callback ref in `useLiveRefresh`.
+All ten were read. None is a defect: they are deviations from rules that exist so the
+React Compiler can memoize aggressively, and this app does not use the compiler.
+They are off by name, with the reasoning in
+[`web/eslint.config.js`](web/eslint.config.js), so that adopting the compiler later
+starts from a written list rather than a rediscovery.
 
 The SPA is outside the contract's MVP scope (§3, §52) and exists by explicit request —
 see [ADR-0015](docs/adr/0015-react-spa-frontend.md). The Streamlit UI remains the
-contract-conformant surface. The SPA's tests are not in CI, so they are a local gate
-rather than a regression gate.
+contract-conformant surface. ADR-0015's consequence that "nothing in `web/` affects the
+Python CI jobs" is now historical: the `contract` job type-checks the frontend against
+the generated OpenAPI types and runs the Vitest suite, the `browser` job runs the five
+journeys and the accessibility scans ([ADR-0034](docs/adr/0034-browser-e2e-runs-in-ci.md)),
+and a stale `src/api/schema.d.ts` fails the build. These are regression gates, not local
+ones.
 
 Before trusting real payment execution:
 
@@ -439,7 +563,7 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `GET /metrics/operational` · `GET /metrics/objectives` | §59 metrics and §60 SLOs |
 | `GET /approvals` · `GET /actions/{id}` | The approval queue, and one action |
 | `GET /tasks/{id}/messages` | The conversation the model actually saw |
-| `GET /trace/{correlation_id}` | §58 — everything one operation touched, in one ordering |
+| `GET /trace/{correlation_id}` | §58 — everything one **operation** touched, in one ordering |
 | `GET /failures/taxonomy` | §56/§57 — what each failure means and whether to retry it |
 | `GET /dashboard` | §50 — revenue at risk, recovery, incidents, agent activity |
 | `GET /recovery/ledger` | §49 — the six figures, and whether they nest |
@@ -463,11 +587,25 @@ make spike    # writes docs/assessment/razorpay-spike.md
 | `POST /tasks/{id}/replay?mode=` | `PLAYBACK` or `RE_REASON` |
 | `POST /actions/reconcile` | Settle unsettled actions (re-reads only) |
 | `GET /actions/escalated` | Operator queue: what reconciliation could not settle |
+| `GET /actions` | **The Action Center** — the queue in five sections, one read |
+| `GET /command-center` | **What needs attention** — revenue health, funnel, live activity |
+| `GET /search?q=` | One box, every identifier. Exact match, merchant-scoped in SQL |
+| `GET /payments/{id}/lifecycle` | **§7 — one payment, end to end**, across every correlation id it spans |
 | `GET /scenarios` · `POST /scenarios/{id}/run` | Evaluation suite |
 | `GET /health` | Reports active LLM provider and payment adapter |
+| `GET /liveness` | The process is running. No I/O, no dependencies |
+| `GET /readiness` | Per-component dependency verdicts; 503 when a *required* one is down |
 
 Every endpoint enforces authentication and merchant isolation server-side. A
 cross-merchant read returns 404, not 403 — existence is not leaked.
+
+`GET /liveness` and `GET /readiness` are unauthenticated because a platform probe
+cannot hold a token. `/readiness` publishes *verdicts* to anyone and the operational
+detail behind them — mapping coverage, the reconciliation backlog, which payments
+drifted — only to a caller with a valid token, which is the same line
+`/metrics/prometheus` already draws. An invalid token narrows the body rather than
+failing the request: a probe with a stale credential must not take a deployment out of
+rotation.
 
 `POST /webhooks/razorpay` is the one exception and the only unauthenticated write: the
 provider holds no bearer token, so an HMAC signature over the raw body is the
@@ -582,10 +720,16 @@ are different claims.
     and revenue-at-risk accuracy need labelled ground truth a production incident does not
     carry; agent cost needs token accounting this build has no path to. A figure computed
     from nothing is worse than a blank.
-12. **The provider-burst detection rule cannot fire on the seeded dataset.** It reads
-    `webhook_events`, and the seed is payment history — it carries no provider events. The
-    rule is real and is exercised by constructed state in tests and in `CLS-01`/`CLS-02`,
-    the same honesty as the bulk-risk path.
+12. **Two detection rules cannot fire on the seeded dataset**, for different reasons and
+    both stated rather than hidden.
+
+    *Provider burst* reads `webhook_events`, and the seed is payment history — it carries
+    no provider events. Exercised by constructed state in tests and in `CLS-01`/`CLS-02`.
+
+    *Unusual refund activity* is the opposite case: the seed **does** carry refunds, and
+    they are flat — nine in each window at similar value. The rule correctly says nothing,
+    which is a rule discriminating rather than one that cannot run. A test asserts the
+    silence, so a future change that makes it fire on ordinary business fails.
 13. **`confidence` is a display value.** It is recorded and shown and consulted by nothing.
     Against the deterministic planner it is computed from evidence count, which measures
     the planner rather than any judgement; against a real model it would mean something
@@ -625,10 +769,11 @@ are different claims.
 
 ### Coverage limits
 
-18. **The per-mutant breakdown is stale.** The figures in this item and the next
-    were measured on `feat/incident-spine`'s 78-mutant set. The merge in ADR-0041
-    brought `feat/merchantops-v2`'s mutants in alongside them, making 113, and no
-    complete run has happened since. The shape of the finding is unchanged — some
+19. **The per-mutant breakdown is stale.** The figures in this item and the next
+    were measured on `feat/incident-spine`'s 78-mutant set. Two merges have widened it
+    since: ADR-0041 brought `feat/merchantops-v2`'s mutants in alongside them, making
+    113, and merging `feat/incident-spine` into `integration/trunk` took the union to
+    136. No complete run has happened against either. The shape of the finding is unchanged — some
     mutants are reachable only by unit tests, and a few are detected as a crash rather
     than a graded failure — but every number below describes the previous set. The
     nightly CI run is what will replace them.
@@ -648,8 +793,10 @@ are different claims.
     crash rather than a graded result, and the rest by unit tests alone — the metrics and
     taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
     [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-19. **The mutant run takes about five hours.** Measured, not estimated: 126 mutants
-    against 187 scenarios and 919 tests, roughly 135 seconds each. It does not run on
+20. **The mutant run takes over five hours.** Measured, not estimated: at 126 mutants
+    against 187 scenarios and 919 tests it was roughly 135 seconds each. The merged
+    tree is 136 mutants against 187 scenarios and 1086 tests, so the figure is a
+    floor rather than a measurement until the nightly run reports one. It does not run on
     every push (ADR-0041) — pull requests, the trunk, and nightly — and
     `scripts/mutation_test.py <substring>` runs a subset during development.
 
@@ -665,6 +812,94 @@ are different claims.
     policies and the audit triggers, and does not fire the row triggers that make
     `audit_logs` append-only, so the control does not have to be suspended to empty the
     table.
+
+### Supply-chain limits
+
+21. **`npm audit` reports zero, and that is a recent state rather than a standing
+    property.** On 2026-09-07 it reported eight. Two were in a dependency that ships
+    to the browser: `react-router` 6 carried `GHSA-337j-9hxr-rhxg` (SSR hydration,
+    unreachable here — pure SPA, `createRoot`, no server renderer) and
+    `GHSA-wrjc-x8rr-h8h6` (open redirect: a path beginning with a backslash treated
+    as same-origin by `<Link>` and `useNavigate`, then followed off-site). The second
+    was reachable in principle. Both are gone at `react-router` 7.18.3.
+
+    `internalRoute()` in `CommandPalette.tsx` stays. It was written to close the open
+    redirect locally when no upstream fix existed, and it is worth keeping now that
+    one does: the palette is the only place a *whole* route arrives as data rather
+    than as an id interpolated into a fixed template, and a guard on that input
+    should not depend on which version of a router is installed. Two tests hold it.
+22. **Six advisories in the build and test tooling were closed by upgrading it,
+    not by widening the gate.** Before 2026-09-08 `npm audit` reported eight: the
+    two above plus `vite` 5.4.21 (high, path traversal in optimized-deps `.map`
+    handling), `esbuild` 0.21.5 (moderate, any website can request the dev server
+    and read the response), `vitest` 2.1.9 (critical, arbitrary file read and
+    execute while the Vitest UI server is listening) and three transitive on those.
+    All six were dev-server or test-runner surface — none in `dependencies`, none in
+    `dist/` — so none was urgent, and the temptation was to write that down and move
+    on. Vite 8 / Vitest 5 removes all six, and drops `esbuild` from the tree
+    entirely. It required raising CI's Node from 20 to 24 (Vitest 5 needs ≥ 22.12),
+    which `engines` plus `engine-strict` now enforce at install rather than thirty
+    seconds into a test run. Verified by the full suite: 324 Vitest tests, the build,
+    and all 14 browser journeys and accessibility scans against `vite preview`,
+    which is the part a Vite major could have broken silently.
+
+    The router went the same way for the same reason, and stopped one major short of
+    the newest on purpose: `react-router` 8 requires React ≥ 19.2.7, and folding a
+    React major into an advisory fix would be smuggling a much larger decision
+    through a security patch. 7.18.3 clears both advisories on React 18. `react-router-dom`
+    is gone — v7 merged it back into `react-router`, and the imports now say so.
+    It costs 28 kB raw / 9 kB gzipped in the bundle, which is recorded rather than
+    discovered later.
+23. **The Python dependencies were unpinned until 2026-09-08, so CI and
+    development ran different code.** `requirements.txt` is thirteen `>=`
+    constraints, and CI installed straight from it — resolving to whatever PyPI
+    had that morning. Two runs of the *same commit* could therefore run different
+    versions, which is a strange property for a repository whose evaluation suite
+    publishes a number and whose CI asserts that number is reproducible. It was
+    not hypothetical: when the lock was first generated, **nine packages differed**
+    between the development venv and what CI would have installed, `anthropic` by
+    four minor versions.
+
+    The pinned set is now the installed one -- fully hashed, `--require-hashes` in
+    every CI job and in `make setup`. The mechanism is trunk's rather than the one
+    this branch introduced: the `.in` files are the human declaration and
+    `requirements.txt`, `requirements-dev.txt` and `requirements-runtime.txt` are
+    the compiled, hashed outputs. `make lock` regenerates them and keeps existing
+    pins; `make lock-upgrade` takes newer versions deliberately. Because uv prefers
+    the pins already in the file, recompiling is a no-op unless a `.in` changed --
+    which is what makes "the lock is current" a real CI check rather than a race
+    against PyPI.
+
+    Both sets, not one. `api/requirements.txt` is what `@vercel/python` actually
+    installs — six direct requirements against the root set's thirteen, because a
+    serverless bundle has a size limit and shipping pytest and Streamlit to
+    production is how a 30-second cold start happens. Nothing checked it: the
+    clean-room import proved `api.index` imports with the *full development set*
+    installed, which is a different claim. Add an import to `app/` needing a
+    package only the root set carries and every job stays green while the deploy
+    breaks. CI now installs the deployment set alone into its own interpreter and
+    imports the entrypoint — 16 packages, and it does import.
+
+    The reasoning behind this and the rest of the session's measurement work is
+    recorded in
+    [ADR-0035](docs/adr/0035-a-measurement-carries-its-own-conditions.md) — a
+    measurement carries its own conditions, and every published number is gated
+    against an artifact a run produced.
+
+    `pip-audit` is now blocking, which it could not honestly have been before —
+    failing on a resolution that moves every morning really would have failed
+    unrelated pull requests. A second, advisory audit covers the whole installed
+    environment rather than the declared set; that one is what surfaced seven
+    advisories in `pip` itself, which no requirements-file audit can ever see.
+24. **Nothing audited the npm dependencies until 2026-09-07.** `pip-audit` has run in
+    CI since the start; the web half had no equivalent, which means every advisory
+    above had been open and unread rather than open and accepted. `make web-audit`
+    now fails on a high or critical advisory in production dependencies, and `make
+    web-audit-all` prints everything including dev. The gate deliberately stops at
+    `--omit=dev --audit-level=high`: what ships to a browser is held to a hard line,
+    the toolchain is reported and reasoned about rather than blocking a merge, and a
+    gate that fires on findings nobody has agreed to is a gate people learn to pass
+    with `--force`.
 
 ---
 
@@ -711,21 +946,28 @@ app/
   policy/       deterministic policy engine + the computed risk engine
   failures.py   §56 taxonomy and §57 retry rules, as data
   metrics.py    §59 operational metrics and §60 objectives
-  verification/ read-back verification and state classification
-  integrations/ razorpay adapter + fault-injection seam
+  verification/ read-back verification, state classification, the P0-15
+                backoff schedule and escalation
+  integrations/ razorpay adapter, fault-injection seam, the synthetic ->
+                provider mapping (ADR-0033)
   llm/          provider abstraction (anthropic | deterministic)
   eval/         scenario schema + runner
+  events/       the outbox and its drain -- one write, published once
+  evidence/     the evidence graph and hypotheses behind a confidence band
+  notify/       operator notification routing and the escalation sweep
   observability/ structured logs, runtime metrics, request + query timing
   api/          FastAPI surface + response contracts (ADR-0032)
+  audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 198 tests
-data/           167 scenarios + the last evaluation report
-scripts/        migrate, seed, spike, scenarios, demo
-tests/          unit · security · integration  (916 tests)
+web/            React SPA — Vite + TypeScript (ADR-0015), 324 tests
+data/           187 scenarios + the last evaluation and mutation reports
+scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
+                mutation harness, and the gates: counts, mutants, locks
+tests/          unit · security · integration  (1086 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 32 ADRs
+                gap-closure plan, 54 ADRs
 ```
 
 ## 📄 License / disclaimer

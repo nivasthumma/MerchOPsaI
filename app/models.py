@@ -8,6 +8,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -146,6 +147,16 @@ class IncidentType(str, enum.Enum):
     # history: the provider is telling us about failures faster than they land
     # on rows we own, and a burst of them is a signal in its own right.
     PROVIDER_FAILURE_BURST = "PROVIDER_FAILURE_BURST"
+    # MerchantOps §12 "failure-code spikes". Diagnostic rather than additional
+    # exposure: this says WHY a method is degrading, and the degradation rule
+    # has already counted the revenue. It therefore carries
+    # `revenue_at_risk_minor = 0` -- see the rule for why double-counting here
+    # would inflate the ledger's at-risk figure.
+    FAILURE_CODE_SPIKE = "FAILURE_CODE_SPIKE"
+    # MerchantOps §12 "unusual refund activity". Money leaving that would not
+    # have left at the baseline rate, so unlike the spike above this IS new
+    # exposure and is counted.
+    UNUSUAL_REFUND_ACTIVITY = "UNUSUAL_REFUND_ACTIVITY"
 
 
 class Intervention(str, enum.Enum):
@@ -642,6 +653,88 @@ class Refund(Base):
 
 
 # --------------------------------------------------------------------------
+# Provider mapping (MerchantOps §6 — the authoritative synthetic→external link)
+# --------------------------------------------------------------------------
+class MappingStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"
+
+
+class ProviderMapping(Base):
+    """The only authority on which provider object an internal payment is.
+
+    `payments.external_payment_id` existed before this table and is still
+    written, but it could not carry the guarantee the control plane needs. It
+    is a nullable column with an ordinary index: nothing stopped two internal
+    payments from naming the same `pay_...`, and nothing recorded *which*
+    provider or *which environment* the id belonged to. A test-mode id and a
+    live-mode id are both a short string beginning `pay_`, and the difference
+    between them is the difference between a rehearsal and real money.
+
+    So the mapping is a row, with the two constraints that make it a mapping
+    rather than a note:
+
+      uq_mapping_payment_provider_env   one internal payment resolves to at
+                                        most one external id per (provider,
+                                        environment) — resolution is a
+                                        function, not a query that might
+                                        return two answers
+
+      uq_mapping_external_identity      one external id belongs to at most one
+                                        internal payment per (provider,
+                                        environment) — the direction that stops
+                                        a synthetic id from resolving onto
+                                        another payment, which is §6's point
+
+    Both are UNIQUE in PostgreSQL rather than checks in Python, for the reason
+    every other constraint in this schema is: a check that runs before an
+    INSERT is an optimisation, and the constraint is the authority.
+
+    The model never writes here. Mappings come from seeding, from the Test Mode
+    spike, or from an operator; the agent may only *read* through
+    `app.integrations.mapping.resolve`, and it may never supply an external id
+    of its own.
+    """
+    __tablename__ = "provider_mappings"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(ForeignKey("merchants.id"), index=True)
+    payment_id: Mapped[str] = mapped_column(ForeignKey("payments.id"), index=True)
+
+    provider: Mapped[str] = mapped_column(String(32), default="razorpay")
+    # `test` and `live` are different provider universes with different money in
+    # them. Stored, not inferred: a mapping created under test credentials must
+    # not silently resolve once someone points the process at live ones.
+    environment: Mapped[str] = mapped_column(String(16), default="test")
+    external_payment_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    status: Mapped[MappingStatus] = mapped_column(
+        Enum(MappingStatus, native_enum=False), default=MappingStatus.ACTIVE, index=True)
+    # Where this mapping came from, so a bad one can be traced to whatever
+    # produced it rather than being assumed correct because it is in the table.
+    source: Mapped[str] = mapped_column(String(32), default="seed")
+    # When the external id was last confirmed to exist at the provider. Null
+    # means nobody has ever checked — a different claim from "checked and it was
+    # there", and the two must not read the same.
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        # An environment outside the known set resolves to nothing and would sit
+        # in the table looking like a mapping. Refused by the database, because
+        # the application is not the only thing that writes here -- a seed
+        # script, the Test Mode spike and an operator all do.
+        CheckConstraint("environment IN ('test', 'live')",
+                        name="ck_mapping_environment"),
+        UniqueConstraint("payment_id", "provider", "environment",
+                         name="uq_mapping_payment_provider_env"),
+        UniqueConstraint("provider", "environment", "external_payment_id",
+                         name="uq_mapping_external_identity"),
+        Index("ix_mapping_lookup", "merchant_id", "provider", "environment"),
+    )
+
+
+# --------------------------------------------------------------------------
 # Provider-side objects for the non-refund actions (MerchantOps §18)
 # --------------------------------------------------------------------------
 class PaymentLink(Base):
@@ -1125,6 +1218,36 @@ class AgentAction(Base):
     )
     verification_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verify_attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+    # --- MerchantOps P0-04 / P0-15: UNKNOWN is unresolved financial WORK ---
+    #
+    # `verify_attempts >= max_attempts` was the whole escalation mechanism: the
+    # sweep stopped picking a row up, and a separate query re-derived "escalated"
+    # from the same comparison. That made escalation a property of a threshold
+    # two different call sites each had to remember, and it left no record of
+    # *when* the system gave up — so an action stuck for six hours and one stuck
+    # for six days read identically.
+    #
+    # These four columns make the reconciliation workflow legible without
+    # recomputing it:
+    #
+    #   escalated       durable, set once, never re-derived from a count
+    #   escalated_at    how long a human has been on the hook for this
+    #   last_verified_at when the provider was last actually read
+    #   next_verify_at  when the sweep may look again — the backoff schedule,
+    #                   stored rather than implied, so the queue can show an
+    #                   operator "next check 14:22" instead of "sometime"
+    #
+    # `next_verify_at` is also what makes the sweep's spacing a property of the
+    # action rather than of the sweep's cadence: a cron that runs every minute
+    # and a cron that runs every ten both honour the same schedule.
+    escalated: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    next_verify_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True)
     # MerchantOps §59 names both. Both were already being spent and neither was
     # being recorded, which is the cheapest kind of missing metric.
     provider_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)

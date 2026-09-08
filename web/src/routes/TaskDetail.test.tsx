@@ -5,7 +5,7 @@
 
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { ToastHost } from "../components/Toast";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
@@ -58,6 +58,20 @@ const BASE: Task = {
   recommendation: { type: "refund_duplicate", detail: "Proposed for human approval." },
   agent_confidence: 0.9, requires_human: true, model_requires_human: true,
   failure: null,
+  // P0-08. A gated task that has investigated and is waiting: the same shape
+  // the server builds, so the fixture cannot drift into describing a run the
+  // backend could not produce.
+  activity: [
+    { key: "started", label: "Investigation started", state: "done",
+      at: "2026-09-07T12:00:00Z", detail: "Find the duplicate payment" },
+    { key: "tool:0", label: "Duplicate payments searched", state: "done",
+      at: "2026-09-07T12:00:01Z", detail: "" },
+    { key: "policy", label: "Policy evaluated", state: "done",
+      at: null, detail: "REQUIRE_APPROVAL" },
+    { key: "approval:APR_1", label: "Waiting for approval", state: "blocked",
+      at: "2026-09-07T12:00:02Z",
+      detail: "0 of 1 signature(s). Nothing has reached the provider." },
+  ],
   versions: { agent: "merchantops-agent/0.1.0", model_provider: "deterministic",
               model: "deterministic-planner-v1", prompt: "investigator-v2",
               tool_registry: "tools-fdebfe546427", policy: "policy-v3",

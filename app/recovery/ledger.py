@@ -129,12 +129,23 @@ def build_ledger(session, merchant_id: str) -> RecoveryLedger:
     led.outstanding_minor = int(row["outstanding"])
 
     # §50: at risk BY INCIDENT and BY PAYMENT METHOD.
+    #
+    # `::bigint` on every SUM, and it is not decoration. Postgres widens
+    # `SUM()` over a bigint to `numeric`, psycopg2 renders that as `Decimal`,
+    # and these two breakdowns were the only place in the ledger where money
+    # reached the wire without a declared integer field to be coerced against.
+    # The result was `recoverable_minor` arriving as the STRING "2798847" here
+    # while the identically-named field one level up was an integer -- money on
+    # a revenue ledger with two types in one response. The response models now
+    # declare `int` as well; this makes the value an integer before pydantic
+    # ever sees it, so the wire type stops depending on what Postgres decides a
+    # sum should widen to.
     led.by_incident = [dict(r) for r in session.execute(text("""
         SELECT i.id AS incident_id, i.incident_type, i.severity, i.status, i.title,
                i.revenue_at_risk_minor,
                COALESCE(SUM(c.attributed_amount_minor) FILTER (
-                   WHERE c.status <> 'INELIGIBLE'), 0) AS recoverable_minor,
-               COALESCE(SUM(c.actual_recovery_minor), 0) AS recovered_minor
+                   WHERE c.status <> 'INELIGIBLE'), 0)::bigint AS recoverable_minor,
+               COALESCE(SUM(c.actual_recovery_minor), 0)::bigint AS recovered_minor
         FROM incidents i LEFT JOIN recovery_candidates c ON c.incident_id = i.id
         WHERE i.merchant_id = :m AND i.status = ANY(:open)
         GROUP BY i.id, i.incident_type, i.severity, i.status, i.title,
@@ -147,8 +158,8 @@ def build_ledger(session, merchant_id: str) -> RecoveryLedger:
     led.by_method = [dict(r) for r in session.execute(text("""
         SELECT COALESCE(p.method, 'unknown') AS method,
                COALESCE(SUM(c.attributed_amount_minor) FILTER (
-                   WHERE c.status <> 'INELIGIBLE'), 0) AS recoverable_minor,
-               COALESCE(SUM(c.actual_recovery_minor), 0) AS recovered_minor,
+                   WHERE c.status <> 'INELIGIBLE'), 0)::bigint AS recoverable_minor,
+               COALESCE(SUM(c.actual_recovery_minor), 0)::bigint AS recovered_minor,
                COUNT(*) AS candidates
         FROM recovery_candidates c JOIN payments p ON p.id = c.payment_id
         WHERE c.merchant_id = :m

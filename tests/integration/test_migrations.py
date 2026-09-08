@@ -54,8 +54,22 @@ def _fresh_database(name: str) -> str:
                     c.execute(text(f'CREATE DATABASE "{name}"'))
                 break
             except ProgrammingError as exc:
-                # No CREATEDB. Retrying cannot help.
-                pytest.skip(f"the role cannot create databases: {exc}")
+                # Skip ONLY on a genuine permissions problem. `ProgrammingError`
+                # is a wide net -- a syntax error, a bad identifier, a database
+                # in use -- and skipping on all of it means these tests can
+                # silently not run for a reason that has nothing to do with
+                # CREATEDB. That happened: a full-suite run reported "624
+                # passed, 2 skipped" where every previous run said 626, and
+                # nothing in the output said which two or why.
+                #
+                # A test that silently does not run is worse than a failing
+                # one, and these are the tests that prove a real database can
+                # be migrated to head. So: 42501 is insufficient_privilege,
+                # which retrying genuinely cannot fix. Anything else is a
+                # failure and is raised.
+                if getattr(getattr(exc, "orig", None), "pgcode", None) == "42501":
+                    pytest.skip(f"the role cannot create databases: {exc}")
+                raise
             except OperationalError as exc:
                 last = exc
                 time.sleep(0.2 * (attempt + 1))

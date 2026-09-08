@@ -18,6 +18,7 @@ from app.llm.deterministic import DeterministicProvider
 from app.models import ActionStatus, AgentAction, AgentTask, AuditLog, Refund, TaskStatus
 from app.verification.reconciler import (
     abandoned_claim_age_seconds,
+    escalate_exhausted,
     escalated_actions,
     find_unsettled,
     reconcile,
@@ -199,6 +200,11 @@ def test_an_unsettleable_claim_reaches_the_operator_queue(db, owner):
                {"a": action_id})
     db.flush()
 
+    # Escalation is recorded, not re-derived at read time, so something has to
+    # make the decision. The repair pass is what guarantees one gets made
+    # however the attempts were spent -- which for an abandoned claim is the
+    # whole point: nobody was there to spend them deliberately.
+    assert escalate_exhausted(db) == 1
     assert action_id in [x["id"] for x in escalated_actions(db, max_attempts=5)]
 
 

@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.local
+
+# Playwright — browser E2E (§22). Artefacts, never sources.
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

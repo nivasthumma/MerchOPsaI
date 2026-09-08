@@ -7,9 +7,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { DensityToggle } from "./Chrome";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette, internalRoute } from "./CommandPalette";
 import { Stepper } from "./Stepper";
 import { ThemeToggle } from "./Theme";
 import { ToastHost, useToast } from "./Toast";
@@ -110,11 +110,36 @@ describe("command palette", () => {
     fireEvent.keyDown(window, { key: "k", metaKey: true });
   }
 
-  it("opens on ⌘K and closes on Escape", () => {
+  it("opens on ⌘K and closes on Escape", async () => {
     open();
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    // `userEvent.keyboard` dispatches on the focused element and lets the
+    // event bubble, which is how a person actually presses Escape.
+    // `fireEvent.keyDown(window, …)` targets `window` directly, so it reaches
+    // a listener on `window` and no listener on `document` — a distinction no
+    // real keystroke makes, and one that made this test pass or fail on which
+    // of the two the implementation happened to pick.
+    await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the promise `aria-modal` makes", async () => {
+    // Declaring the page behind it inert and then letting Tab walk into that
+    // page is the defect this pins. Same contract as the action drawer, from
+    // the same hook.
+    open();
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+
+    // Typing is the whole reason to open this, so the input takes focus.
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Command" }));
+
+    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select, textarea,'
+      + ' [tabindex]:not([tabindex="-1"])'));
+    focusable[focusable.length - 1].focus();
+    await userEvent.tab();
+    expect(dialog.contains(document.activeElement)).toBe(true);
   });
 
   it("filters and runs a command with the keyboard", async () => {
@@ -160,5 +185,32 @@ describe("density", () => {
     render(<DensityToggle />);
     expect(screen.getByRole("button"))
       .toHaveAccessibleName(/Density: comfortable\. Switch to compact\./);
+  });
+});
+
+describe("a search hit cannot navigate off-site", () => {
+  // React Router 6 carries an open-redirect advisory for backslashes reaching
+  // `<Link>` and `useNavigate`. The upstream fix is a breaking major; the
+  // exposure here is one function wide, so it is closed here.
+  it("accepts the routes the server actually builds", () => {
+    for (const route of ["/payments/SYN_PAY_0002", "/incidents/INC_1",
+                         "/tasks/TASK_A", "/actions", "/actions?section=unknown"]) {
+      expect(internalRoute(route)).toBe(route);
+    }
+  });
+
+  it("refuses anything that could leave the origin", () => {
+    for (const hostile of [
+      "//evil.example.com",          // protocol-relative
+      "https://evil.example.com",    // absolute
+      "\\\\evil.example.com",            // backslashes — the advisory's vector
+      "/\\evil.example.com",
+      "javascript:alert(1)",
+      "",
+    ]) {
+      // Nowhere, rather than somewhere. A refused route lands on the home
+      // screen, which is a place the operator can see they are.
+      expect(internalRoute(hostile), hostile).toBe("/");
+    }
   });
 });

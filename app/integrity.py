@@ -50,7 +50,14 @@ def _held_file(marker: Path) -> str | None:
         held = json.loads(marker.read_text())
     except (OSError, ValueError):
         return None
-    return held.get("relpath") if isinstance(held, dict) else None
+    if not isinstance(held, dict):
+        return None
+    # `_hold` writes "file". "relpath" is read as a fallback for markers left
+    # by an older harness. They disagreed, and because the mismatch only shows
+    # up in the refusal MESSAGE the effect was quiet: the file was never named,
+    # and the remedy printed below degraded to `git checkout -- app scripts`,
+    # which is the wholesale advice this project has twice been bitten by.
+    return held.get("file") or held.get("relpath")
 
 
 def check(*, marker: Path | None = None) -> None:

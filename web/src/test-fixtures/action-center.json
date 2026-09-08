@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-09-07T07:14:23.032883+00:00",
+  "merchant_id": "MERCH_A",
+  "awaiting_approval": [],
+  "executing": [],
+  "unknown": [
+    {
+      "id": "ACT_366C01A2F836",
+      "task_id": "TASK_6ABDF91051",
+      "merchant_id": "MERCH_A",
+      "action_type": "refund",
+      "status": "UNKNOWN",
+      "target_payment_id": "SYN_PAY_0002",
+      "external_payment_id": "pay_MOCKTEST00000002",
+      "external_reference": null,
+      "amount_minor": 499900,
+      "verification_state": "UNKNOWN",
+      "verify_attempts": 1,
+      "escalated": false,
+      "escalated_at": null,
+      "last_verified_at": "2026-09-07T17:14:23.021826+10:00",
+      "next_verify_at": "2026-09-07T17:14:53.021826+10:00",
+      "approval_id": "APR_237EF4E4D8",
+      "recovery_candidate_id": null,
+      "created_at": "2026-09-07T17:14:23.017627+10:00",
+      "updated_at": "2026-09-07T17:14:23.022122+10:00",
+      "provider_latency_ms": null,
+      "verification_latency_ms": null,
+      "customer_id": "SYN_CUS_A0012",
+      "payment_method": "card",
+      "provider": "razorpay",
+      "environment": "test",
+      "incident_id": null,
+      "owner": "USR_A_OWNER",
+      "task_request": "Refund the duplicate payment SYN_PAY_0002 amount 499900.",
+      "task_status": "COMPLETED",
+      "approval_decision": "APPROVED",
+      "risk_level": "HIGH",
+      "expires_at": "2026-09-07T17:29:22.982675+10:00",
+      "required_signatures": 1
+    }
+  ],
+  "escalated": [],
+  "recently_completed": [],
+  "counts": {
+    "awaiting_approval": 0,
+    "executing": 0,
+    "unknown": 1,
+    "escalated": 0,
+    "recently_completed": 0
+  },
+  "reconciliation_policy": {
+    "max_attempts": 5,
+    "on_exhaustion": "escalate"
+  },
+  "sections": [
+    "awaiting_approval",
+    "executing",
+    "unknown",
+    "escalated",
+    "recently_completed"
+  ],
+  "shown": {
+    "awaiting_approval": 0,
+    "executing": 0,
+    "unknown": 1,
+    "escalated": 0,
+    "recently_completed": 0
+  },
+  "limit": 50
+}

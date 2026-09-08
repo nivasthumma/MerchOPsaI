@@ -34,6 +34,34 @@ def rule(t):
     print("=" * 78)
 
 
+def require_gate(out, what: str, step: str):
+    """The approval this step needs, or a legible exit.
+
+    Two steps here depend on a refund reaching the policy gate, and both
+    assumed it silently. On a database where that payment has already been
+    refunded the duplicate-action guard denies -- correctly -- and no approval
+    is created. Step 3 then died on `AttributeError: 'NoneType' object has no
+    attribute 'id'` and step 7 printed "(no approval created — skipping)" and
+    returned 0.
+
+    Neither is acceptable for the one script somebody runs in front of an
+    audience. The second is worse: a demo that omits the UNKNOWN section and
+    exits cleanly lets a viewer conclude they saw the whole loop.
+
+    This is the fixture being wrong, not the system, so it says so and says
+    how to fix it.
+    """
+    if out.approval is not None:
+        return out.approval
+    raise SystemExit(
+        f"\n{step} needs {what} to reach the policy gate, and it did not.\n"
+        f"It has almost certainly been refunded on this database already -- "
+        f"the duplicate-action\nguard is denying correctly, which is the "
+        f"system working and this script's fixture\nbeing stale. Re-seed and "
+        f"re-run:\n\n"
+        f"    SEED_FORCE=1 python scripts/seed_data.py && python scripts/demo.py\n")
+
+
 def main() -> None:
     s = get_settings()
     rule("MerchantOps Agent — end-to-end demo")
@@ -71,9 +99,10 @@ def main() -> None:
     with session_scope() as db:
         out = AgentRuntime(db, OWNER).run("Find the duplicate payment and refund it.")
         task_id = out.task.id
+        approval = require_gate(out, "a duplicate payment", "Step 3")
         print(f"status   : {out.status.value}")
-        print(f"approval : {out.approval.id} ({out.approval.decision})")
-        print(f"payload  : {out.approval.action_payload}")
+        print(f"approval : {approval.id} ({approval.decision})")
+        print(f"payload  : {approval.action_payload}")
         print("no external call has been made")
 
     # ---------------------------------------------------------------- 4
@@ -112,9 +141,7 @@ def main() -> None:
         # deny a second refund against it.
         out = AgentRuntime(db, OWNER).run(
             "Refund the duplicate payment SYN_PAY_0004 amount 149900.")
-        if out.approval is None:
-            print("(no approval created — skipping)")
-            return
+        require_gate(out, "SYN_PAY_0004", "Step 7 (the UNKNOWN section)")
         tid = out.task.id
         r = approve_and_execute(db, tid, OWNER,
                                 injector=FaultInjector(fault=Fault.TIMEOUT_AFTER_SUBMIT))

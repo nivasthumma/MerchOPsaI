@@ -536,6 +536,25 @@ true and was left standing. Its cost is what it always was: a publicly reachable
 endpoint, signature verification, replay protection, out-of-order handling and
 idempotent processing.
 
+## Published numbers
+
+Added in ADR-0035. This repository refuses to call a refund done because an API
+returned 200 — and published `77/78 mutations caught` and `615 tests` from memory of
+terminals that had scrolled away. Five of those numbers were wrong on the same
+afternoon, and two disagreed with each other inside the same file.
+
+```
+a run          ->  writes a report        mutation_report.json
+                                          evaluation_report.json
+a report       ->  says what it measured  tree, tree_clean, complete
+a checker      ->  refuses what it        filtered runs, dirty trees,
+                   cannot trust           reports predating the stamp
+```
+
+`scripts/check_counts.py` (`make counts`) is the checker. A number nobody gated is a
+number nobody checked, and the argument against unverified claims does not stop at
+the API boundary.
+
 ## The API contract
 
 Added in ADR-0032. Every endpoint returned a bare `dict`, so the OpenAPI document had

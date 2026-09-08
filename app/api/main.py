@@ -11,23 +11,34 @@ import os
 import uuid
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select, text
 
 from app import shared_state
+from app.agent.activity import build as agent_activity
 from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
 from app.api import schemas
+from app.api.console import (
+    action_center,
+    command_center,
+    incident_actions,
+    search,
+)
+from app.api.readiness import liveness, readiness
 from app.api.security import (
     DEV_SECRET_IN_USE,
     check_rate_limit,
     current_principal,
     require_configured_secret,
+    verify_token,
 )
+from app.audit.lifecycle import payment_lifecycle
 from app.audit.trace import (
     record,
     trace_by_correlation,
@@ -40,6 +51,14 @@ from app.detection import detect
 from app.detection.engine import open_incidents
 from app.eval.runner import load_scenarios, run_scenario
 from app.failures import TAXONOMY, describe
+from app.incidents.filters import (
+    SAVED_VIEWS,
+    IncidentFilter,
+    from_view,
+    search_incidents,
+    view_counts,
+)
+from app.incidents.filters import totals as incident_totals
 from app.incidents.lifecycle import legal_from
 from app.incidents.manager import investigate
 from app.metrics import objectives, operational_metrics
@@ -194,6 +213,11 @@ def _task_view(s, task: AgentTask) -> dict:
             "required_signatures": a.required_signatures,
             "signed_by": [s.user_id for s in a.signatures if s.decision == "APPROVED"],
         } for a in approvals],
+        # Plan P0-08. Operational progress, built from rows this application
+        # wrote -- tool calls, policy decisions, approvals, actions -- and never
+        # from model-authored text. A progress list assembled from prose is one
+        # the model can write steps into that never happened.
+        "activity": agent_activity(s, task),
         "actions": [{
             "id": a.id, "action_type": a.action_type, "status": a.status.value,
             "target_payment_id": a.target_payment_id,
@@ -296,7 +320,7 @@ def _scope_word() -> str:
     return "all_replicas" if shared_state.backend() == "shared" else "this_replica_only"
 
 
-@app.get("/ready", response_model=schemas.Readiness,
+@app.get("/ready", response_model=schemas.InstanceReadiness,
          response_model_exclude_unset=True)
 def ready(response: Response):
     """Readiness, which is a different question from `/health`.
@@ -1094,6 +1118,52 @@ def get_access_review(principal: Principal = Depends(current_principal)):
                        if r["deactivated_at"] else None} for r in rows],
         }
 
+@app.get("/liveness", response_model=schemas.Liveness,
+          response_model_exclude_unset=True)
+def liveness_probe():
+    """MerchantOps §11. The process is running — nothing more.
+
+    Unauthenticated and dependency-free on purpose. A liveness probe that
+    touches the database restarts the API when the database blips, which is the
+    one response guaranteed not to help.
+    """
+    return liveness()
+
+
+@app.get("/readiness", response_model=schemas.Readiness,
+          response_model_exclude_unset=True)
+def readiness_probe(response: Response,
+                    authorization: str | None = Header(default=None)):
+    """MerchantOps §11. Every dependency, checked, with a per-component verdict.
+
+    Returns 503 when a *required* component is down, so a load balancer can act
+    on the status line without parsing the body. `degraded` is 200: the API can
+    still serve, and taking it out of rotation for a stopped cron sweep would
+    remove the one interface an operator has for finding out about the stopped
+    cron sweep.
+
+    **Two audiences, two bodies.** A probe cannot hold a token, so the verdicts
+    are unauthenticated. The operational detail behind them — mapping coverage,
+    how far the sweep is behind, which payments drifted — is not: those are the
+    same shape of fact `/metrics/prometheus` already refuses to serve without a
+    scrape token, and drawing the line in a different place here for no reason
+    would be an inconsistency an attacker gets to choose between.
+
+    A valid bearer token therefore widens the response. An absent or invalid one
+    narrows it rather than refusing: a probe presenting nothing must still get
+    its verdict, and a probe presenting a stale token must not start failing the
+    deployment's health check.
+    """
+    detailed = False
+    if authorization and authorization.lower().startswith("bearer "):
+        detailed = verify_token(authorization[7:].strip()) is not None
+
+    with session_scope() as s:
+        report = readiness(s, detailed=detailed)
+    if report["status"] == "not_ready":
+        response.status_code = 503
+    return report
+
 
 @app.get("/me", response_model=schemas.Me,
           response_model_exclude_unset=True)
@@ -1307,6 +1377,25 @@ def list_approvals(pending_only: bool = True,
 # Declared before /actions/{action_id}: Starlette matches in declaration order,
 # so with the parametrised route first "escalated" is captured as an action_id
 # and the endpoint 404s as "Unknown action."
+@app.get("/actions", response_model=schemas.ActionCenter,
+          response_model_exclude_unset=True)
+def action_center_view(limit: int = 50,
+                       principal: Principal = Depends(current_principal)):
+    """The Action Center — plan P0-03.
+
+    One read, five sections, one instant. A browser that assembled this from
+    `/approvals`, `/actions/escalated` and `/incidents` would be showing counts
+    from three different moments, and the moments diverge exactly when the
+    numbers are moving.
+
+    Declared above `/actions/{action_id}`: FastAPI matches in declaration order,
+    and a parameterised path declared first would swallow this one.
+    """
+    limit = max(1, min(limit, 200))
+    with session_scope() as s:
+        return action_center(s, principal.merchant_id, limit=limit)
+
+
 @app.get("/actions/escalated", response_model=list[schemas.EscalatedAction],
           response_model_exclude_unset=True)
 def list_escalated(max_attempts: int = 5,
@@ -1928,6 +2017,14 @@ def _incident_view(s, inc: Incident, *, detail: bool = False) -> dict:
     } for t in s.query(AgentTask)
         .filter(AgentTask.incident_id == inc.id)
         .order_by(AgentTask.created_at).all()]
+    # The financial actions this incident produced — plan P0-07's last four
+    # stages (POLICY → APPROVAL → EXECUTION → VERIFICATION).
+    #
+    # An incident page that stops at "recovery planned" tells an operator what
+    # was *proposed* and leaves them to go and find out whether it happened.
+    # These are the same rows the Action Center lists, scoped to this incident,
+    # so the two screens cannot disagree about the state of an action.
+    view["actions"] = incident_actions(s, inc.merchant_id, inc.id)
     # Which moves are available from here. The UI renders this; it never
     # computes it, for the same reason it never computes a policy outcome.
     view["legal_transitions"] = sorted(x.value for x in legal_from(inc.status))
@@ -1945,19 +2042,88 @@ def _owned_incident(s, incident_id: str, principal: Principal) -> Incident:
 @app.get("/incidents", response_model=schemas.IncidentList,
           response_model_exclude_unset=True)
 def list_incidents(include_closed: bool = False,
+                   view: str | None = None,
+                   severity: Annotated[list[str] | None, Query()] = None,
+                   status: Annotated[list[str] | None, Query()] = None,
+                   incident_type: Annotated[list[str] | None, Query()] = None,
+                   payment_method: Annotated[list[str] | None, Query()] = None,
+                   min_amount_minor: int | None = None,
+                   max_age_hours: int | None = None,
+                   unresolved: bool = False,
+                   approval_required: bool = False,
+                   has_unknown: bool = False,
+                   escalated: bool = False,
                    principal: Principal = Depends(current_principal)):
-    """The operations console. Scoped to the caller's merchant, ordered by
-    revenue at risk — the largest problem is the one to open first."""
+    """The operations console — plan P1-05. Scoped to the caller's merchant,
+    ordered by revenue at risk: the largest problem is the one to open first.
+
+    Filtering happens in SQL. A console that fetches every incident and filters
+    in the browser gets slower as the merchant gets busier, and puts the
+    merchant scope and the filter in two different places.
+
+    `view` names one of the saved views, which are declared server-side
+    (`app.incidents.filters.SAVED_VIEWS`) so that "My attention" cannot mean one
+    thing in a pasted link and another in the sidebar. A view a client asks for
+    and nobody declares is a 422 rather than an unfiltered list — silently
+    showing everything would read as though the view matched every incident.
+
+    The unfiltered call is unchanged and still takes the fast path, so nothing
+    that used this endpoint before pays for the filtering it does not use.
+    """
+    filters = IncidentFilter(
+        severity=severity or [], status=status or [],
+        incident_type=incident_type or [], payment_method=payment_method or [],
+        min_amount_minor=min_amount_minor, max_age_hours=max_age_hours,
+        unresolved=unresolved, approval_required=approval_required,
+        has_unknown=has_unknown, escalated=escalated,
+        include_closed=include_closed,
+    )
+    if view is not None:
+        resolved = from_view(view)
+        if resolved is None:
+            raise HTTPException(422, {
+                "error": f"Unknown saved view '{view}'.",
+                "code": "unknown_view",
+                "known": [v["key"] for v in SAVED_VIEWS]})
+        filters = resolved
+
     with session_scope() as s:
-        if include_closed:
+        if filters == IncidentFilter() and view is None:
+            rows = open_incidents(s, principal.merchant_id)
+        elif include_closed and filters == IncidentFilter(include_closed=True):
             rows = (s.query(Incident)
                     .filter(Incident.merchant_id == principal.merchant_id)
                     .order_by(Incident.revenue_at_risk_minor.desc(),
                               Incident.detected_at.desc()).all())
         else:
-            rows = open_incidents(s, principal.merchant_id)
+            ids = search_incidents(s, principal.merchant_id, filters)
+            by_id = {i.id: i for i in s.query(Incident)
+                     .filter(Incident.id.in_(ids)).all()} if ids else {}
+            rows = [by_id[i] for i in ids if i in by_id]
+
+        # Counted over the whole match, never summed across the page.
+        #
+        # `search_incidents` pages at 200, and this used to sum
+        # `revenue_at_risk_minor` across the rows it had just paged — so past
+        # that size the headline exposure understated, and understated it only
+        # under a filter, because the unfiltered branch above has no limit. Two
+        # branches, two answers, about money.
+        agg = incident_totals(s, principal.merchant_id, filters)
+
+        # Computed ONCE. This was inside the generator below, so five views
+        # meant five full computations of all five counts -- twenty-five COUNT
+        # queries to render five numbers.
+        counts = view_counts(s, principal.merchant_id)
+
         return {"incidents": [_incident_view(s, i) for i in rows],
-                "total_revenue_at_risk_minor": sum(i.revenue_at_risk_minor for i in rows)}
+                "total_revenue_at_risk_minor": agg["at_risk_minor"],
+                "matched": agg["matched"],
+                "shown": len(rows),
+                # The views and their counts, so a client renders five numbers
+                # from one read rather than five requests at five instants.
+                "views": [{**v, "count": counts.get(v["key"], 0)}
+                          for v in SAVED_VIEWS],
+                "applied_view": view}
 
 
 @app.get("/incidents/{incident_id}", response_model=schemas.IncidentSummary,
@@ -2106,6 +2272,55 @@ def merchant_dashboard(principal: Principal = Depends(current_principal)):
     """
     with session_scope() as s:
         return dashboard(s, principal.merchant_id)
+
+
+@app.get("/command-center", response_model=schemas.CommandCenter,
+          response_model_exclude_unset=True)
+def command_center_view(principal: Principal = Depends(current_principal)):
+    """The home screen — plan P0-05.
+
+    Revenue health, the recovery funnel, what is waiting on a human, and the
+    live activity feed, in one merchant-scoped read. The funnel arrives as an
+    ordered list of named stages rather than six loose figures, because P1-03's
+    rule — at-risk must never read as recovered — is easiest to keep true by
+    never handing a client the chance to arrange them itself.
+    """
+    with session_scope() as s:
+        return command_center(s, principal.merchant_id)
+
+
+@app.get("/payments/{payment_id}/lifecycle", response_model=schemas.PaymentLifecycle,
+          response_model_exclude_unset=True)
+def get_payment_lifecycle(payment_id: str,
+                          principal: Principal = Depends(current_principal)):
+    """One payment, end to end — MerchantOps §7.
+
+    `/trace/{correlation_id}` answers "everything one OPERATION touched". This
+    answers "everything that ever touched this PAYMENT", which is a different
+    question and the one an operator has when a customer is on the phone: a
+    payment's life spans several operations with several correlation ids, and
+    nothing joined them.
+
+    404 rather than 403 for another merchant's payment: existence is not leaked.
+    """
+    with session_scope() as s:
+        report = payment_lifecycle(s, principal.merchant_id, payment_id)
+    if report is None:
+        raise HTTPException(404, "Unknown payment.")
+    return report
+
+
+@app.get("/search", response_model=schemas.SearchResults,
+          response_model_exclude_unset=True)
+def global_search(q: str = "", principal: Principal = Depends(current_principal)):
+    """One box, every identifier — plan P1-06.
+
+    Exact match only. Every identifier in this system is pasted rather than
+    typed, and a prefix search over payment ids invites acting on whichever row
+    sorted first.
+    """
+    with session_scope() as s:
+        return search(s, principal.merchant_id, q)
 
 
 @app.get("/trace/{correlation_id}", response_model=schemas.CorrelationTrace,

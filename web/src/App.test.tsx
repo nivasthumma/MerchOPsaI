@@ -2,9 +2,9 @@
 // A demo that quietly executes against a mock, or an API signing tokens with a
 // development secret, must be visible without being looked for.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { Health } from "./api/types";
@@ -35,16 +35,26 @@ const OK: Health = {
   auth: "bearer_hmac", auth_secret_is_development_default: false,
 };
 
-function renderApp() {
+function renderApp(at = "/") {
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[at]}>
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<div>SIGNED IN</div>} />
+          {/* Signed out this is the sign-in page and signed in it is the app,
+              which is what `App` decides. The element only has to exist. */}
+          <Route path="signin" element={<div>SIGNED IN</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** The sign-in page. It has its own address now, so a test that wants the
+ *  token field asks for it by name rather than expecting it on the front
+ *  page — which is a landing page and deliberately has no credential on it. */
+function renderSignIn() {
+  return renderApp("/signin");
 }
 
 beforeEach(() => {
@@ -97,14 +107,64 @@ describe("run configuration", () => {
 describe("token gate", () => {
   it("asks for a token before rendering any authenticated route", async () => {
     health.mockResolvedValue(OK);
-    renderApp();
+    renderSignIn();
     expect(await screen.findByLabelText(/Mint one with/)).toBeInTheDocument();
     expect(screen.queryByText("SIGNED IN")).toBeNull();
   });
 
-  it("renders the route once a token is supplied, and forgets it on sign-out", async () => {
+  it("shows the public page, and no credential, at the front door", async () => {
+    // `/` is a landing page signed out. A token field on it would be a
+    // credential prompt shown to everyone who arrives, including the people
+    // who have no account and are only reading.
     health.mockResolvedValue(OK);
     renderApp();
+    expect(await screen.findByRole("navigation", { name: "On this page" }))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText(/Mint one with/)).toBeNull();
+    expect(screen.getAllByRole("link", { name: /Sign in/ }).length)
+      .toBeGreaterThan(0);
+  });
+
+  it("gives every landing section a heading and a header link that reaches it", async () => {
+    // Two failures this catches, both silent in a browser: a nav entry whose
+    // target id was renamed or removed, which scrolls nowhere; and a section
+    // that opens straight into display type with nothing naming it, which is
+    // what the page looked like before every block got a kicker.
+    health.mockResolvedValue(OK);
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "On this page" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.length).toBeGreaterThan(4);
+
+    for (const link of links) {
+      const id = link.getAttribute("href")!.replace("#", "");
+      const section = document.getElementById(id);
+      expect(section, `no section with id "${id}"`).not.toBeNull();
+      // The label in the header is the label at the top of the section.
+      expect(within(section!).getByText(link.textContent!)).toBeInTheDocument();
+      expect(within(section!).getByRole("heading", { level: 3 })).toBeInTheDocument();
+    }
+  });
+
+  it("prints the check's transcript as separate lines, not one run-on line", async () => {
+    // JSX trims the whitespace at the ends of its lines, so a transcript
+    // written as one text node with newlines in it renders as a single line
+    // running off the side of the box -- which is exactly what it did.
+    health.mockResolvedValue(OK);
+    renderApp();
+    await screen.findByRole("navigation", { name: "On this page" });
+    const term = document.querySelector(".lp-term pre")!;
+    const lines = term.querySelectorAll(".ln");
+    expect(lines).toHaveLength(4);
+    expect(lines[0].textContent).toContain("make counts");
+    // The figures here are gated by `scripts/check_counts.py` against what the
+    // tree measures; this only checks they reached the page at all.
+    expect(lines[1].textContent).toMatch(/^measured: {2}\d+ python tests/);
+  });
+
+  it("renders the route once a token is supplied, and forgets it on sign-out", async () => {
+    health.mockResolvedValue(OK);
+    renderSignIn();
     await userEvent.type(await screen.findByLabelText(/Mint one with/), "USR_A_OWNER.sig");
     await userEvent.click(screen.getByRole("button", { name: /Use token/ }));
     expect(await screen.findByText("SIGNED IN")).toBeInTheDocument();
@@ -116,7 +176,7 @@ describe("token gate", () => {
 
   it("stores the token as a password field, not in plain view", async () => {
     health.mockResolvedValue(OK);
-    renderApp();
+    renderSignIn();
     expect(await screen.findByLabelText(/Mint one with/)).toHaveAttribute("type", "password");
   });
 });
@@ -129,7 +189,21 @@ describe("page scaffolding", () => {
     expect(await screen.findByRole("link", { name: "Skip to content" }))
       .toHaveAttribute("href", "#main");
     expect(document.querySelector("main#main")).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+  });
+
+  it("offers the application's sections only once there is a token", async () => {
+    // Signed out, `/` is the public landing page, and every one of those links
+    // needs a token -- offering them there is offering a dead end. The landing
+    // page has its own nav, named for the sections it actually scrolls to.
+    health.mockResolvedValue(OK);
+    renderSignIn();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+
+    await userEvent.type(await screen.findByLabelText(/Mint one with/),
+                         "USR_A_OWNER.sig");
+    await userEvent.click(screen.getByRole("button", { name: /Use token/ }));
+    expect(await screen.findByRole("navigation", { name: "Sections" }))
+      .toBeInTheDocument();
   });
 });
 
@@ -168,9 +242,17 @@ describe("the task rail", () => {
   });
 
   it("is absent before sign-in, when there is nothing to navigate to", async () => {
+    // Checked on both signed-out pages. The rail is application chrome, and
+    // neither the landing page nor the sign-in page is the application.
     localStorage.removeItem("merchantops.token");
     health.mockResolvedValue(OK);
-    renderApp();
+
+    const landing = renderApp();
+    await screen.findByRole("navigation", { name: "On this page" });
+    expect(screen.queryByRole("complementary", { name: "Recent tasks" })).toBeNull();
+    landing.unmount();
+
+    renderSignIn();
     await screen.findByLabelText(/Mint one with/);
     expect(screen.queryByRole("complementary", { name: "Recent tasks" })).toBeNull();
   });
@@ -187,7 +269,10 @@ describe("starting the next investigation", () => {
       [{ id: "TASK_A", request: "anything", status: "COMPLETED" }]));
     renderApp();
     const link = await screen.findByRole("link", { name: /New investigation/ });
-    expect(link).toHaveAttribute("href", "/");
+    // Not "/" any more: the home screen is the Command Center (plan P0-05),
+    // and starting an investigation is its own route rather than the thing
+    // that happens when you open the application.
+    expect(link).toHaveAttribute("href", "/investigate");
   });
 
   it("offers it even when nothing has been run yet", async () => {

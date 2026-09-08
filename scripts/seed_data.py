@@ -23,14 +23,27 @@ from app.db import get_engine, session_scope
 from app.models import (
     Base,
     Customer,
+    MappingStatus,
     Merchant,
     Order,
     Payment,
     Product,
+    ProviderMapping,
     Refund,
     Tenant,
     User,
 )
+
+# The insert order. FK parents must land before their children, so this is a
+# dependency ordering rather than a list of tables.
+#
+# It lives here, once. `tests/conftest.py` kept its own copy and the two drifted
+# the moment `provider_mappings` was added: the suite seeded eight groups, the
+# ninth never landed, and every externally-mapped refund failed resolution --
+# with the failure surfacing as `'NoneType' has no attribute
+# 'verification_state'` four call frames away from the cause.
+SEEDED_TABLES = ("tenants", "merchants", "users", "customers", "products",
+                 "orders", "payments", "refunds", "provider_mappings")
 
 SEED = 20260825
 DATASET_VERSION = "synthetic-v1"
@@ -130,17 +143,17 @@ def reset_schema() -> None:
 
 
 #: The order rows must land in: a foreign key's parent before its child.
-INSERT_ORDER = ("tenants", "merchants", "users", "customers", "products",
-                "orders", "payments", "refunds")
-
-
-def insert_all(session, data: dict, keys: tuple[str, ...] = INSERT_ORDER) -> None:
+def insert_all(session, data: dict, keys: tuple[str, ...] = SEEDED_TABLES) -> None:
     """Persist a built dataset.
 
-    Shared by `main` and by the test suite's session fixture. It used to be a
-    loop written out in both places, and the day roles became rows the two
-    disagreed: the suite inserted users with no role and 443 tests errored on a
-    NOT NULL. One loop, so there is one thing to change.
+    Shared by `main`, by the test suite's session fixture and by the scenario
+    runner. It used to be a loop written out in all three places, and both
+    times the copies drifted the failure landed far from the cause: when roles
+    became rows (ADR-0047) the stale copies inserted users with no role and 443
+    tests errored on a NOT NULL, and when `provider_mappings` was added to one
+    tuple the other two silently stopped seeding it, surfacing as
+    `external_calls: expected 1, got 0` across twenty scenarios. One loop over
+    one list (`SEEDED_TABLES`), so there is one thing to change.
     """
     for key in keys:
         if key == "users":
@@ -243,6 +256,7 @@ def build() -> dict:
     orders: list[Order] = []
     payments: list[Payment] = []
     refunds: list[Refund] = []
+    mappings: list[ProviderMapping] = []
 
     # ---------------- products ----------------
     for m, n in ((MERCHANT_A, 22), (MERCHANT_B, 8)):
@@ -565,13 +579,34 @@ def build() -> dict:
         p.status = "refunded"
 
     # ------------------------------------------------------------------
-    # CONTRACT §6 — external mapping for the small executable subset.
+    # MerchantOps §6 — external mapping for the small executable subset.
+    #
+    # Written in both places, on purpose and not by accident:
+    #
+    #   provider_mappings          the control plane's authority. Every
+    #                              resolution the agent, the tools and the
+    #                              verification path perform reads this.
+    #   payments.external_*        the MOCK PROVIDER's own store. The mock
+    #                              adapter answers `get_payment(pay_...)` out of
+    #                              this column, which is the provider holding
+    #                              provider-side state — exactly what Razorpay
+    #                              does with real credentials.
+    #
+    # `app.integrations.mapping.check_consistency` asserts they agree, and
+    # /readiness reports it, so the duplication is checked rather than trusted.
     # ------------------------------------------------------------------
     for i, pid in enumerate(MAPPED_PAYMENTS, start=1):
         p = next(x for x in payments if x.id == pid)
+        external = f"pay_MOCKTEST{i:08d}"
         p.external_provider = "razorpay"
-        p.external_payment_id = f"pay_MOCKTEST{i:08d}"
+        p.external_payment_id = external
+        mappings.append(ProviderMapping(
+            id=f"PMP_SEED{i:04d}", merchant_id=p.merchant_id, payment_id=p.id,
+            provider="razorpay", environment="test", external_payment_id=external,
+            status=MappingStatus.ACTIVE, source="seed",
+        ))
     stats["mapped_payments"] = len(MAPPED_PAYMENTS)
+    stats["provider_mappings"] = len(mappings)
 
     stats["merchants"] = len(merchants)
     stats["users"] = len(users)
@@ -607,7 +642,7 @@ def build() -> dict:
         "merchants": merchants, "users": users, "user_roles": user_roles,
         "customers": customers,
         "products": products, "orders": orders, "payments": payments,
-        "refunds": refunds, "stats": stats,
+        "refunds": refunds, "provider_mappings": mappings, "stats": stats,
     }
 
 
@@ -652,7 +687,7 @@ def main() -> None:
     st = data["stats"]
     print("\nSeeded:")
     for k in ("tenants", "merchants", "users", "customers", "products", "orders", "payments",
-              "refunds", "mapped_payments", "injection_sites"):
+              "refunds", "mapped_payments", "provider_mappings", "injection_sites"):
         print(f"  {k:20s} {st.get(k)}")
 
     with session_scope() as s:

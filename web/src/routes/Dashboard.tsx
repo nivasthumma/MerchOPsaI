@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api, ApiError } from "../api/client";
 import type { Dashboard as DashboardData } from "../api/types";
 import {

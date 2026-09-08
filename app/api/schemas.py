@@ -33,12 +33,46 @@ Audit payloads, tool arguments and tool output are JSON whose shape belongs to
 the event, not to this module. Those are typed `dict` rather than modelled, and
 the ones keyed by data (`{status: count}`) are `dict[str, int]`. Inventing a
 rigid schema for them would be precision this API does not actually have.
+
+## Where a `dict` survives, and why
+
+ADR-0032 replaced bare-dict ROUTES with response models. It did not reach
+inside them, and 31 fields stayed loosely typed. Two of those hid a real
+defect: `by_incident` and `by_method` were `list[dict]`, so money reached the
+wire as a string in the only two places on the ledger without a declared
+integer behind it.
+
+The rest were audited on 2026-09-08 and split three ways.
+
+**Typed, because the shape is knowable:** the evidence rows (`EvidenceRow`),
+the incident timeline (`TimelineEntry` / `TimelineDetail`, whose keys the API
+filters against a closed list before returning them), the ledger breakdowns
+(`IncidentExposure` / `MethodExposure`), and the bare `list`s that meant
+"array of anything" in the schema. Typing the timeline immediately caught a
+wrong guess -- `detail` is a dict, never a string -- which is the argument in
+miniature: a declared type fails at the boundary, an absent one fails in a
+consumer.
+
+**Open by nature, and left open deliberately:** `TraceEvent.payload` and
+`ActivityEvent.payload` (an audit payload's shape is the event's, and there are
+dozens), `ToolCallView.arguments` and `.data` (per-tool by design -- a refund
+result and a metrics read share nothing), `IncidentSummary.signals` (each
+detection rule emits its own, which is why §12 names the canonical four rather
+than a schema), `ScenarioView.expect` / `.setup` (scenario YAML), and
+`SavedView.filter`. Declaring these would mean inventing a union that grows
+with every new event, tool or rule, and a schema that lies about being closed
+is worse than one that admits it is open.
+
+**Empirically checked rather than reasoned about:** every GET endpoint was
+walked and scanned for a value that is a string but reads as a number -- the
+signature of the money bug. Zero across thirteen endpoints, so that class is
+closed rather than presumed closed.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.failures import Retryability
 from app.models import TaskStatus, VerificationState
@@ -67,6 +101,69 @@ class Contract(BaseModel):
 
 
 # ---------------------------------------------------------------- primitives
+class EvidenceRow(Contract):
+    """One piece of evidence, as `app/tools/contracts.Evidence` produces it.
+
+    Declared because `evidence: list` -- a bare list -- says "array of
+    anything" in the OpenAPI document, so a client generates `unknown[]` and
+    the compile-time contract check has nothing to check. `untrusted` in
+    particular is the §36 injection tag, and a consumer that cannot see it in
+    the schema cannot be expected to honour it.
+
+    `value` stays `Any` on purpose: it is a tool's finding, and a rate, a
+    count, an id and a free-text string are all legitimate. That is an open
+    field by nature rather than one nobody got round to.
+    """
+    key: str
+    value: Any = None
+    source: str
+    untrusted: bool = False
+    id: str | None = None
+
+
+class TimelineDetail(Contract):
+    """The keys an incident timeline entry may carry.
+
+    A closed set, and not a guess at one: `app/api/main.py` filters the audit
+    payload against exactly this list before it reaches the response. Declaring
+    the fields rather than the dict is what makes the OpenAPI document say what
+    a timeline entry can actually contain.
+    """
+    at: str | None = None
+    to: str | None = None
+    reason: str | None = None
+    decision: str | None = None
+    rule: str | None = None
+    plan_id: str | None = None
+    intervention: str | None = None
+    state: str | None = None
+    status: str | None = None
+    # `from` is a Python keyword, so the field is named for the wire and
+    # accessed through the alias. Renaming the wire key instead would change
+    # the contract to suit the implementation language.
+    from_: str | None = Field(default=None, alias="from")
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True,
+                              serialize_by_alias=True)
+
+
+class TimelineEntry(Contract):
+    """One row of an incident's timeline. Every entry is a recorded event with
+    its own timestamp -- never an inferred step.
+
+    `detail` was annotated `str | None` on the first attempt at typing this,
+    and the suite failed immediately with
+    `input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,
+    and that is the argument for declaring these fields rather than leaving
+    them as `dict`: a wrong type fails loudly at the boundary, where an absent
+    one fails silently in a consumer.
+    """
+    at: str
+    event: str
+    detail: TimelineDetail = TimelineDetail()
+    task_id: str | None = None
+
+
 class FailureClassView(Contract):
     """MerchantOps §56. A code says what broke; this says whether trying again
     is even the question."""
@@ -76,7 +173,7 @@ class FailureClassView(Contract):
     owning_subsystem: str
     recommended_next_action: str
     correlation_id: str | None
-    evidence: list
+    evidence: list[EvidenceRow] = []
     is_classified: bool
 
 
@@ -188,6 +285,8 @@ class TaskView(Contract):
     replayed_from: str | None
     approvals: list[ApprovalView]
     actions: list[ActionView]
+    # Plan P0-08. Derived from recorded rows, never from model prose.
+    activity: list[ActivityStep] = []
     # Present only when a CRITICAL action is waiting on a second signature.
     # `exclude_unset` keeps them absent otherwise rather than null.
     awaiting_signatures: int | None = None
@@ -230,7 +329,10 @@ class ToolCallView(Contract):
     risk_level: str | None = None
     policy_decision: str | None = None
     duration_ms: int | None = None
-    evidence: list = []
+    evidence: list[EvidenceRow] = []
+    # A tool's own normalised output. Shape is per-tool by design -- a
+    # refund result and a metrics read have nothing in common -- so this
+    # stays open, and says so rather than looking unfinished.
     data: dict = {}
 
 
@@ -277,22 +379,306 @@ class ApprovalQueue(Contract):
 
 # ------------------------------------------------------------------- actions
 class EscalatedAction(Contract):
+    """One row of the reconciliation work queue — plan P0-04.
+
+    Every field the plan names is here, because a queue that lists identifiers
+    is not a work queue: age (`created_at`), amount, provider, external
+    reference, last known state, attempts, last check, next retry, escalation,
+    owner, and the incident and task it came from.
+
+    Timestamps are `object` rather than `str` on the fields that come straight
+    out of a `text()` query: those arrive as `datetime` and are serialised by
+    FastAPI. Declaring them `str` would coerce and change the wire format of a
+    response the frontend already parses.
+    """
     id: str
     task_id: str
     merchant_id: str
     # What kind of action is stuck. The queue listed identifiers and amounts and
     # left the reader to open each task to find out whether the money in
     # question was a refund going out or a payment link that may never have been
-    # sent. It is also what notification routing derives its recipients from.
+    # sent. It is also what notification routing derives its recipients from,
+    # so it stays required: `agent_actions.action_type` is NOT NULL and every
+    # row this model is built from comes from that table.
     action_type: str
+    # The action's own status, alongside the verification state. An action
+    # PENDING with no verification state yet is unsettled work too, and the
+    # queue has to be able to say which.
+    status: str | None = None
     target_payment_id: str | None = None
     external_payment_id: str | None = None
     amount_minor: int | None = None
     external_reference: str | None = None
     verification_state: str | None = None
     verify_attempts: int
+    created_at: str | object = None
     updated_at: str | object = None
     verification_detail: dict | None = None
+    # --- P0-04 reconciliation workflow ---
+    escalated: bool = False
+    escalated_at: str | object = None
+    last_verified_at: str | object = None
+    next_verify_at: str | object = None
+    provider: str | None = None
+    environment: str | None = None
+    incident_id: str | None = None
+    owner: str | None = None
+
+
+# --- Action Center (P0-03) -------------------------------------------------
+class ActionRow(Contract):
+    """One action in the Action Center, in every section that lists actions.
+
+    Deliberately one shape for all four action sections. A per-section model is
+    how "amount_minor" comes to mean the requested amount in one column and the
+    verified amount in another.
+    """
+    id: str
+    task_id: str
+    merchant_id: str
+    action_type: str
+    status: str
+    target_payment_id: str | None = None
+    external_payment_id: str | None = None
+    external_reference: str | None = None
+    amount_minor: int | None = None
+    verification_state: str | None = None
+    verify_attempts: int
+    escalated: bool = False
+    escalated_at: str | object = None
+    last_verified_at: str | object = None
+    next_verify_at: str | object = None
+    approval_id: str | None = None
+    recovery_candidate_id: str | None = None
+    created_at: str | object = None
+    updated_at: str | object = None
+    provider_latency_ms: Number | None = None
+    verification_latency_ms: Number | None = None
+    customer_id: str | None = None
+    payment_method: str | None = None
+    provider: str | None = None
+    environment: str | None = None
+    incident_id: str | None = None
+    owner: str | None = None
+    task_request: str | None = None
+    task_status: str | None = None
+    approval_decision: str | None = None
+    risk_level: str | None = None
+    expires_at: str | object = None
+    required_signatures: int | None = None
+
+
+class PendingApprovalRow(Contract):
+    """An approval no action exists for yet — the money has not moved.
+
+    Separate from `ActionRow` because there is genuinely no action row to
+    describe: the claim is not made until the approval clears. Modelling it as
+    an action with null everything would tell an operator an action exists.
+    """
+    approval_id: str
+    task_id: str
+    action_type: str
+    action_payload: dict
+    risk_level: str
+    decision: str
+    expires_at: str | object = None
+    required_signatures: int
+    created_at: str | object = None
+    evidence: list = []
+    incident_id: str | None = None
+    owner: str | None = None
+    task_request: str | None = None
+    signatures: int
+    expired: bool
+
+
+class ActionCenterCounts(Contract):
+    awaiting_approval: int
+    executing: int
+    unknown: int
+    escalated: int
+    recently_completed: int
+
+
+class ReconciliationPolicy(Contract):
+    max_attempts: int
+    on_exhaustion: str
+
+
+class ActionCenter(Contract):
+    generated_at: str
+    merchant_id: str
+    awaiting_approval: list[PendingApprovalRow]
+    executing: list[ActionRow]
+    unknown: list[ActionRow]
+    escalated: list[ActionRow]
+    recently_completed: list[ActionRow]
+    # TRUE totals, counted in SQL — not the length of the page. The two
+    # disagreed once, and the smaller number was on the screen an operator
+    # acts from.
+    counts: ActionCenterCounts
+    # How many rows each section actually returned, so a client can say
+    # "50 of 60" rather than presenting a page length as a total.
+    shown: ActionCenterCounts
+    limit: int
+    reconciliation_policy: ReconciliationPolicy
+    sections: list[str]
+
+
+# --- Command Center (P0-05) ------------------------------------------------
+class RevenueHealth(Contract):
+    at_risk_minor: int
+    recoverable_minor: int
+    attempted_minor: int
+    recovered_minor: int
+    failed_minor: int
+    unknown_minor: int
+    outstanding_minor: int
+    invariants_broken: list[str]
+
+
+class FunnelStage(Contract):
+    """One stage of the recovery funnel — P1-03.
+
+    Ordered and named server-side so at-risk can never be rendered as
+    recovered by a client that arranged six loose numbers itself.
+    """
+    stage: str
+    label: str
+    amount_minor: int
+
+
+class AttentionCounts(Contract):
+    approvals_pending: int
+    approvals_expired: int
+    unknown_actions: int
+    escalated_actions: int
+    open_incidents: int
+    critical_incidents: int
+    running_tasks: int
+
+
+class ActivityEvent(Contract):
+    event_type: str
+    correlation_id: str | None = None
+    task_id: str | None = None
+    incident_id: str | None = None
+    created_at: str | object = None
+    payload: dict
+
+
+class CommandCenter(Contract):
+    generated_at: str
+    merchant_id: str
+    revenue: RevenueHealth
+    funnel: list[FunnelStage]
+    attention: AttentionCounts
+    by_incident: list[IncidentExposure]
+    by_method: list[MethodExposure]
+    activity: list[ActivityEvent]
+
+
+# --- Global search (P1-06) -------------------------------------------------
+class LifecycleEvent(Contract):
+    """One link in §7's chain. Every entry is a row that exists, with its own
+    timestamp — never an inferred step."""
+    stage: str
+    at: str | None = None
+    id: str
+    label: str
+    detail: str = ""
+    correlation_id: str | None = None
+
+
+class LifecyclePayment(Contract):
+    id: str
+    merchant_id: str
+    order_id: str | None = None
+    customer_id: str | None = None
+    customer_name: str | None = None
+    amount_minor: int
+    currency: str
+    method: str
+    status: str
+    error_reason: str | None = None
+    amount_refunded_minor: int
+    refund_status: str | None = None
+    created_at: str | None = None
+
+
+class PaymentLifecycle(Contract):
+    """MerchantOps §7 — a payment traceable through its complete lifecycle."""
+    payment: LifecyclePayment
+    external_payment_id: str | None = None
+    provider: str | None = None
+    environment: str | None = None
+    events: list[LifecycleEvent]
+    stages: list[str]
+    # More than one, which is the whole reason this endpoint exists.
+    correlation_ids: list[str] = []
+    incident_ids: list[str] = []
+    task_ids: list[str] = []
+    action_ids: list[str] = []
+    generated_at: str
+
+
+class SearchHit(Contract):
+    kind: str
+    id: str
+    label: str | None = None
+    detail: str | None = None
+    created_at: str | None = None
+    route: str
+
+
+class SearchResults(Contract):
+    query: str
+    results: list[SearchHit]
+    truncated: bool
+
+
+# --- Liveness / readiness (§11) --------------------------------------------
+class Liveness(Contract):
+    status: str
+    checked_at: str
+
+
+class ComponentHealth(Contract):
+    """One dependency's verdict.
+
+    `extra="forbid"` is relaxed here alone: each check attaches the facts that
+    make its own verdict actionable — mapping coverage, webhook counts, the
+    reconciliation backlog — and a fixed union of every check's extras would be
+    a model that has to be edited every time a check learns something new.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    status: str
+    detail: str
+    required: bool
+    latency_ms: Number
+
+
+class Readiness(Contract):
+    status: str
+    checked_at: str
+    components: dict[str, ComponentHealth]
+    blocking: list[str]
+    degraded: list[str]
+
+
+class ActivityStep(Contract):
+    """One step of the agent's operational progress — plan P0-08.
+
+    `state` is the claim: `done` happened and worked, `failed` happened and did
+    not, `blocked` is waiting on a person, `running` is in flight, `pending` was
+    expected and not reached. A UI narrows on these.
+    """
+    key: str
+    label: str
+    state: Literal["done", "failed", "blocked", "running", "pending"]
+    at: str | None = None
+    detail: str = ""
 
 
 class ActionDetail(Contract):
@@ -601,16 +987,39 @@ class IncidentSummary(Contract):
     # Detail only.
     confidence_inputs: dict | None = None
     signals: dict | None = None
-    evidence: list[dict] | None = None
+    evidence: list[EvidenceRow] | None = None
     recovery: PlanView | None = None
-    timeline: list[dict] | None = None
+    timeline: list[TimelineEntry] | None = None
     tasks: list[dict] | None = None
+    # The financial actions this incident produced — plan P0-07's last four
+    # stages. Same row shape the Action Center serves, so the incident page and
+    # the queue cannot disagree about the state of an action.
+    actions: list[ActionRow] | None = None
     legal_transitions: list[str] | None = None
+
+
+class SavedView(Contract):
+    """One saved view — plan P1-05. Declared server-side so that "My attention"
+    cannot mean one thing in a pasted link and another in the sidebar."""
+    key: str
+    label: str
+    hint: str
+    filter: dict
+    count: int
 
 
 class IncidentList(Contract):
     incidents: list[IncidentSummary]
+    # Summed over the WHOLE match in SQL, never across the returned page.
     total_revenue_at_risk_minor: int
+    # How many matched, and how many are in `incidents`. A client showing the
+    # total beside a shorter list is showing a number it cannot substantiate.
+    matched: int = 0
+    shown: int = 0
+    # Plan P1-05. Served with the list so five view counts come from one read
+    # at one instant rather than five requests at five.
+    views: list[SavedView] = []
+    applied_view: str | None = None
 
 
 class IncidentTrace(Contract):
@@ -790,6 +1199,40 @@ class Objectives(Contract):
 
 
 # ---------------------------------------------------------------- ledger
+class IncidentExposure(Contract):
+    """One incident's row in the ledger breakdown.
+
+    Declared, rather than left as the `dict` it used to be, because an
+    undeclared field is an undeclared TYPE. `recoverable_minor` reached the
+    wire as the string `"2798847"` while the identically-named field one level
+    up was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a
+    bigint, psycopg2 turns that into `Decimal`, and a model that says `dict`
+    gives pydantic nothing to coerce it against. Money on a revenue ledger,
+    two types, one response.
+
+    Nothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a
+    numeric string -- which is exactly why it survived. The first `reduce` over
+    these rows would have concatenated instead of adding.
+    """
+    incident_id: str
+    incident_type: str
+    severity: str
+    status: str
+    title: str
+    revenue_at_risk_minor: int
+    recoverable_minor: int
+    recovered_minor: int
+
+
+class MethodExposure(Contract):
+    """One payment method's row in the ledger breakdown. Same story as
+    `IncidentExposure`, same fix."""
+    method: str
+    recoverable_minor: int
+    recovered_minor: int
+    candidates: int
+
+
 class LedgerView(Contract):
     """§49's six figures. They nest, and `invariants_broken` is reported rather
     than raised — a ledger whose figures do not nest is a defect that has to be
@@ -803,9 +1246,9 @@ class LedgerView(Contract):
     failed_minor: int
     unknown_minor: int
     outstanding_minor: int
-    by_incident: list[dict]
-    by_method: list[dict]
-    invariants_broken: list
+    by_incident: list[IncidentExposure]
+    by_method: list[MethodExposure]
+    invariants_broken: list[str]
 
 
 class IncidentCounts(Contract):
@@ -837,7 +1280,7 @@ class WebhookAck(Contract):
     event_id: str | None = None
     stored_id: str | None = None
     note: str | None = None
-    reverified: list = []
+    reverified: list[str] = []
     incident_id: str | None = None
 
 
@@ -958,8 +1401,15 @@ class NotificationList(Contract):
     channels: list[str]
 
 
-class Readiness(Contract):
-    """`/ready` — whether this instance can do work, not whether it is alive."""
+class InstanceReadiness(Contract):
+    """`/ready` — whether this instance can do work, not whether it is alive.
+
+    Named apart from `Readiness` because both branches of the spine/trunk merge
+    defined a model by that name and they are not the same shape: this one is
+    `/ready`'s two-field answer, and `Readiness` is `/readiness`'s per-component
+    report. Sharing the name meant the later definition silently won and the
+    other endpoint returned a 500 on response validation.
+    """
     ready: bool
     #: {"database": {"ok": ...}, "schema": {"ok": ..., "at": ..., "expected": ...}}
     #: Shaped as a dict rather than modelled per check so a new check does not

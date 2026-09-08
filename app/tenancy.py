@@ -150,8 +150,14 @@ def apply(connection, scope: Scope | None = None) -> None:
 MERCHANT_SCOPED: tuple[str, ...] = (
     "agent_actions", "agent_tasks", "approvals", "audit_logs", "customers",
     "event_outbox", "evidence_edges", "hypotheses", "incidents", "notifications",
-    "operator_notifications", "orders", "payment_links", "payments", "products",
-    "recovery_candidates", "recovery_plans", "refunds", "users", "webhook_events",
+    "operator_notifications", "orders", "payment_links", "payments",
+    # A mapping ties one merchant's synthetic payment to a real provider payment
+    # id. Arriving from feat/incident-spine, which had no row-level security, it
+    # reached the merge carrying a merchant_id and no policy -- and resolving
+    # another merchant's mapping is how a refund is placed on somebody else's
+    # money. `test_every_table_with_a_merchant_is_covered` is what noticed.
+    "products", "provider_mappings", "recovery_candidates", "recovery_plans",
+    "refunds", "users", "webhook_events",
 )
 
 #: Child tables with no merchant of their own, filtered through the parent that

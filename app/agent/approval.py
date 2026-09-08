@@ -32,6 +32,7 @@ from app.policy.engine import (
 )
 from app.tools.actions import execute_refund, reverify_action
 from app.tools.recovery_actions import execute_notification, execute_payment_link
+from app.verification.schedule import escalate, should_escalate
 
 
 def _run_refund(session, adapter, *, task_id, merchant_id, approval_id, **payload):
@@ -334,5 +335,16 @@ def reverify(session, task_id: str, principal) -> dict:
         task.failure_code = "EXTERNAL_STATE_UNKNOWN"
         task.final_answer = ("Re-verification could still not determine the final state. "
                              "Remains UNKNOWN.")
+
+    # The manual path spends the same attempts as the sweep does, so it has to
+    # honour the same stopping rule (P0-15). Without this, an operator pressing
+    # Re-verify five times would push the action past the limit by hand: out of
+    # the sweep's reach, still un-escalated, and therefore in neither queue.
+    if should_escalate(action):
+        escalate(session, action,
+                 reason=f"Out of automatic reconciliation attempts "
+                        f"({action.verify_attempts}); the last was a manual "
+                        f"re-verification by {principal.user_id}.")
+
     session.flush()
     return {"action": action, "verification": vr, "task": task}

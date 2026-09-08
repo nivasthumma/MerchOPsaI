@@ -56,6 +56,25 @@ MIN_VOLUME = 30
 MIN_BUCKET_VOLUME = 8
 ONSET_THRESHOLD_PP = 2 * DEGRADATION_THRESHOLD_PP
 
+# A failure reason must reach this many occurrences in the current window before
+# a ratio against it means anything. Three failures becoming six is a doubling
+# and is noise; the seeded UPI collapse reaches 33.
+MIN_FAILURE_VOLUME = 10
+
+# How much more often a reason must occur than in the preceding window. Two is
+# deliberately not tight: this rule is diagnostic and carries no revenue claim,
+# so a false positive costs an operator one glance, while a missed one costs
+# them the reason a degradation is happening.
+FAILURE_SPIKE_RATIO = 2.0
+
+# Refunds are lower-volume than payments, so the floor is lower -- but not
+# absent: two refunds becoming four is not an event.
+MIN_REFUND_VOLUME = 5
+
+# Tighter than the failure ratio, because this one DOES claim revenue at risk
+# and a false positive puts a number on the Command Center.
+REFUND_SPIKE_RATIO = 2.5
+
 
 @dataclass
 class Anomaly:
@@ -70,6 +89,31 @@ class Anomaly:
     signals: dict
     started_at: datetime
     evidence: list[dict] = field(default_factory=list)
+
+
+# MerchantOps §12 requires every incident to expose why it was called an anomaly:
+#
+#     Rule: payment_success_rate_drop
+#     Baseline: 91.8%
+#     Observed: 73.2%
+#     Threshold: <80%
+#     Version: v3
+#
+# Each rule already recorded those numbers, under names of its own choosing —
+# `baseline_success_rate_pct`, `capture_count`, `event_count`. A reader wanting
+# the canonical four therefore had to know which rule produced the row and which
+# of its keys meant what, which is a mapping table living in whoever is reading.
+#
+# So every rule emits these four keys *as well as* its detailed ones. They are
+# additive to an existing JSON column, so no migration, and a rule that forgets
+# them renders as "not published" rather than as a wrong number.
+CANONICAL_SIGNAL_KEYS = ("baseline", "observed", "threshold", "unit")
+
+
+def _canonical(baseline, observed, threshold: str, unit: str) -> dict:
+    """The §12 triple, in the shape every rule emits it."""
+    return {"baseline": baseline, "observed": observed,
+            "threshold": threshold, "unit": unit}
 
 
 def _fmt_inr(minor: int) -> str:
@@ -168,6 +212,10 @@ def detect_payment_degradation(session, merchant_id: str, *,
             detection_rule="success_rate_below_baseline",
             revenue_at_risk_minor=revenue_at_risk,
             signals={
+                **_canonical(baseline=round(base_rate, 1),
+                             observed=round(cur_rate, 1),
+                             threshold=f"drop >= {DEGRADATION_THRESHOLD_PP}pp",
+                             unit="%"),
                 "method": method,
                 "current_success_rate_pct": round(cur_rate, 1),
                 "baseline_success_rate_pct": round(base_rate, 1),
@@ -325,6 +373,11 @@ def detect_duplicate_payments(session, merchant_id: str, *,
             detection_rule="duplicate_capture_on_order",
             revenue_at_risk_minor=exposure,
             signals={
+                # One capture per order is the expected state, so it is the
+                # baseline; the observed value is how many actually landed.
+                **_canonical(baseline=1, observed=len(members),
+                             threshold=f"> 1 capture within {window_seconds}s",
+                             unit="captures"),
                 "order_id": order_id, "customer_id": customer_id,
                 "first_payment_id": first["id"],
                 "excess_payment_ids": ids,
@@ -410,6 +463,9 @@ def detect_provider_failure_burst(session, merchant_id: str, *,
             # inventing an exposure from a count is exactly what §22 forbids.
             revenue_at_risk_minor=0,
             signals={
+                **_canonical(baseline=BURST_THRESHOLD, observed=n,
+                             threshold=f">= {BURST_THRESHOLD} in the window",
+                             unit="events"),
                 "event_type": r["event_type"], "event_count": n,
                 "window_minutes": round(span_minutes, 1),
                 "threshold": BURST_THRESHOLD,
@@ -429,5 +485,216 @@ def detect_provider_failure_burst(session, merchant_id: str, *,
     return out
 
 
+def detect_failure_code_spike(session, merchant_id: str, *,
+                              as_of: datetime | None = None) -> list[Anomaly]:
+    """MerchantOps §12 "failure-code spikes" — WHY a method is failing.
+
+    `detect_payment_degradation` says UPI success fell 18 points. It does not
+    say that the fall is collect timeouts rather than declines, and those two
+    have nothing in common: one is a PSP routing problem somebody can escalate,
+    the other is customer-side and is not. A merchant reading only the
+    degradation incident has to go and find that out.
+
+    ## Why this carries no revenue at risk
+
+    Deliberately zero, and this is the load-bearing decision in the rule.
+
+    The lost revenue from a UPI collapse is already attributed to the
+    degradation incident. Attributing it again here would double it in
+    `recovery_ledger`, which sums `revenue_at_risk_minor` over open incidents —
+    and the Command Center's funnel would open with an at-risk figure roughly
+    twice the real one, on exactly the screen where being wrong about money
+    matters most. A spike is a *diagnosis of* exposure that is already counted,
+    not more exposure.
+
+    `PROVIDER_FAILURE_BURST` makes the same call for the same reason.
+
+    ## What it compares
+
+    Each failure reason's count in the current window against its own count in
+    the preceding one. Ratio, not share: a share-based rule reports a spike when
+    some *other* reason goes quiet, which is a change in the mix and not a new
+    problem.
+    """
+    as_of = as_of or ANCHOR
+    cut = as_of - timedelta(days=PERIOD_DAYS)
+    prev_cut = as_of - timedelta(days=PERIOD_DAYS * 2)
+
+    rows = session.execute(text("""
+        SELECT error_reason,
+               COUNT(*) FILTER (WHERE created_at >= :cut)              AS cur,
+               COUNT(*) FILTER (WHERE created_at >= :prev
+                                  AND created_at < :cut)               AS prev,
+               -- The method this reason mostly arrives on, for the title. Not
+               -- a claim that it is exclusive to that method; the signals carry
+               -- the full split.
+               MODE() WITHIN GROUP (ORDER BY method)
+                 FILTER (WHERE created_at >= :cut)                     AS method
+          FROM payments
+         WHERE merchant_id = :m AND status = 'failed'
+           AND error_reason IS NOT NULL
+           AND created_at >= :prev
+         GROUP BY error_reason
+    """), {"m": merchant_id, "cut": cut, "prev": prev_cut}).mappings().all()
+
+    out: list[Anomaly] = []
+    for r in rows:
+        cur, prev = int(r["cur"]), int(r["prev"])
+        if cur < MIN_FAILURE_VOLUME:
+            # Three failures becoming six is a tripling and is noise.
+            continue
+
+        # A reason with no baseline at all is new, which is a spike by any
+        # reading. Treated as a ratio against one rather than as a division by
+        # zero, so it sorts alongside the others instead of being infinite.
+        ratio = cur / prev if prev else float(cur)
+        if ratio < FAILURE_SPIKE_RATIO:
+            continue
+
+        reason, method = r["error_reason"], (r["method"] or "unknown")
+        excess = cur - prev
+        out.append(Anomaly(
+            incident_type=IncidentType.FAILURE_CODE_SPIKE,
+            # Severity from the excess count alone: there is no revenue figure
+            # to grade on, because this rule deliberately claims none.
+            severity=(IncidentSeverity.HIGH if excess >= 4 * MIN_FAILURE_VOLUME
+                      else IncidentSeverity.MEDIUM if excess >= MIN_FAILURE_VOLUME
+                      else IncidentSeverity.LOW),
+            title=f"{reason} failures up {ratio:.1f}x",
+            summary=(
+                f"{reason} accounted for {cur} failed payments in the last "
+                f"{PERIOD_DAYS} days against {prev} in the {PERIOD_DAYS} before "
+                f"({ratio:.1f}x), mostly on {method}. This names the cause; the "
+                f"revenue effect is counted on the degradation incident for that "
+                f"method and is deliberately not counted again here."
+            ),
+            detection_key=f"{merchant_id}|FAILURE_CODE_SPIKE|{reason}|{cut.isoformat()}",
+            detection_rule="failure_code_above_baseline",
+            revenue_at_risk_minor=0,
+            signals={
+                **_canonical(baseline=prev, observed=cur,
+                             threshold=f">= {FAILURE_SPIKE_RATIO}x baseline",
+                             unit="failures"),
+                "error_reason": reason,
+                "dominant_method": method,
+                "ratio": round(ratio, 2),
+                "excess_failures": excess,
+                "window_start": cut.isoformat(),
+                "window_end": as_of.isoformat(),
+                "revenue_note": ("Zero by design: the exposure is counted on the "
+                                 "payment-degradation incident for this method."),
+            },
+            started_at=cut,
+            evidence=[
+                {"key": "error_reason", "value": reason, "source": "payments"},
+                {"key": "current_failures", "value": cur, "source": "payments"},
+                {"key": "baseline_failures", "value": prev, "source": "payments"},
+                {"key": "ratio", "value": f"{ratio:.1f}x", "source": "calculation_engine"},
+                {"key": "dominant_method", "value": method, "source": "payments"},
+            ],
+        ))
+    return out
+
+
+def detect_unusual_refund_activity(session, merchant_id: str, *,
+                                   as_of: datetime | None = None) -> list[Anomaly]:
+    """MerchantOps §12 "unusual refund activity".
+
+    Refunds leaving faster than they used to is the one anomaly in §12 that is
+    not a *failure*: every payment succeeded. It is money going back out, and
+    the causes worth catching are a broken fulfilment process, a pricing error,
+    or someone refunding what they should not.
+
+    ## Why this one DOES carry revenue at risk
+
+    Unlike the failure-code spike above, nothing else has counted it. The figure
+    is the **excess over baseline**, not the total refunded: a merchant who
+    refunds ₹10,000 a week and refunded ₹25,000 this week has ₹15,000 of
+    unexplained outflow, and reporting the whole ₹25,000 would describe ordinary
+    business as an incident.
+
+    Value and count are both checked because they fail differently. One
+    ₹50,000 refund against a baseline of fifty ₹100 ones is a value anomaly with
+    a normal count; fifty small refunds where there are usually two is a count
+    anomaly with a normal value. Either is worth a look.
+    """
+    as_of = as_of or ANCHOR
+    cut = as_of - timedelta(days=PERIOD_DAYS)
+    prev_cut = as_of - timedelta(days=PERIOD_DAYS * 2)
+
+    r = session.execute(text("""
+        SELECT COUNT(*) FILTER (WHERE created_at >= :cut)               AS cur_n,
+               COALESCE(SUM(amount_minor)
+                        FILTER (WHERE created_at >= :cut), 0)           AS cur_v,
+               COUNT(*) FILTER (WHERE created_at >= :prev
+                                  AND created_at < :cut)                AS prev_n,
+               COALESCE(SUM(amount_minor) FILTER (WHERE created_at >= :prev
+                                  AND created_at < :cut), 0)            AS prev_v
+          FROM refunds
+         WHERE merchant_id = :m AND status = 'processed'
+    """), {"m": merchant_id, "cut": cut, "prev": prev_cut}).mappings().one()
+
+    cur_n, prev_n = int(r["cur_n"]), int(r["prev_n"])
+    cur_v, prev_v = int(r["cur_v"]), int(r["prev_v"])
+
+    if cur_n < MIN_REFUND_VOLUME:
+        return []
+    if prev_n == 0 and prev_v == 0:
+        # No baseline to be unusual against. A merchant's first week of refunds
+        # is not an anomaly, and calling it one would greet every new account
+        # with an incident.
+        return []
+
+    count_ratio = cur_n / prev_n if prev_n else float(cur_n)
+    value_ratio = cur_v / prev_v if prev_v else float(cur_v)
+    if max(count_ratio, value_ratio) < REFUND_SPIKE_RATIO:
+        return []
+
+    # The excess, floored at zero: a count spike with a value DROP is real and
+    # its excess value is negative, which is not an amount at risk.
+    excess_value = max(0, cur_v - prev_v)
+    driver = "value" if value_ratio >= count_ratio else "count"
+
+    return [Anomaly(
+        incident_type=IncidentType.UNUSUAL_REFUND_ACTIVITY,
+        severity=_severity_for(excess_value, 0.0),
+        title=f"Refund {driver} up {max(count_ratio, value_ratio):.1f}x",
+        summary=(
+            f"{cur_n} refunds totalling {_fmt_inr(cur_v)} in the last "
+            f"{PERIOD_DAYS} days, against {prev_n} totalling {_fmt_inr(prev_v)} "
+            f"in the {PERIOD_DAYS} before. Excess outflow above baseline "
+            f"{_fmt_inr(excess_value)}. Every underlying payment succeeded — "
+            f"this is money going back out, not a payment failure."
+        ),
+        detection_key=f"{merchant_id}|UNUSUAL_REFUND_ACTIVITY|{cut.isoformat()}",
+        detection_rule="refund_activity_above_baseline",
+        revenue_at_risk_minor=excess_value,
+        signals={
+            **_canonical(baseline=prev_n if driver == "count" else prev_v,
+                         observed=cur_n if driver == "count" else cur_v,
+                         threshold=f">= {REFUND_SPIKE_RATIO}x baseline",
+                         unit="refunds" if driver == "count" else "minor units"),
+            "driver": driver,
+            "current_count": cur_n, "baseline_count": prev_n,
+            "current_value_minor": cur_v, "baseline_value_minor": prev_v,
+            "count_ratio": round(count_ratio, 2),
+            "value_ratio": round(value_ratio, 2),
+            "excess_value_minor": excess_value,
+            "window_start": cut.isoformat(),
+            "window_end": as_of.isoformat(),
+        },
+        started_at=cut,
+        evidence=[
+            {"key": "current_refund_count", "value": cur_n, "source": "refunds"},
+            {"key": "baseline_refund_count", "value": prev_n, "source": "refunds"},
+            {"key": "current_refund_value", "value": _fmt_inr(cur_v), "source": "refunds"},
+            {"key": "baseline_refund_value", "value": _fmt_inr(prev_v), "source": "refunds"},
+            {"key": "excess_outflow", "value": _fmt_inr(excess_value),
+             "source": "calculation_engine"},
+        ],
+    )]
+
+
 RULES = (detect_payment_degradation, detect_duplicate_payments,
-         detect_provider_failure_burst)
+         detect_provider_failure_burst, detect_failure_code_spike,
+         detect_unusual_refund_activity)

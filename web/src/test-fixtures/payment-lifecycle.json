@@ -1,0 +1,128 @@
+{
+  "payment": {
+    "id": "SYN_PAY_0002",
+    "merchant_id": "MERCH_A",
+    "order_id": "SYN_ORD_DUP01",
+    "customer_id": "SYN_CUS_A0012",
+    "customer_name": "Customer 0012",
+    "amount_minor": 499900,
+    "currency": "INR",
+    "method": "card",
+    "status": "refunded",
+    "error_reason": null,
+    "amount_refunded_minor": 499900,
+    "refund_status": "full",
+    "created_at": "2026-08-18T07:00:34+10:00"
+  },
+  "external_payment_id": "pay_MOCKTEST00000002",
+  "provider": "razorpay",
+  "environment": "test",
+  "events": [
+    {
+      "stage": "payment",
+      "at": "2026-08-18T07:00:34+10:00",
+      "id": "SYN_PAY_0002",
+      "label": "Payment refunded",
+      "detail": "card \u00b7 INR 4,999.00",
+      "correlation_id": null
+    },
+    {
+      "stage": "mapping",
+      "at": "2026-09-07T19:36:44.449279+10:00",
+      "id": "PMP_SEED0002",
+      "label": "Mapped to razorpay (test)",
+      "detail": "pay_MOCKTEST00000002 \u00b7 never confirmed against the provider",
+      "correlation_id": null
+    },
+    {
+      "stage": "refund",
+      "at": "2026-09-07T19:36:44.455816+10:00",
+      "id": "rfnd_MOCK38EDA62175F30E",
+      "label": "Refund processed",
+      "detail": "4,999.00 \u00b7 rfnd_MOCK38EDA62175F30E",
+      "correlation_id": null
+    },
+    {
+      "stage": "incident",
+      "at": "2026-09-07T19:36:44.466326+10:00",
+      "id": "INC_8A7C419BFC",
+      "label": "Duplicate Payment detected",
+      "detail": "LOW \u00b7 duplicate_capture_on_order",
+      "correlation_id": "COR_F9815E7FEB76"
+    },
+    {
+      "stage": "investigation",
+      "at": "2026-09-07T19:36:44.477899+10:00",
+      "id": "TASK_34247F555C",
+      "label": "Investigation started",
+      "detail": "Refund the duplicate payment SYN_PAY_0002 amount 499900. \u00b7 3 tool calls \u00b7 deterministic",
+      "correlation_id": null
+    },
+    {
+      "stage": "tool_call",
+      "at": "2026-09-07T19:36:44.530818+10:00",
+      "id": "TC_C3CE1B9BA4",
+      "label": "request_refund",
+      "detail": "held by policy: REQUIRE_APPROVAL",
+      "correlation_id": null
+    },
+    {
+      "stage": "approval",
+      "at": "2026-09-07T19:36:44.539828+10:00",
+      "id": "APR_0C044BDC5F",
+      "label": "Approval approved",
+      "detail": "HIGH risk \u00b7 by USR_A_OWNER",
+      "correlation_id": null
+    },
+    {
+      "stage": "action",
+      "at": "2026-09-07T19:36:44.549507+10:00",
+      "id": "ACT_737E10543BAB",
+      "label": "Refund sent to provider",
+      "detail": "4,999.00 \u00b7 rfnd_MOCK38EDA62175F30E",
+      "correlation_id": null
+    },
+    {
+      "stage": "verification",
+      "at": "2026-09-07T19:36:44.555165+10:00",
+      "id": "ACT_737E10543BAB",
+      "label": "Verification: SUCCESS",
+      "detail": "Confirmed: amount_refunded increased by 499900 minor units (expected 499900) and the refund is processed. \u00b7 attempt 1",
+      "correlation_id": null
+    },
+    {
+      "stage": "provider_event",
+      "at": "2026-09-07T19:36:44.559119+10:00",
+      "id": "evt_600614834ce3",
+      "label": "Provider event: refund.processed",
+      "detail": "PROCESSED \u00b7 re-read provider state; no change",
+      "correlation_id": "COR_WEBHOOK_FIXTURE"
+    }
+  ],
+  "stages": [
+    "payment",
+    "mapping",
+    "incident",
+    "investigation",
+    "tool_call",
+    "approval",
+    "action",
+    "provider_event",
+    "verification",
+    "refund"
+  ],
+  "correlation_ids": [
+    "COR_F9815E7FEB76",
+    "COR_WEBHOOK_FIXTURE"
+  ],
+  "incident_ids": [
+    "INC_8A7C419BFC"
+  ],
+  "task_ids": [
+    "TASK_34247F555C"
+  ],
+  "action_ids": [
+    "ACT_737E10543BAB"
+  ],
+  "generated_at": "2026-09-07T09:36:44.571837+00:00"
+}

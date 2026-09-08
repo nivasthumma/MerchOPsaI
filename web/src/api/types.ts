@@ -95,6 +95,22 @@ export interface RunVersions {
   workflow: string | null;
 }
 
+/** One step of the agent's operational progress — plan P0-08.
+ *
+ *  `state` is the claim being made: `done` happened and worked, `failed`
+ *  happened and did not, `blocked` waits on a person, `running` is in flight,
+ *  `pending` was expected and not reached. */
+export interface ActivityStep {
+  key: string;
+  label: string;
+  state: "done" | "failed" | "blocked" | "running" | "pending";
+  /** Optional because the server omits it: several steps are derived from a
+   *  state rather than from an event, and those have no honest timestamp to
+   *  give. Invented ones would be worse than absent. */
+  at?: string | null;
+  detail: string;
+}
+
 export interface Task {
   id: string;
   tenant_id: string | null;
@@ -117,6 +133,10 @@ export interface Task {
   replayed_from: string | null;
   approvals: Approval[];
   actions: AgentAction[];
+  /** Operational progress — plan P0-08. Built server-side from recorded rows
+   *  (tool calls, policy decisions, approvals, actions), never from
+   *  model-authored text, so a step exists because something happened. */
+  activity: ActivityStep[];
 
   /** MerchantOps §37. The model's own typed output. `agent_confidence` is
    *  displayed and consulted by nothing; `requires_human` is the OR of policy
@@ -243,23 +263,239 @@ export interface ScenarioResult {
   model: string;
 }
 
-/** Exactly the columns `escalated_actions()` selects. It does *not* return
- *  `action_type` — an earlier version of this type claimed it did, so the UI
- *  rendered an always-empty column and nothing complained. */
+/** Exactly the columns `unsettled_queue()` selects — plan P0-04.
+ *
+ *  It grew: an earlier version claimed `action_type` it did not return, so the
+ *  UI rendered an always-empty column and nothing complained. The queue now
+ *  carries every field the plan requires of an UNKNOWN row, and each one is
+ *  selected server-side rather than joined in a browser. */
 export interface EscalatedAction {
   id: string;
   task_id: string;
   merchant_id: string;
+  action_type: string | null;
+  status: string | null;
   target_payment_id: string | null;
   external_payment_id: string | null;
   amount_minor: number | null;
   external_reference: string | null;
   verification_state: VerificationState | null;
   verify_attempts: number;
+  created_at: string;
   updated_at: string;
   /** Why it is unsettled. A queue of identifiers is a lookup exercise; the
    *  reason belongs on the row. */
   verification_detail: VerificationDetail | null;
+  /** Escalation is a recorded decision, not a comparison this client
+   *  re-derives from `verify_attempts`. */
+  escalated: boolean;
+  escalated_at: string | null;
+  last_verified_at: string | null;
+  /** When the sweep will look again. Null means it will not — either the
+   *  action is settled, or a human owns it now. */
+  next_verify_at: string | null;
+  provider: string | null;
+  environment: string | null;
+  incident_id: string | null;
+  owner: string | null;
+}
+
+// --------------------------------------------------------------- P0-03/P0-05
+/** One action in the Action Center. One shape for every section that lists
+ *  actions: a per-section type is how `amount_minor` comes to mean the
+ *  requested amount in one column and the verified amount in another. */
+export interface ActionRow {
+  id: string;
+  task_id: string;
+  merchant_id: string;
+  action_type: string;
+  status: string;
+  target_payment_id: string | null;
+  external_payment_id: string | null;
+  external_reference: string | null;
+  amount_minor: number | null;
+  verification_state: VerificationState | null;
+  verify_attempts: number;
+  escalated: boolean;
+  escalated_at: string | null;
+  last_verified_at: string | null;
+  next_verify_at: string | null;
+  approval_id: string | null;
+  recovery_candidate_id: string | null;
+  created_at: string;
+  updated_at: string;
+  provider_latency_ms: number | null;
+  verification_latency_ms: number | null;
+  customer_id: string | null;
+  payment_method: string | null;
+  provider: string | null;
+  environment: string | null;
+  incident_id: string | null;
+  owner: string | null;
+  task_request: string | null;
+  task_status: string | null;
+  approval_decision: string | null;
+  risk_level: string | null;
+  expires_at: string | null;
+  required_signatures: number | null;
+}
+
+/** An approval no action exists for yet — the money has not moved and will not
+ *  until a person decides. Deliberately not an `ActionRow` with nulls: that
+ *  would tell an operator an action exists. */
+export interface PendingApprovalRow {
+  approval_id: string;
+  task_id: string;
+  action_type: string;
+  action_payload: Record<string, unknown>;
+  risk_level: string;
+  decision: string;
+  expires_at: string;
+  required_signatures: number;
+  created_at: string;
+  evidence: unknown[];
+  incident_id: string | null;
+  owner: string | null;
+  task_request: string | null;
+  signatures: number;
+  /** Decided by the database against the database's clock, never by this
+   *  browser against its own. */
+  expired: boolean;
+}
+
+export interface ActionCenterCounts {
+  awaiting_approval: number;
+  executing: number;
+  unknown: number;
+  escalated: number;
+  recently_completed: number;
+}
+
+export interface ActionCenter {
+  generated_at: string;
+  merchant_id: string;
+  awaiting_approval: PendingApprovalRow[];
+  executing: ActionRow[];
+  unknown: ActionRow[];
+  escalated: ActionRow[];
+  recently_completed: ActionRow[];
+  /** TRUE totals, counted in SQL — not the length of the page. The two
+   *  disagreed once, and the smaller number was on the screen an operator
+   *  acts from. */
+  counts: ActionCenterCounts;
+  /** How many rows each section actually returned. Render `counts` beside a
+   *  shorter list and you are showing a number you cannot substantiate. */
+  shown: ActionCenterCounts;
+  limit: number;
+  /** The system's own stopping rule, so the UI renders it rather than keeping
+   *  a second copy that can drift. */
+  reconciliation_policy: { max_attempts: number; on_exhaustion: string };
+  sections: string[];
+}
+
+/** One stage of the recovery funnel — P1-03. Ordered and labelled server-side
+ *  so at-risk can never be arranged into reading as recovered. */
+export interface FunnelStage {
+  stage: "AT_RISK" | "RECOVERABLE" | "ATTEMPTED" | "RECOVERED";
+  label: string;
+  amount_minor: number;
+}
+
+export interface CommandCenter {
+  generated_at: string;
+  merchant_id: string;
+  revenue: {
+    at_risk_minor: number; recoverable_minor: number; attempted_minor: number;
+    recovered_minor: number; failed_minor: number; unknown_minor: number;
+    outstanding_minor: number; invariants_broken: string[];
+  };
+  funnel: FunnelStage[];
+  attention: {
+    approvals_pending: number; approvals_expired: number;
+    unknown_actions: number; escalated_actions: number;
+    open_incidents: number; critical_incidents: number; running_tasks: number;
+  };
+  by_incident: Record<string, unknown>[];
+  by_method: Record<string, unknown>[];
+  activity: { event_type: string; correlation_id: string | null;
+              task_id: string | null; incident_id: string | null;
+              created_at: string; payload: Record<string, unknown> }[];
+}
+
+/** One link in §7's chain. Every entry is a row that exists, with its own
+ *  timestamp — never an inferred step. */
+export interface LifecycleEvent {
+  stage: string;
+  at: string | null;
+  id: string;
+  label: string;
+  detail: string;
+  correlation_id: string | null;
+}
+
+/** MerchantOps §7 — a payment traceable through its complete lifecycle.
+ *
+ *  Distinct from `/trace/{correlation_id}`, which answers "everything one
+ *  OPERATION touched". A payment's life spans several operations, which is why
+ *  `correlation_ids` is a list. */
+export interface PaymentLifecycle {
+  payment: {
+    id: string; merchant_id: string; order_id: string | null;
+    customer_id: string | null; customer_name: string | null;
+    amount_minor: number; currency: string; method: string; status: string;
+    error_reason: string | null; amount_refunded_minor: number;
+    refund_status: string | null; created_at: string | null;
+  };
+  external_payment_id: string | null;
+  provider: string | null;
+  environment: string | null;
+  events: LifecycleEvent[];
+  stages: string[];
+  correlation_ids: string[];
+  incident_ids: string[];
+  task_ids: string[];
+  action_ids: string[];
+  generated_at: string;
+}
+
+export interface SearchHit {
+  kind: string;
+  id: string;
+  label: string | null;
+  detail: string | null;
+  created_at: string | null;
+  /** Where to go. Built server-side so the client is not maintaining a second
+   *  map from entity kind to route. */
+  route: string;
+}
+
+export interface SearchResults {
+  query: string;
+  results: SearchHit[];
+  truncated: boolean;
+}
+
+/** One dependency's verdict — §11. `not_configured` is deliberately distinct
+ *  from `down`: no webhook secret is a posture, not an outage.
+ *
+ *  The four declared fields are what an unauthenticated probe receives. The
+ *  index signature covers the operational detail — coverage counts, the
+ *  reconciliation backlog, drifted payment ids — which the server serves only
+ *  to an authenticated caller, so a consumer must treat them as optional. */
+export interface ComponentHealth {
+  status: "healthy" | "degraded" | "down" | "not_configured";
+  detail: string;
+  required: boolean;
+  latency_ms: number;
+  [extra: string]: unknown;
+}
+
+export interface Readiness {
+  status: "ready" | "degraded" | "not_ready";
+  checked_at: string;
+  components: Record<string, ComponentHealth>;
+  blocking: string[];
+  degraded: string[];
 }
 
 /** One line of the sweep's working: what it re-read, and what changed. */
@@ -403,12 +639,55 @@ export interface IncidentSummary {
   started_at: string; detected_at: string; resolved_at: string | null;
 }
 
+/** One saved view — plan P1-05. Declared server-side and served with the list,
+ *  so "My attention" cannot mean one thing in a pasted link and another in the
+ *  sidebar, and five counts come from one read rather than five requests. */
+export interface SavedView {
+  key: string;
+  label: string;
+  hint: string;
+  filter: Record<string, unknown>;
+  count: number;
+}
+
+export interface IncidentList {
+  incidents: IncidentSummary[];
+  /** Summed over the WHOLE match in SQL, never across the returned page. */
+  total_revenue_at_risk_minor: number;
+  /** How many matched, and how many are in `incidents`. Showing the total
+   *  beside a shorter list is showing a number you cannot substantiate. */
+  matched: number;
+  shown: number;
+  views: SavedView[];
+  applied_view: string | null;
+}
+
+/** The eleven filters P1-05 names. Every one is applied in SQL server-side. */
+export interface IncidentQuery {
+  view?: string;
+  severity?: string[];
+  status?: string[];
+  incident_type?: string[];
+  payment_method?: string[];
+  min_amount_minor?: number;
+  max_age_hours?: number;
+  unresolved?: boolean;
+  approval_required?: boolean;
+  has_unknown?: boolean;
+  escalated?: boolean;
+  include_closed?: boolean;
+}
+
 export interface IncidentDetail extends IncidentSummary {
   signals: Record<string, unknown>;
   evidence: { id: string; key: string; value: unknown; source: string; untrusted: boolean }[];
   tasks: { id: string; status: string; final_answer: string | null;
            tool_calls: number; duration_ms: number | null }[];
   legal_transitions: string[];
+  /** The financial actions this incident produced — plan P0-07's last four
+   *  stages. The same row shape the Action Center serves, so the two screens
+   *  cannot disagree about the state of an action. */
+  actions: ActionRow[];
   recovery: RecoveryPlanView | null;
   timeline: { at: string; event: string; task_id: string | null;
               detail: Record<string, unknown> }[];

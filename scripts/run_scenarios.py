@@ -1,12 +1,54 @@
-"""Run the evaluation suite and print measured results — CONTRACT §31, §54."""
+"""Run the evaluation suite and print measured results — CONTRACT §31, §54.
+
+## Its own database
+
+The suite drops and rebuilds the schema once per scenario, 167 times. Pointed
+at the development database -- which is what inheriting `DATABASE_URL` meant --
+that destroys whatever somebody had open, and the page they were reading
+becomes "Unknown task" with nothing connecting the two events.
+
+`scripts/run_e2e.sh` has had its own database from the start and says why. This
+now does the same: `<dev database>_eval`, created on demand, overridable with
+EVAL_DATABASE_URL. The name is printed, because a run that silently chose a
+database is a run nobody can reason about afterwards.
+
+The environment is set BEFORE `app.eval.runner` is imported. `app/db.py` builds
+its engine from `get_settings().database_url` and caches both, so choosing the
+database after the first session exists would choose nothing at all.
+"""
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.dbutil import database_name, ensure_database, sibling_url
+
+
+def _choose_database() -> str:
+    """Resolve the evaluation database and make sure it exists."""
+    from app.config import Settings
+
+    explicit = os.environ.get("EVAL_DATABASE_URL")
+    # `Settings()` rather than `get_settings()`: this runs before anything is
+    # cached, and reading the default here keeps one definition of it.
+    base = os.environ.get("DATABASE_URL") or Settings().database_url
+    url = explicit or sibling_url(base, f"{database_name(base)}_eval")
+
+    created = ensure_database(url)
+    print(f"evaluation database: {database_name(url)}"
+          f"{' (created)' if created else ''}")
+    os.environ["DATABASE_URL"] = url
+    return url
+
+
+_choose_database()
+
+# Imported here, not at the top: the line above decides which database this
+# process talks to, and `app/db.py` caches its engine on first use.
 from app.eval.runner import run_all
 
 

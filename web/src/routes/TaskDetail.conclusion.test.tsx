@@ -3,7 +3,7 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../api/types";
 import TaskDetail from "./TaskDetail";
@@ -12,8 +12,8 @@ import traceFixture from "../test-fixtures/trace.json";
 import evidenceFixture from "../test-fixtures/evidence.json";
 import messagesFixture from "../test-fixtures/messages.json";
 
-vi.mock("react-router-dom", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router-dom")>();
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
   return { ...actual, useParams: () => ({ taskId: "TASK_ABC" }) };
 });
 vi.mock("../api/client", async (importOriginal) => {

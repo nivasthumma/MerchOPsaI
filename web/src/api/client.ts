@@ -6,13 +6,14 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
+  ActionCenter,
   AgentMessage,
+  CommandCenter,
   Dashboard,
   IncidentDetail,
-  IncidentSummary,
-  EscalatedAction, Health, LiveEventList, Metrics, ReconcileReport, ReplayResult,
-  Scenario,
-  Principal, ProviderChange, ScenarioResult, Task, TaskEvidence, TraceEvent,
+  EscalatedAction, Health, IncidentList, IncidentQuery, LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
+  ReconcileReport, Readiness, ReplayResult, Scenario, ScenarioResult,
+  SearchResults, Task, TaskEvidence, TraceEvent, VerificationDetail,
 } from "./types";
 
 const BASE = "/api";
@@ -101,12 +102,30 @@ export function setToken(token: string): void {
   }
 }
 
+/** What a failed request means for the state of the world — plan P1-13.
+ *
+ *  The plan asks that a provider failure "explicitly state that no unsafe retry
+ *  occurred", and an operator's real question is narrower and harder: *did this
+ *  happen or not*. Three answers, and the difference between them is the
+ *  difference between pressing the button again and opening the UNKNOWN queue.
+ */
+export type Effect =
+  /** The server refused before doing anything. Safe to correct and try again. */
+  | "refused"
+  /** A read. Whether it arrived or not, it changed nothing. */
+  | "read-only"
+  /** A write whose fate is genuinely unknown: it may have been applied. */
+  | "unknown";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly code?: string,
     readonly body?: unknown,
+    /** The HTTP method, so the consequence below can be worked out at all.
+     *  Defaults to GET because every call that omits it is a read. */
+    readonly method: string = "GET",
   ) {
     super(message);
     this.name = "ApiError";
@@ -120,6 +139,24 @@ export class ApiError extends Error {
   /** 409 is the approval state machine refusing — expected, not a bug. */
   get isConflict(): boolean {
     return this.status === 409;
+  }
+
+  /** What this failure implies about whether anything happened.
+   *
+   *  Derived rather than guessed at the call site, because the call sites are
+   *  the places most likely to guess optimistically.
+   *
+   *  A 4xx is the server having decided: it refused, nothing ran. A read is
+   *  harmless whatever happened to it. What is left — a write that failed at
+   *  the transport, or with a 5xx — is the honest `unknown`: the request may
+   *  have reached the server and been applied before the failure. This system
+   *  already has a name and a queue for that state, and the banner points at
+   *  it rather than inviting a second press.
+   */
+  get effect(): Effect {
+    if (this.method === "GET") return "read-only";
+    if (this.status >= 400 && this.status < 500) return "refused";
+    return "unknown";
   }
 }
 
@@ -163,7 +200,13 @@ async function request<T>(
   if (init.body) headers.set("Content-Type", "application/json");
   if (auth) {
     const token = getToken();
-    if (!token) throw new ApiError(401, "No token. Mint one with scripts/issue_token.py.");
+    // 401 with the method, so `effect` reads `refused` rather than defaulting
+    // to `read-only`: nothing was sent at all, which is a stronger claim than
+    // "this was a read" and the right one to make.
+    if (!token) {
+      throw new ApiError(401, "No token. Mint one with scripts/issue_token.py.",
+                         undefined, undefined, init.method ?? "GET");
+    }
     headers.set("Authorization", `Bearer ${token}`);
   }
 
@@ -187,7 +230,8 @@ async function request<T>(
   } catch (e) {
     // A network-level failure is almost always "the API is not running", which
     // is worth saying plainly rather than surfacing "Failed to fetch".
-    throw new ApiError(0, `Cannot reach the API. Is it running on :8000? (${String(e)})`);
+    throw new ApiError(0, `Cannot reach the API. Is it running on :8000? (${String(e)})`,
+                       undefined, undefined, init.method ?? "GET");
   } finally {
     // One decrement, on both paths. Reading the body below is fast enough that
     // counting it would only make the indicator linger after the work is done.
@@ -203,10 +247,11 @@ async function request<T>(
     const detail = (body as { detail?: unknown } | null)?.detail;
     if (detail && typeof detail === "object") {
       const d = detail as { error?: string; code?: string };
-      throw new ApiError(res.status, d.error ?? res.statusText, d.code, body);
+      throw new ApiError(res.status, d.error ?? res.statusText, d.code, body,
+                         init.method ?? "GET");
     }
     throw new ApiError(res.status, typeof detail === "string" ? detail : res.statusText,
-                       undefined, body);
+                       undefined, body, init.method ?? "GET");
   }
   return body as T;
 }
@@ -231,9 +276,28 @@ export const api = {
    *  one counts operations, the other reports money. */
   dashboard: () => request<Dashboard>("/dashboard"),
 
-  incidents: () =>
-    request<{ incidents: IncidentSummary[]; total_revenue_at_risk_minor: number }>(
-      "/incidents"),
+  /** Plan P1-05. Filtering happens server-side, in SQL: the derived filters
+   *  (approval required, UNKNOWN, escalated) are facts about the actions an
+   *  incident produced, which this client cannot compute without fetching the
+   *  whole action table.
+   *
+   *  Array values repeat the key (`?severity=HIGH&severity=CRITICAL`), which is
+   *  what FastAPI's `Query()` reads as a list. */
+  incidents: (q: IncidentQuery = {}) => {
+    const p = new URLSearchParams();
+    if (q.view) p.set("view", q.view);
+    for (const k of ["severity", "status", "incident_type", "payment_method"] as const) {
+      for (const v of q[k] ?? []) p.append(k, v);
+    }
+    if (q.min_amount_minor != null) p.set("min_amount_minor", String(q.min_amount_minor));
+    if (q.max_age_hours != null) p.set("max_age_hours", String(q.max_age_hours));
+    for (const k of ["unresolved", "approval_required", "has_unknown",
+                     "escalated", "include_closed"] as const) {
+      if (q[k]) p.set(k, "true");
+    }
+    const suffix = p.toString() ? `?${p}` : "";
+    return request<IncidentList>(`/incidents${suffix}`);
+  },
 
   /** Idempotent: a second sweep over the same window reports `already_known`
    *  rather than raising a second incident for one anomaly. */
@@ -330,8 +394,14 @@ export const api = {
   reject: (id: string) =>
     request<Task>(`/tasks/${encodeURIComponent(id)}/reject`, { method: "POST" }),
 
+  /** Re-reads provider state. It never re-issues the action.
+   *
+   *  The response carries what the read FOUND, and callers must render that
+   *  rather than the fact that the call returned 200: re-verification can come
+   *  back UNKNOWN, and an HTTP success there means the question was asked, not
+   *  that it was answered. */
   reverify: (id: string) =>
-    request<{ task: Task; verification: Record<string, unknown> }>(
+    request<{ task: Task; verification: VerificationDetail }>(
       `/tasks/${encodeURIComponent(id)}/reverify`, { method: "POST" }),
 
   replay: (id: string, mode: "PLAYBACK" | "RE_REASON") =>
@@ -356,6 +426,37 @@ export const api = {
   escalated: (maxAttempts?: number) =>
     request<EscalatedAction[]>(
       `/actions/escalated${maxAttempts === undefined ? "" : `?max_attempts=${maxAttempts}`}`),
+
+  /** The Action Center — plan P0-03. One read, five sections, one instant.
+   *  Assembling this from `/approvals` + `/actions/escalated` + `/incidents`
+   *  would show counts from three different moments, and the moments diverge
+   *  exactly when the numbers are moving. */
+  actionCenter: (limit?: number) =>
+    request<ActionCenter>(
+      `/actions${limit === undefined ? "" : `?limit=${limit}`}`),
+
+  /** The home screen — plan P0-05. */
+  commandCenter: () => request<CommandCenter>("/command-center"),
+
+  /** MerchantOps §7 — one payment, end to end.
+   *
+   *  Deliberately not assembled from `/trace/{correlation_id}`: a payment's
+   *  life spans several correlation ids, and a client stitching them would be
+   *  guessing at which ones belong together. */
+  paymentLifecycle: (id: string) =>
+    request<PaymentLifecycle>(`/payments/${encodeURIComponent(id)}/lifecycle`),
+
+  /** One box, every identifier — plan P1-06. Exact match, server-side. */
+  search: (q: string) =>
+    request<SearchResults>(`/search?q=${encodeURIComponent(q)}`),
+
+  /** Per-component dependency health — §11.
+   *
+   *  Authenticated when there is a token, because the server widens the body
+   *  for one: the verdicts are public (a probe cannot hold a token) and the
+   *  operational detail behind them is not. Sent without a token this still
+   *  succeeds and returns the verdicts alone. */
+  readiness: () => request<Readiness>("/readiness"),
 
   scenarios: () => request<Scenario[]>("/scenarios", {}, { auth: false }),
 

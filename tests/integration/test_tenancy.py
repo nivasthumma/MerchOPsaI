@@ -253,7 +253,17 @@ def test_the_migration_and_the_live_ddl_agree():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    assert set(module.MERCHANT_SCOPED) == set(MERCHANT_SCOPED)
+    # Subset, for the same reason as ALL_TABLES below: this migration froze the
+    # merchant-scoped tables that existed when it was written, and a table added
+    # afterwards brings its own policy in its own migration. `provider_mappings`
+    # is the first one to do so -- until it arrived MERCHANT_SCOPED had not grown
+    # since the freeze, and equality held by accident rather than by rule.
+    #
+    # The guard that matters is unchanged and is the direction that can rot: a
+    # table this migration applied a policy to must still be claimed by the live
+    # list. Dropping one here would leave DDL in the database that no code knows
+    # about.
+    assert set(module.MERCHANT_SCOPED) <= set(MERCHANT_SCOPED)
     assert module.VIA_PARENT == VIA_PARENT
     # A subset, not equality: this migration froze the tables that existed when
     # it was written, and later migrations add their own policies for the tables

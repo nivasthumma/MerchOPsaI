@@ -1030,7 +1030,20 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
             pass
 
     if sc.reconcile:
-        reconcile(session, min_age_seconds=0)
+        # Both waits are overridden, because a scenario is measuring what the
+        # sweep *concludes*, not how long it takes to get there.
+        #
+        #   min_age_seconds=0    do not wait for the provider to propagate
+        #   respect_backoff=False do not wait out this action's own retry
+        #                         schedule (P0-15)
+        #
+        # The second is the same override an operator gets from "check now".
+        # Leaving it on would mean every reconciliation scenario asserted the
+        # backoff rather than the settlement -- and would report a working
+        # sweep as `verification_state: expected SUCCESS, got UNKNOWN`, which
+        # is a sentence about the wrong thing. The backoff has its own tests
+        # (`test_the_sweep_honours_the_backoff`).
+        reconcile(session, min_age_seconds=0, respect_backoff=False)
 
     webhook = _deliver_webhook(session, sc, task) if sc.webhook else None
 
@@ -1318,12 +1331,65 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     return res
 
 
+def _refuse_to_destroy_a_working_database(url: str) -> None:
+    """`run_all` drops and recreates the schema once per scenario.
+
+    That is correct -- scenarios must not contaminate one another -- and it is
+    catastrophic pointed at the wrong database. `make eval` inherited
+    `DATABASE_URL`, which defaults to the DEVELOPMENT database, so running the
+    evaluation suite while somebody had the console open destroyed whatever
+    they were looking at 167 times in a row. Their open task became "Unknown
+    task" with nothing connecting the two events.
+
+    The rule itself now lives in `scripts/dbutil`, shared with the seeder's
+    `--force` path. It was written here first and `make ci` promptly destroyed a
+    working database a different way, through `SEED_FORCE=1 make seed` -- the
+    same defect one target earlier, because the fix had been aimed at this
+    suite rather than at the class of "commands that drop a schema".
+    """
+    from scripts.dbutil import refuse_to_destroy_a_working_database
+
+    refuse_to_destroy_a_working_database(
+        url,
+        what="the evaluation suite drops and rebuilds the schema once per "
+             "scenario",
+        instead=("Use `make eval`, which points at a _eval sibling and creates "
+                 "it on demand, or set EVAL_DATABASE_URL to a database you are "
+                 "willing to lose."),
+    )
+
+
+def _provenance() -> dict:
+    """The commit this ran against, and whether the tree matched it.
+
+    `tree_clean` is the load-bearing field. A report from a modified `app/` is
+    a measurement of something that is not in version control, which is
+    exactly what a mutation run produces and exactly what must never be read as
+    the project's result.
+    """
+    import subprocess
+
+    def git(*args: str) -> str:
+        # Fixed argument vectors, no shell, no caller input -- `args` is
+        # literal in both call sites below. S603/S607 are about neither.
+        r = subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
+            cwd=Path(__file__).resolve().parents[2],
+            capture_output=True, text=True)
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    head = git("rev-parse", "--short", "HEAD")
+    dirty = git("status", "--porcelain", "--", "app")
+    return {"tree": head or None, "tree_clean": not dirty}
+
+
 def run_all(scenario_ids: list[str] | None = None) -> dict:
     """Each scenario runs against a freshly seeded database so that scenarios
     cannot contaminate one another (CONTRACT §30 reproducibility)."""
     import scripts.seed_data as seeder
 
     settings = get_settings()
+    _refuse_to_destroy_a_working_database(settings.database_url)
     scenarios = load_scenarios()
     if scenario_ids:
         scenarios = [s for s in scenarios if s.id in scenario_ids]
@@ -1342,13 +1408,15 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
         seeder.truncate_all()
         data = seeder.build()
         with session_scope() as s:
-            # `seeder.insert_all`, not a loop of its own. This was the THIRD
+            # `seeder.insert_all`, not a loop of its own. This was the third
             # copy of the seeder's insert order -- the suite fixture had the
-            # second, and when roles became rows (ADR-0047) both copies fell
-            # behind and inserted users with no role. The fixture was fixed;
-            # this one was not, and because a crashed run leaves the previous
-            # `evaluation_report.json` on disk, the failure read as a stale
-            # pass rather than as an error.
+            # second -- and it drifted twice. When roles became rows
+            # (ADR-0047) the copies inserted users with no role; when
+            # `provider_mappings` joined the list, the copies silently stopped
+            # seeding it and twenty scenarios failed as `external_calls:
+            # expected 1, got 0`, several call frames from the stale tuple.
+            # Because a crashed run leaves the previous `evaluation_report.json`
+            # on disk, that failure read as a stale pass rather than an error.
             seeder.insert_all(s, data)
         with session_scope() as s:
             res = run_scenario(s, sc, run_id)
@@ -1374,6 +1442,18 @@ def run_all(scenario_ids: list[str] | None = None) -> dict:
 
     return {
         "run_id": run_id,
+        # Which tree produced this, and whether that tree was the committed
+        # one. Recorded because the report is read back as evidence and had no
+        # way to say what it measured.
+        #
+        # A killed mutation run leaves the LAST MUTANT's report on disk --
+        # deliberately broken code -- and `scripts/check_counts.py` then
+        # compares the README against it and reports four scenarios failing.
+        # That happened: 163/167 with REF-25, UNK-16, UNK-17 and WHK-04 red,
+        # which are precisely the four that catch "ignore the payment
+        # read-back entirely". Alarming, and untrue, and nothing on screen
+        # distinguished it from a real regression.
+        **_provenance(),
         "provider": settings.resolved_llm_provider,
         "model": get_provider().model,
         "adapter_mode": settings.resolved_razorpay_mode,

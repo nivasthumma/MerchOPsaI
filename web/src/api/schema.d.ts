@@ -32,6 +32,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Action Center View
+         * @description The Action Center — plan P0-03.
+         *
+         *     One read, five sections, one instant. A browser that assembled this from
+         *     `/approvals`, `/actions/escalated` and `/incidents` would be showing counts
+         *     from three different moments, and the moments diverge exactly when the
+         *     numbers are moving.
+         *
+         *     Declared above `/actions/{action_id}`: FastAPI matches in declaration order,
+         *     and a parameterised path declared first would swallow this one.
+         */
+        get: operations["action_center_view_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/escalated": {
         parameters: {
             query?: never;
@@ -302,6 +330,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/command-center": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Command Center View
+         * @description The home screen — plan P0-05.
+         *
+         *     Revenue health, the recovery funnel, what is waiting on a human, and the
+         *     live activity feed, in one merchant-scoped read. The funnel arrives as an
+         *     ordered list of named stages rather than six loose figures, because P1-03's
+         *     rule — at-risk must never read as recovered — is easiest to keep true by
+         *     never handing a client the chance to arrange them itself.
+         */
+        get: operations["command_center_view_command_center_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/config/llm-provider": {
         parameters: {
             query?: never;
@@ -500,8 +554,21 @@ export interface paths {
         };
         /**
          * List Incidents
-         * @description The operations console. Scoped to the caller's merchant, ordered by
-         *     revenue at risk — the largest problem is the one to open first.
+         * @description The operations console — plan P1-05. Scoped to the caller's merchant,
+         *     ordered by revenue at risk: the largest problem is the one to open first.
+         *
+         *     Filtering happens in SQL. A console that fetches every incident and filters
+         *     in the browser gets slower as the merchant gets busier, and puts the
+         *     merchant scope and the filter in two different places.
+         *
+         *     `view` names one of the saved views, which are declared server-side
+         *     (`app.incidents.filters.SAVED_VIEWS`) so that "My attention" cannot mean one
+         *     thing in a pasted link and another in the sidebar. A view a client asks for
+         *     and nobody declares is a 422 rather than an unfiltered list — silently
+         *     showing everything would read as though the view matched every incident.
+         *
+         *     The unfiltered call is unchanged and still takes the fast path, so nothing
+         *     that used this endpoint before pays for the filtering it does not use.
          */
         get: operations["list_incidents_incidents_get"];
         put?: never;
@@ -669,6 +736,30 @@ export interface paths {
          *     every task the incident dispatched, in one ordering.
          */
         get: operations["get_incident_trace_incidents__incident_id__trace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/liveness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Liveness Probe
+         * @description MerchantOps §11. The process is running — nothing more.
+         *
+         *     Unauthenticated and dependency-free on purpose. A liveness probe that
+         *     touches the database restarts the API when the database blips, which is the
+         *     one response guaranteed not to help.
+         */
+        get: operations["liveness_probe_liveness_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -859,6 +950,72 @@ export interface paths {
          *     the one for a cron.
          */
         post: operations["sweep_notifications_notifications_sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/{payment_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payment Lifecycle
+         * @description One payment, end to end — MerchantOps §7.
+         *
+         *     `/trace/{correlation_id}` answers "everything one OPERATION touched". This
+         *     answers "everything that ever touched this PAYMENT", which is a different
+         *     question and the one an operator has when a customer is on the phone: a
+         *     payment's life spans several operations with several correlation ids, and
+         *     nothing joined them.
+         *
+         *     404 rather than 403 for another merchant's payment: existence is not leaked.
+         */
+        get: operations["get_payment_lifecycle_payments__payment_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness Probe
+         * @description MerchantOps §11. Every dependency, checked, with a per-component verdict.
+         *
+         *     Returns 503 when a *required* component is down, so a load balancer can act
+         *     on the status line without parsing the body. `degraded` is 200: the API can
+         *     still serve, and taking it out of rotation for a stopped cron sweep would
+         *     remove the one interface an operator has for finding out about the stopped
+         *     cron sweep.
+         *
+         *     **Two audiences, two bodies.** A probe cannot hold a token, so the verdicts
+         *     are unauthenticated. The operational detail behind them — mapping coverage,
+         *     how far the sweep is behind, which payments drifted — is not: those are the
+         *     same shape of fact `/metrics/prometheus` already refuses to serve without a
+         *     scrape token, and drawing the line in a different place here for no reason
+         *     would be an inconsistency an attacker gets to choose between.
+         *
+         *     A valid bearer token therefore widens the response. An absent or invalid one
+         *     narrows it rather than refusing: a probe presenting nothing must still get
+         *     its verdict, and a probe presenting a stale token must not start failing the
+         *     deployment's health check.
+         */
+        get: operations["readiness_probe_readiness_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1226,6 +1383,30 @@ export interface paths {
          * @description What Entra sends to deactivate somebody.
          */
         patch: operations["scim_patch_user_scim_v2_Users__user_id__patch"];
+        trace?: never;
+    };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global Search
+         * @description One box, every identifier — plan P1-06.
+         *
+         *     Exact match only. Every identifier in this system is pasted rather than
+         *     typed, and a prefix search over payment ids invites acting on whichever row
+         *     sorted first.
+         */
+        get: operations["global_search_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/sso": {
@@ -1683,6 +1864,43 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** ActionCenter */
+        ActionCenter: {
+            /** Awaiting Approval */
+            awaiting_approval: components["schemas"]["PendingApprovalRow"][];
+            counts: components["schemas"]["ActionCenterCounts"];
+            /** Escalated */
+            escalated: components["schemas"]["ActionRow"][];
+            /** Executing */
+            executing: components["schemas"]["ActionRow"][];
+            /** Generated At */
+            generated_at: string;
+            /** Limit */
+            limit: number;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Recently Completed */
+            recently_completed: components["schemas"]["ActionRow"][];
+            reconciliation_policy: components["schemas"]["ReconciliationPolicy"];
+            /** Sections */
+            sections: string[];
+            shown: components["schemas"]["ActionCenterCounts"];
+            /** Unknown */
+            unknown: components["schemas"]["ActionRow"][];
+        };
+        /** ActionCenterCounts */
+        ActionCenterCounts: {
+            /** Awaiting Approval */
+            awaiting_approval: number;
+            /** Escalated */
+            escalated: number;
+            /** Executing */
+            executing: number;
+            /** Recently Completed */
+            recently_completed: number;
+            /** Unknown */
+            unknown: number;
+        };
         /** ActionDetail */
         ActionDetail: {
             /** Action Type */
@@ -1722,6 +1940,85 @@ export interface components {
             verify_attempts: number;
         };
         /**
+         * ActionRow
+         * @description One action in the Action Center, in every section that lists actions.
+         *
+         *     Deliberately one shape for all four action sections. A per-section model is
+         *     how "amount_minor" comes to mean the requested amount in one column and the
+         *     verified amount in another.
+         */
+        ActionRow: {
+            /** Action Type */
+            action_type: string;
+            /** Amount Minor */
+            amount_minor?: number | null;
+            /** Approval Decision */
+            approval_decision?: string | null;
+            /** Approval Id */
+            approval_id?: string | null;
+            /** Created At */
+            created_at?: string | unknown;
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Environment */
+            environment?: string | null;
+            /**
+             * Escalated
+             * @default false
+             */
+            escalated: boolean;
+            /** Escalated At */
+            escalated_at?: string | unknown;
+            /** Expires At */
+            expires_at?: string | unknown;
+            /** External Payment Id */
+            external_payment_id?: string | null;
+            /** External Reference */
+            external_reference?: string | null;
+            /** Id */
+            id: string;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Last Verified At */
+            last_verified_at?: string | unknown;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Next Verify At */
+            next_verify_at?: string | unknown;
+            /** Owner */
+            owner?: string | null;
+            /** Payment Method */
+            payment_method?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Provider Latency Ms */
+            provider_latency_ms?: number | null;
+            /** Recovery Candidate Id */
+            recovery_candidate_id?: string | null;
+            /** Required Signatures */
+            required_signatures?: number | null;
+            /** Risk Level */
+            risk_level?: string | null;
+            /** Status */
+            status: string;
+            /** Target Payment Id */
+            target_payment_id?: string | null;
+            /** Task Id */
+            task_id: string;
+            /** Task Request */
+            task_request?: string | null;
+            /** Task Status */
+            task_status?: string | null;
+            /** Updated At */
+            updated_at?: string | unknown;
+            /** Verification Latency Ms */
+            verification_latency_ms?: number | null;
+            /** Verification State */
+            verification_state?: string | null;
+            /** Verify Attempts */
+            verify_attempts: number;
+        };
+        /**
          * ActionView
          * @description The action as it appears inside a task.
          */
@@ -1745,6 +2042,49 @@ export interface components {
             verification_state: ("SUCCESS" | "FAILED" | "PARTIAL" | "UNKNOWN") | null;
             /** Verify Attempts */
             verify_attempts: number;
+        };
+        /** ActivityEvent */
+        ActivityEvent: {
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /** Created At */
+            created_at?: string | unknown;
+            /** Event Type */
+            event_type: string;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Task Id */
+            task_id?: string | null;
+        };
+        /**
+         * ActivityStep
+         * @description One step of the agent's operational progress — plan P0-08.
+         *
+         *     `state` is the claim: `done` happened and worked, `failed` happened and did
+         *     not, `blocked` is waiting on a person, `running` is in flight, `pending` was
+         *     expected and not reached. A UI narrows on these.
+         */
+        ActivityStep: {
+            /** At */
+            at?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "done" | "failed" | "blocked" | "running" | "pending";
         };
         /** AgentActivity */
         AgentActivity: {
@@ -1833,6 +2173,23 @@ export interface components {
             risk_level: string;
             /** Signed By */
             signed_by: string[];
+        };
+        /** AttentionCounts */
+        AttentionCounts: {
+            /** Approvals Expired */
+            approvals_expired: number;
+            /** Approvals Pending */
+            approvals_pending: number;
+            /** Critical Incidents */
+            critical_incidents: number;
+            /** Escalated Actions */
+            escalated_actions: number;
+            /** Open Incidents */
+            open_incidents: number;
+            /** Running Tasks */
+            running_tasks: number;
+            /** Unknown Actions */
+            unknown_actions: number;
         };
         /**
          * CampaignBudget
@@ -1950,6 +2307,44 @@ export interface components {
             /** Task Id */
             task_id?: string | null;
         };
+        /** CommandCenter */
+        CommandCenter: {
+            /** Activity */
+            activity: components["schemas"]["ActivityEvent"][];
+            attention: components["schemas"]["AttentionCounts"];
+            /** By Incident */
+            by_incident: components["schemas"]["IncidentExposure"][];
+            /** By Method */
+            by_method: components["schemas"]["MethodExposure"][];
+            /** Funnel */
+            funnel: components["schemas"]["FunnelStage"][];
+            /** Generated At */
+            generated_at: string;
+            /** Merchant Id */
+            merchant_id: string;
+            revenue: components["schemas"]["RevenueHealth"];
+        };
+        /**
+         * ComponentHealth
+         * @description One dependency's verdict.
+         *
+         *     `extra="forbid"` is relaxed here alone: each check attaches the facts that
+         *     make its own verdict actionable — mapping coverage, webhook counts, the
+         *     reconciliation backlog — and a fixed union of every check's extras would be
+         *     a model that has to be edited every time a check learns something new.
+         */
+        ComponentHealth: {
+            /** Detail */
+            detail: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Required */
+            required: boolean;
+            /** Status */
+            status: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * CorrelationTrace
          * @description §58's complete trace: everything one operation touched, in one ordering.
@@ -2036,20 +2431,56 @@ export interface components {
             /** Published */
             published: number;
         };
-        /** EscalatedAction */
+        /**
+         * EscalatedAction
+         * @description One row of the reconciliation work queue — plan P0-04.
+         *
+         *     Every field the plan names is here, because a queue that lists identifiers
+         *     is not a work queue: age (`created_at`), amount, provider, external
+         *     reference, last known state, attempts, last check, next retry, escalation,
+         *     owner, and the incident and task it came from.
+         *
+         *     Timestamps are `object` rather than `str` on the fields that come straight
+         *     out of a `text()` query: those arrive as `datetime` and are serialised by
+         *     FastAPI. Declaring them `str` would coerce and change the wire format of a
+         *     response the frontend already parses.
+         */
         EscalatedAction: {
             /** Action Type */
             action_type: string;
             /** Amount Minor */
             amount_minor?: number | null;
+            /** Created At */
+            created_at?: string | unknown;
+            /** Environment */
+            environment?: string | null;
+            /**
+             * Escalated
+             * @default false
+             */
+            escalated: boolean;
+            /** Escalated At */
+            escalated_at?: string | unknown;
             /** External Payment Id */
             external_payment_id?: string | null;
             /** External Reference */
             external_reference?: string | null;
             /** Id */
             id: string;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Last Verified At */
+            last_verified_at?: string | unknown;
             /** Merchant Id */
             merchant_id: string;
+            /** Next Verify At */
+            next_verify_at?: string | unknown;
+            /** Owner */
+            owner?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Status */
+            status?: string | null;
             /** Target Payment Id */
             target_payment_id?: string | null;
             /** Task Id */
@@ -2107,6 +2538,35 @@ export interface components {
             lines: string[];
         };
         /**
+         * EvidenceRow
+         * @description One piece of evidence, as `app/tools/contracts.Evidence` produces it.
+         *
+         *     Declared because `evidence: list` -- a bare list -- says "array of
+         *     anything" in the OpenAPI document, so a client generates `unknown[]` and
+         *     the compile-time contract check has nothing to check. `untrusted` in
+         *     particular is the §36 injection tag, and a consumer that cannot see it in
+         *     the schema cannot be expected to honour it.
+         *
+         *     `value` stays `Any` on purpose: it is a tool's finding, and a rate, a
+         *     count, an id and a free-text string are all legitimate. That is an open
+         *     field by nature rather than one nobody got round to.
+         */
+        EvidenceRow: {
+            /** Id */
+            id?: string | null;
+            /** Key */
+            key: string;
+            /** Source */
+            source: string;
+            /**
+             * Untrusted
+             * @default false
+             */
+            untrusted: boolean;
+            /** Value */
+            value?: unknown;
+        };
+        /**
          * FailureClassView
          * @description MerchantOps §56. A code says what broke; this says whether trying again
          *     is even the question.
@@ -2118,8 +2578,11 @@ export interface components {
             correlation_id: string | null;
             /** Error Code */
             error_code: string;
-            /** Evidence */
-            evidence: unknown[];
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: components["schemas"]["EvidenceRow"][];
             /** Is Classified */
             is_classified: boolean;
             /** Owning Subsystem */
@@ -2181,6 +2644,21 @@ export interface components {
             source?: string | null;
             /** Value */
             value?: unknown | null;
+        };
+        /**
+         * FunnelStage
+         * @description One stage of the recovery funnel — P1-03.
+         *
+         *     Ordered and named server-side so at-risk can never be rendered as
+         *     recovered by a client that arranged six loose numbers itself.
+         */
+        FunnelStage: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Label */
+            label: string;
+            /** Stage */
+            stage: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2295,15 +2773,68 @@ export interface components {
             /** Resolved */
             resolved: number;
         };
+        /**
+         * IncidentExposure
+         * @description One incident's row in the ledger breakdown.
+         *
+         *     Declared, rather than left as the `dict` it used to be, because an
+         *     undeclared field is an undeclared TYPE. `recoverable_minor` reached the
+         *     wire as the string `"2798847"` while the identically-named field one level
+         *     up was the integer `2798747`: Postgres returns `numeric` for `SUM()` over a
+         *     bigint, psycopg2 turns that into `Decimal`, and a model that says `dict`
+         *     gives pydantic nothing to coerce it against. Money on a revenue ledger,
+         *     two types, one response.
+         *
+         *     Nothing rendered wrong -- `Money` divides by 100 and JavaScript coerces a
+         *     numeric string -- which is exactly why it survived. The first `reduce` over
+         *     these rows would have concatenated instead of adding.
+         */
+        IncidentExposure: {
+            /** Incident Id */
+            incident_id: string;
+            /** Incident Type */
+            incident_type: string;
+            /** Recoverable Minor */
+            recoverable_minor: number;
+            /** Recovered Minor */
+            recovered_minor: number;
+            /** Revenue At Risk Minor */
+            revenue_at_risk_minor: number;
+            /** Severity */
+            severity: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
         /** IncidentList */
         IncidentList: {
+            /** Applied View */
+            applied_view?: string | null;
             /** Incidents */
             incidents: components["schemas"]["IncidentSummary"][];
+            /**
+             * Matched
+             * @default 0
+             */
+            matched: number;
+            /**
+             * Shown
+             * @default 0
+             */
+            shown: number;
             /** Total Revenue At Risk Minor */
             total_revenue_at_risk_minor: number;
+            /**
+             * Views
+             * @default []
+             */
+            views: components["schemas"]["SavedView"][];
         };
         /** IncidentSummary */
         IncidentSummary: {
+            /** Actions */
+            actions?: components["schemas"]["ActionRow"][] | null;
             /** Confidence */
             confidence?: string | null;
             /** Confidence Inputs */
@@ -2319,9 +2850,7 @@ export interface components {
             /** Detection Version */
             detection_version?: string | null;
             /** Evidence */
-            evidence?: {
-                [key: string]: unknown;
-            }[] | null;
+            evidence?: components["schemas"]["EvidenceRow"][] | null;
             /** Id */
             id: string;
             /** Legal Transitions */
@@ -2350,9 +2879,7 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
             /** Timeline */
-            timeline?: {
-                [key: string]: unknown;
-            }[] | null;
+            timeline?: components["schemas"]["TimelineEntry"][] | null;
             /** Title */
             title: string;
             /** Type */
@@ -2364,6 +2891,24 @@ export interface components {
             incident_id: string;
             /** Trace */
             trace: components["schemas"]["TraceEvent"][];
+        };
+        /**
+         * InstanceReadiness
+         * @description `/ready` — whether this instance can do work, not whether it is alive.
+         *
+         *     Named apart from `Readiness` because both branches of the spine/trunk merge
+         *     defined a model by that name and they are not the same shape: this one is
+         *     `/ready`'s two-field answer, and `Readiness` is `/readiness`'s per-component
+         *     report. Sharing the name meant the later definition silently won and the
+         *     other endpoint returned a 500 on response validation.
+         */
+        InstanceReadiness: {
+            /** Checks */
+            checks: {
+                [key: string]: unknown;
+            };
+            /** Ready */
+            ready: boolean;
         };
         /** InvestigateResult */
         InvestigateResult: {
@@ -2384,17 +2929,13 @@ export interface components {
             /** Basis */
             basis: string;
             /** By Incident */
-            by_incident: {
-                [key: string]: unknown;
-            }[];
+            by_incident: components["schemas"]["IncidentExposure"][];
             /** By Method */
-            by_method: {
-                [key: string]: unknown;
-            }[];
+            by_method: components["schemas"]["MethodExposure"][];
             /** Failed Minor */
             failed_minor: number;
             /** Invariants Broken */
-            invariants_broken: unknown[];
+            invariants_broken: string[];
             /** Merchant Id */
             merchant_id: string;
             /** Outstanding Minor */
@@ -2405,6 +2946,57 @@ export interface components {
             recovered_minor: number;
             /** Unknown Minor */
             unknown_minor: number;
+        };
+        /**
+         * LifecycleEvent
+         * @description One link in §7's chain. Every entry is a row that exists, with its own
+         *     timestamp — never an inferred step.
+         */
+        LifecycleEvent: {
+            /** At */
+            at?: string | null;
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Stage */
+            stage: string;
+        };
+        /** LifecyclePayment */
+        LifecyclePayment: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Amount Refunded Minor */
+            amount_refunded_minor: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Currency */
+            currency: string;
+            /** Customer Id */
+            customer_id?: string | null;
+            /** Customer Name */
+            customer_name?: string | null;
+            /** Error Reason */
+            error_reason?: string | null;
+            /** Id */
+            id: string;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Method */
+            method: string;
+            /** Order Id */
+            order_id?: string | null;
+            /** Refund Status */
+            refund_status?: string | null;
+            /** Status */
+            status: string;
         };
         /** LiveEventList */
         LiveEventList: {
@@ -2448,6 +3040,13 @@ export interface components {
             task_id?: string | null;
             /** Tenant Id */
             tenant_id?: string | null;
+        };
+        /** Liveness */
+        Liveness: {
+            /** Checked At */
+            checked_at: string;
+            /** Status */
+            status: string;
         };
         /** Me */
         Me: {
@@ -2526,6 +3125,21 @@ export interface components {
             seq: number;
             /** Turn */
             turn: number;
+        };
+        /**
+         * MethodExposure
+         * @description One payment method's row in the ledger breakdown. Same story as
+         *     `IncidentExposure`, same fix.
+         */
+        MethodExposure: {
+            /** Candidates */
+            candidates: number;
+            /** Method */
+            method: string;
+            /** Recoverable Minor */
+            recoverable_minor: number;
+            /** Recovered Minor */
+            recovered_minor: number;
         };
         /** MetricView */
         MetricView: {
@@ -2656,6 +3270,90 @@ export interface components {
             /** Unavailable */
             unavailable: components["schemas"]["MetricView"][];
         };
+        /**
+         * PaymentLifecycle
+         * @description MerchantOps §7 — a payment traceable through its complete lifecycle.
+         */
+        PaymentLifecycle: {
+            /**
+             * Action Ids
+             * @default []
+             */
+            action_ids: string[];
+            /**
+             * Correlation Ids
+             * @default []
+             */
+            correlation_ids: string[];
+            /** Environment */
+            environment?: string | null;
+            /** Events */
+            events: components["schemas"]["LifecycleEvent"][];
+            /** External Payment Id */
+            external_payment_id?: string | null;
+            /** Generated At */
+            generated_at: string;
+            /**
+             * Incident Ids
+             * @default []
+             */
+            incident_ids: string[];
+            payment: components["schemas"]["LifecyclePayment"];
+            /** Provider */
+            provider?: string | null;
+            /** Stages */
+            stages: string[];
+            /**
+             * Task Ids
+             * @default []
+             */
+            task_ids: string[];
+        };
+        /**
+         * PendingApprovalRow
+         * @description An approval no action exists for yet — the money has not moved.
+         *
+         *     Separate from `ActionRow` because there is genuinely no action row to
+         *     describe: the claim is not made until the approval clears. Modelling it as
+         *     an action with null everything would tell an operator an action exists.
+         */
+        PendingApprovalRow: {
+            /** Action Payload */
+            action_payload: {
+                [key: string]: unknown;
+            };
+            /** Action Type */
+            action_type: string;
+            /** Approval Id */
+            approval_id: string;
+            /** Created At */
+            created_at?: string | unknown;
+            /** Decision */
+            decision: string;
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: unknown[];
+            /** Expired */
+            expired: boolean;
+            /** Expires At */
+            expires_at?: string | unknown;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Owner */
+            owner?: string | null;
+            /** Required Signatures */
+            required_signatures: number;
+            /** Risk Level */
+            risk_level: string;
+            /** Signatures */
+            signatures: number;
+            /** Task Id */
+            task_id: string;
+            /** Task Request */
+            task_request?: string | null;
+        };
         /** PermissionView */
         PermissionView: {
             /** Description */
@@ -2750,17 +3448,20 @@ export interface components {
             /** Worker Seen Seconds Ago */
             worker_seen_seconds_ago?: number | null;
         };
-        /**
-         * Readiness
-         * @description `/ready` — whether this instance can do work, not whether it is alive.
-         */
+        /** Readiness */
         Readiness: {
-            /** Checks */
-            checks: {
-                [key: string]: unknown;
+            /** Blocking */
+            blocking: string[];
+            /** Checked At */
+            checked_at: string;
+            /** Components */
+            components: {
+                [key: string]: components["schemas"]["ComponentHealth"];
             };
-            /** Ready */
-            ready: boolean;
+            /** Degraded */
+            degraded: string[];
+            /** Status */
+            status: string;
         };
         /** RecommendationView */
         RecommendationView: {
@@ -2785,6 +3486,13 @@ export interface components {
             skipped_too_recent: number;
             /** Still Unsettled */
             still_unsettled: number;
+        };
+        /** ReconciliationPolicy */
+        ReconciliationPolicy: {
+            /** Max Attempts */
+            max_attempts: number;
+            /** On Exhaustion */
+            on_exhaustion: string;
         };
         /** RefreshRequest */
         RefreshRequest: {
@@ -2838,6 +3546,25 @@ export interface components {
             success: boolean;
             /** Tool */
             tool: string;
+        };
+        /** RevenueHealth */
+        RevenueHealth: {
+            /** At Risk Minor */
+            at_risk_minor: number;
+            /** Attempted Minor */
+            attempted_minor: number;
+            /** Failed Minor */
+            failed_minor: number;
+            /** Invariants Broken */
+            invariants_broken: string[];
+            /** Outstanding Minor */
+            outstanding_minor: number;
+            /** Recoverable Minor */
+            recoverable_minor: number;
+            /** Recovered Minor */
+            recovered_minor: number;
+            /** Unknown Minor */
+            unknown_minor: number;
         };
         /** ReverifyResult */
         ReverifyResult: {
@@ -2902,6 +3629,25 @@ export interface components {
             tool_registry: string | null;
             /** Workflow */
             workflow: string | null;
+        };
+        /**
+         * SavedView
+         * @description One saved view — plan P1-05. Declared server-side so that "My attention"
+         *     cannot mean one thing in a pasted link and another in the sidebar.
+         */
+        SavedView: {
+            /** Count */
+            count: number;
+            /** Filter */
+            filter: {
+                [key: string]: unknown;
+            };
+            /** Hint */
+            hint: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
         };
         /** ScenarioCheck */
         ScenarioCheck: {
@@ -2991,6 +3737,30 @@ export interface components {
             name: string;
             /** Revoked */
             revoked: boolean;
+        };
+        /** SearchHit */
+        SearchHit: {
+            /** Created At */
+            created_at?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Label */
+            label?: string | null;
+            /** Route */
+            route: string;
+        };
+        /** SearchResults */
+        SearchResults: {
+            /** Query */
+            query: string;
+            /** Results */
+            results: components["schemas"]["SearchHit"][];
+            /** Truncated */
+            truncated: boolean;
         };
         /** SetPermissionsRequest */
         SetPermissionsRequest: {
@@ -3125,6 +3895,11 @@ export interface components {
         TaskView: {
             /** Actions */
             actions: components["schemas"]["ActionView"][];
+            /**
+             * Activity
+             * @default []
+             */
+            activity: components["schemas"]["ActivityStep"][];
             /** Agent Confidence */
             agent_confidence: number | null;
             /** Agent Version */
@@ -3180,6 +3955,59 @@ export interface components {
             user_id: string;
             versions: components["schemas"]["RunVersions"];
         };
+        /**
+         * TimelineDetail
+         * @description The keys an incident timeline entry may carry.
+         *
+         *     A closed set, and not a guess at one: `app/api/main.py` filters the audit
+         *     payload against exactly this list before it reaches the response. Declaring
+         *     the fields rather than the dict is what makes the OpenAPI document say what
+         *     a timeline entry can actually contain.
+         */
+        TimelineDetail: {
+            /** At */
+            at?: string | null;
+            /** Decision */
+            decision?: string | null;
+            /** From */
+            from?: string | null;
+            /** Intervention */
+            intervention?: string | null;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Rule */
+            rule?: string | null;
+            /** State */
+            state?: string | null;
+            /** Status */
+            status?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * TimelineEntry
+         * @description One row of an incident's timeline. Every entry is a recorded event with
+         *     its own timestamp -- never an inferred step.
+         *
+         *     `detail` was annotated `str | None` on the first attempt at typing this,
+         *     and the suite failed immediately with
+         *     `input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,
+         *     and that is the argument for declaring these fields rather than leaving
+         *     them as `dict`: a wrong type fails loudly at the boundary, where an absent
+         *     one fails silently in a consumer.
+         */
+        TimelineEntry: {
+            /** At */
+            at: string;
+            /** @default {} */
+            detail: components["schemas"]["TimelineDetail"];
+            /** Event */
+            event: string;
+            /** Task Id */
+            task_id?: string | null;
+        };
         /** TokenPair */
         TokenPair: {
             /** Access Token */
@@ -3215,7 +4043,7 @@ export interface components {
              * Evidence
              * @default []
              */
-            evidence: unknown[];
+            evidence: components["schemas"]["EvidenceRow"][];
             /** Id */
             id: string;
             /** Policy Decision */
@@ -3354,7 +4182,7 @@ export interface components {
              * Reverified
              * @default []
              */
-            reverified: unknown[];
+            reverified: string[];
             /** Status */
             status: string;
             /** Stored Id */
@@ -3419,6 +4247,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    action_center_view_actions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionCenter"];
                 };
             };
             /** @description Validation Error */
@@ -3795,6 +4656,37 @@ export interface operations {
             };
         };
     };
+    command_center_view_command_center_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandCenter"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     set_llm_provider_config_llm_provider_post: {
         parameters: {
             query?: never;
@@ -4017,6 +4909,17 @@ export interface operations {
         parameters: {
             query?: {
                 include_closed?: boolean;
+                view?: string | null;
+                severity?: string[] | null;
+                status?: string[] | null;
+                incident_type?: string[] | null;
+                payment_method?: string[] | null;
+                min_amount_minor?: number | null;
+                max_age_hours?: number | null;
+                unresolved?: boolean;
+                approval_required?: boolean;
+                has_unknown?: boolean;
+                escalated?: boolean;
             };
             header?: {
                 authorization?: string | null;
@@ -4275,6 +5178,26 @@ export interface operations {
             };
         };
     };
+    liveness_probe_liveness_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Liveness"];
+                };
+            };
+        };
+    };
     whoami_me_get: {
         parameters: {
             query?: never;
@@ -4496,6 +5419,70 @@ export interface operations {
             };
         };
     };
+    get_payment_lifecycle_payments__payment_id__lifecycle_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                payment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentLifecycle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readiness_probe_readiness_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Readiness"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ready_ready_get: {
         parameters: {
             query?: never;
@@ -4511,7 +5498,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Readiness"];
+                    "application/json": components["schemas"]["InstanceReadiness"];
                 };
             };
         };
@@ -5176,6 +6163,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    global_search_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResults"];
                 };
             };
             /** @description Validation Error */

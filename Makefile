@@ -22,6 +22,10 @@ setup:      ; python3 -m venv .venv \
                 && $(PY) -m pip install -q --require-hashes -r requirements.lock
 seed:       ; $(PY) scripts/seed_data.py
 spike:      ; $(PY) scripts/razorpay_spike.py
+# Ask the provider whether each mapping points at the payment we think it
+# does. Refuses to stamp `verified_at` against the mock, which reads our
+# own table and therefore agrees by construction.
+confirm-mappings: ; $(PY) scripts/confirm_mappings.py
 api:        ; PYTHONPATH=. .venv/bin/uvicorn app.api.main:app --reload --port 8000
 ui:         ; PYTHONPATH=. .venv/bin/streamlit run ui/streamlit_app.py
 test:       ; PYTHONPATH=. $(PY) -m pytest tests -q

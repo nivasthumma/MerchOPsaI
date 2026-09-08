@@ -741,7 +741,22 @@ are different claims.
    but the mock. Until then two rows carry one fact, so
    `app.integrations.mapping.check_consistency` compares them and `/readiness` reports
    any drift as `degraded`.
-20. **No mapping has ever been confirmed against a real provider.**
+20. **No mapping has ever been confirmed against a real provider**, and there is
+    now a command that would do it the moment credentials exist.
+    `make confirm-mappings` reads each mapped payment back through the adapter and
+    compares the amount, because a mapping that resolves to a real payment
+    belonging to somebody *else* is worse than one that resolves to nothing — the
+    refund succeeds, the money moves, and every upstream check passes because the
+    id was valid.
+
+    Against the mock it refuses to stamp anything. The mock's `get_payment` reads
+    our own `payments` table, so it agrees by construction — verified by bumping a
+    recorded amount by 100 and watching the first version of the script still
+    report "21 confirmed, 0 mismatched", because the same UPDATE moved both sides.
+    It now reports `round-tripped` and refuses `--write` with exit 2. A non-null
+    `verified_at` means an independent provider was asked and agreed, and there is
+    no way to earn that from a table we control.
+
    `provider_mappings.verified_at` is null on every seeded row, and null means nobody
    has checked — deliberately a different claim from "checked and it was there". Real
    Test Mode credentials would populate it.

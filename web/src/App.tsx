@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
-import { ScreenCarousel, useReveal } from "./components/Landing";
+import { LadderMark, ScreenCarousel, StateMark, useReveal } from "./components/Landing";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
 import { ToastHost } from "./components/Toast";
@@ -416,15 +416,13 @@ function Landing({ health }: { health: Health | null }) {
     <div className="landing">
       {/* The page's own header. Named for the sections it leads to, which are
           the content's headings rather than invented labels. */}
+      {/* Brand and the way in, and nothing else. The section list that used to
+          sit here was a table of contents for a page you can see all of by
+          scrolling -- six links competing with the one thing a visitor is
+          here to do. It moves to the foot, where a reader who has read the
+          page and wants to go back to a part of it will look for it. */}
       <header className="lp-top">
         <p className="lp-brand"><span aria-hidden="true">◨</span> MerchantOps</p>
-        <nav className="lp-nav" aria-label="On this page">
-          <a href="#problem">The problem</a>
-          <a href="#ladder">How it works</a>
-          <a href="#states">The four states</a>
-          <a href="#measured">Measured</a>
-          <a href="#limits">Not claimed</a>
-        </nav>
         <Link className="lp-btn sm" to="/signin">Sign in</Link>
       </header>
 
@@ -525,18 +523,26 @@ function Landing({ health }: { health: Health | null }) {
           independently. The first three are claims.
         </p>
         <div className="lp-cards">
-          <div className="lp-card"><h4>01 · PROPOSED</h4>
+          <div className="lp-card lp-card-mark">
+            <LadderMark step={1} />
+            <div><h4>01 · PROPOSED</h4>
             <p>The agent reasons broadly and can propose anything. Proposing is
-              free; nothing has happened.</p></div>
-          <div className="lp-card"><h4>02 · GATED</h4>
+              free; nothing has happened.</p></div></div>
+          <div className="lp-card lp-card-mark">
+            <LadderMark step={2} />
+            <div><h4>02 · GATED</h4>
             <p>Deterministic policy, outside the model. A human signs for
-              anything that moves money.</p></div>
-          <div className="lp-card"><h4>03 · SUBMITTED</h4>
+              anything that moves money.</p></div></div>
+          <div className="lp-card lp-card-mark">
+            <LadderMark step={3} />
+            <div><h4>03 · SUBMITTED</h4>
             <p>A <code>200</code> and a refund id. An idempotency key derived
-              server-side means a retry cannot double-refund.</p></div>
-          <div className="lp-card"><h4>04 · VERIFIED</h4>
+              server-side means a retry cannot double-refund.</p></div></div>
+          <div className="lp-card lp-card-mark">
+            <LadderMark step={4} />
+            <div><h4>04 · VERIFIED</h4>
             <p>A separate read, against provider state, after the fact. Only
-              this step is evidence.</p></div>
+              this step is evidence.</p></div></div>
         </div>
       </section>
 
@@ -547,13 +553,13 @@ function Landing({ health }: { health: Health | null }) {
           the one the rest of the system is built around.
         </p>
         <div className="lp-cards">
-          <div className="lp-card c-ok"><h4>SUCCESS</h4>
+          <div className="lp-card c-ok"><StateMark kind="ok" /><h4>SUCCESS</h4>
             <p>Verified at the provider. The money moved.</p></div>
-          <div className="lp-card c-failed"><h4>FAILED</h4>
+          <div className="lp-card c-failed"><StateMark kind="failed" /><h4>FAILED</h4>
             <p>Verified as not having taken effect. No money moved.</p></div>
-          <div className="lp-card c-partial"><h4>PARTIAL</h4>
+          <div className="lp-card c-partial"><StateMark kind="partial" /><h4>PARTIAL</h4>
             <p>Accepted, but the provider reflects less than was asked.</p></div>
-          <div className="lp-card c-unknown"><h4>UNKNOWN</h4>
+          <div className="lp-card c-unknown"><StateMark kind="unknown" /><h4>UNKNOWN</h4>
             <p>Could not be established. Unresolved work on a backoff schedule,
               escalating to a person after five attempts. Never retried.</p></div>
         </div>
@@ -568,8 +574,8 @@ function Landing({ health }: { health: Health | null }) {
         <div className="lp-stats">
           <div><b>167<i>/167</i></b><span>Scenarios</span>
             <em>110 of them critical</em></div>
-          <div><b>87<i>/88</i></b><span>Injected defects caught</span>
-            <em>the survivor now has a test</em></div>
+          <div><b>88<i>/88</i></b><span>Injected defects caught</span>
+            <em>every control has a test that fails when it breaks</em></div>
           <div><b>932</b><span>Automated tests</span>
             <em>627 backend · 305 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
@@ -601,6 +607,19 @@ function Landing({ health }: { health: Health | null }) {
             reproducible and also a weaker test of the agent.</li>
         </ul>
       </section>
+
+      <footer className="lp-foot">
+        <nav className="lp-foot-nav" aria-label="On this page">
+          <a href="#problem">The problem</a>
+          <a href="#ladder">How it works</a>
+          <a href="#states">The four states</a>
+          <a href="#measured">Measured</a>
+          <a href="#limits">Not claimed</a>
+        </nav>
+        <p className="lp-foot-note">
+          Synthetic data throughout. Not affiliated with Razorpay.
+        </p>
+      </footer>
 
     </div>
   );

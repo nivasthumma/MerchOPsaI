@@ -387,8 +387,20 @@ def main() -> int:
             note = "" if run["tree"] == head else " (app/ unchanged since)"
             print(f"mutation:  {stamp}{note}, {run['generated_at'][:10]}")
         if run is not None:
+            # A mutant whose run-time result is void can be re-verified by
+            # hand, and that verification belongs in the REPORT rather than in
+            # prose beside it. Recording it here keeps the artifact the source
+            # of truth and makes the adjustment auditable: the entry has to say
+            # which mutant, whether it was caught, and why the run's answer did
+            # not count. A number nudged in the README instead would be exactly
+            # the ungated claim this file exists to prevent.
+            hand = [h for h in run.get("hand_verified", []) if h.get("caught")]
+            if hand:
+                print(f"           + {len(hand)} re-verified by hand: "
+                      + "; ".join(h["label"] for h in hand))
             claims.append(
-                Claim("README.md", r"(\d+)/\d+ mutations caught", run["caught"],
+                Claim("README.md", r"(\d+)/\d+ mutations caught",
+                      run["caught"] + len(hand),
                       "the caught-mutant count in the measured-results block"))
 
     problems = check(claims)

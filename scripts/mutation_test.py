@@ -704,6 +704,14 @@ REPORT = ROOT / "data" / "mutation_report.json"
 # Every file this run has rewritten. The end-of-run check compares against THIS
 # rather than against whole directories -- see `_verify_tree_restored`.
 TOUCHED: set[str] = set()
+# The commit the run MEASURES, captured before the first mutation rather
+# than when the report is written. The report used to record HEAD at the
+# end, which on a run lasting two and a half hours is whatever somebody
+# committed while it worked -- so it claimed to have measured a tree it
+# had never seen. `check_counts.py` decides whether the score still holds
+# by asking what changed in `app/` since this commit, and that question is
+# meaningless against the wrong one.
+MEASURED_TREE: str | None = None
 
 
 def main() -> int:
@@ -747,6 +755,11 @@ def main() -> int:
               f"{LOCK.name}.")
         return 1
     LOCK.write_text(_lock_text())
+
+    global MEASURED_TREE
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                          cwd=ROOT, capture_output=True, text=True)
+    MEASURED_TREE = head.stdout.strip() or None
 
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
@@ -852,12 +865,10 @@ def _write_report(rows, caught_n: int, mutations) -> None:
     tree, and a reader comparing it to a different tree should be able to see
     that rather than infer it.
     """
-    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                          cwd=ROOT, capture_output=True, text=True)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps({
         "generated_at": datetime.now(UTC).isoformat(),
-        "tree": head.stdout.strip() or None,
+        "tree": MEASURED_TREE,
         "complete": len(mutations) == len(MUTATIONS),
         "defined": len(MUTATIONS),
         "run": len(mutations),

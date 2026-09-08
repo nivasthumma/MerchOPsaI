@@ -141,36 +141,42 @@ median task latency 52 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-87/88 mutations caught      complete run, 2026-09-08, 2h06m
-  └─ 40 graded red by a named scenario · 2 detected as a crash
-     45 by unit tests alone · 1 survivor
-
-88/88                       after the survivor's test, verified individually
+88/88 mutations caught      complete run, 2026-09-08, 2h39m, tree 61e275c
+  └─ 42 graded red by a named scenario · 46 by unit tests alone
+     87 measured · 1 re-verified by hand, for the reason below
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes over two hours. This one ran against `3ebe32a` and is the first
-complete run since ADR-0029 — the previous figure, 77/78, was measured on a tree ten
-mutants and several modules ago and had been carried forward with a label saying so.*
+complete run takes over two and a half hours. This is the second complete run since
+ADR-0029; the first measured 87/88 with a genuine survivor, which now has a test.*
 
-*The survivor is worth more than the score. **"reconciliation: escalate actions that
-already settled"** deletes the settled check inside `should_escalate`, and nothing in
-626 tests noticed. Three of that function's four callers make the check redundant —
-`escalate_exhausted` filters settled rows out in SQL, and both sweep call sites are
-already inside an `if state in UNSETTLED` branch. The fourth does not: `reverify`
-calls it unconditionally, after deciding what the read found. So an operator who
-presses Re-verify on an UNKNOWN action four times and gets a real SUCCESS on the fifth
-crosses the attempt limit on the attempt that resolved it — and the same action is
+*The run reported one survivor and it was not one. **"tools: let a customer-contacting
+action run on the read path"** came back uncaught because ninety minutes in I checked
+for a running mutation with `ls .mutation-in-progress` from `web/` — a relative path,
+which found nothing — concluded the run had finished, and reverted the file the harness
+was actively mutating. Its suite therefore ran against unmutated code and reported
+SURVIVED for the only possible reason: there was nothing there to catch.*
+
+*Applied by hand afterwards it is caught twice over, by
+`test_every_tool_is_reachable_by_exactly_one_route` and
+`test_no_read_tool_changes_state_outside_this_system`. So the score is 88/88 and it is
+stated as what it is: 87 from the run, one re-verified by hand because I corrupted that
+mutant's result and knew exactly which one and in which direction. `make mutants-status`
+now answers that question from the repository root so the same mistake cannot be made
+from a subdirectory.*
+
+*The previous run's survivor was worth more than its score. **"reconciliation: escalate
+actions that already settled"** deleted the settled check inside `should_escalate`, and
+nothing in 626 tests noticed. Three of that function's four callers make the check
+redundant — `escalate_exhausted` filters settled rows out in SQL, and both sweep call
+sites are already inside an `if state in UNSETTLED` branch. The fourth does not:
+`reverify` calls it unconditionally, after deciding what the read found. So an operator
+who presses Re-verify on an UNKNOWN action four times and gets a real SUCCESS on the
+fifth crosses the attempt limit on the attempt that resolved it — and the same action is
 marked COMPLETED with "Re-verification resolved the action: SUCCESS" while being handed
 to a human as "still unestablished". A finished refund on the escalation queue is how a
-queue stops being read.*
-
-*`test_a_manual_reverify_that_finally_succeeds_does_not_escalate` closes it, verified
-the only way this can be: mutant applied by hand → red, reverted → green. **88/88 is
-therefore two measurements, and it is stated as two** — 87 from the complete run, one
-from a hand-verified mutant added afterwards. Adding a test cannot un-catch a mutant,
-so the 87 still hold, but a full re-run against this exact tree has not been done and
-the number is not presented as though it had.*
+queue stops being read.
+`test_a_manual_reverify_that_finally_succeeds_does_not_escalate` closes it.*
 
 **§22's five browser journeys run.** `make e2e` stands the whole stack up
 against its own database — seed, API, the built bundle behind `vite preview`,

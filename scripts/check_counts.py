@@ -153,6 +153,23 @@ def evaluation_result() -> dict | None:
     return json.loads(p.read_text())
 
 
+def _app_changed_since(tree: str | None) -> list[str] | None:
+    """Commits touching `app/` since `tree`, or None if it cannot be compared.
+
+    A mutation score measures `app/`. Everything else in a commit -- CI config,
+    the Makefile, docs, a lock file -- leaves it exactly as valid as when it
+    was taken, and refusing on those would silence a two-hour measurement over
+    a typo fix.
+    """
+    if not tree:
+        return None
+    r = subprocess.run(["git", "log", "--format=%h", f"{tree}..HEAD", "--", "app"],
+                       cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0:
+        return None          # unknown commit -- shallow clone, or rewritten history
+    return [c for c in r.stdout.split() if c]
+
+
 def mutation_result() -> dict | None:
     """The last recorded run, or None where no run has been recorded here.
 
@@ -309,11 +326,35 @@ def main() -> int:
         print(f"mutation:  last run was FILTERED ({run['run']} of {run['defined']} "
               f"mutants) -- the published result is not checked against it")
     else:
-        print(f"mutation:  {run['caught']}/{run['run']} caught, tree "
-              f"{run['tree']}, {run['generated_at'][:10]}")
-        claims.append(
-            Claim("README.md", r"(\d+)/\d+ mutations caught", run["caught"],
-                  "the caught-mutant count in the measured-results block"))
+        # The tree is checked, but not the way the evaluation report's is. A
+        # scenario run takes two minutes, so demanding it match HEAD is
+        # reasonable. A mutation run takes over two hours, so demanding the
+        # same would silence this gate after literally any commit -- and a gate
+        # that is almost always silent is one nobody notices has stopped.
+        #
+        # What actually matters is whether `app/` moved. Mutants only touch
+        # `app/` and `alembic/`; a commit to CI config or the README leaves the
+        # score exactly as valid as when it was measured. So drift is reported,
+        # and only drift IN THE MEASURED CODE refuses.
+        drift = _app_changed_since(run.get("tree"))
+        stamp = f"{run['caught']}/{run['run']} caught, tree {run['tree']}"
+        if drift is None:
+            print(f"mutation:  {stamp} (cannot compare to HEAD)")
+        elif drift:
+            print(f"mutation:  refusing {run['tree']} -- app/ has changed in "
+                  f"{len(drift)} commit(s) since it was measured "
+                  f"({', '.join(drift[:3])}{'…' if len(drift) > 3 else ''}). "
+                  f"Re-run `make mutants`.")
+            run = None
+        else:
+            head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
+                                  capture_output=True, text=True).stdout.strip()
+            note = "" if run["tree"] == head else " (app/ unchanged since)"
+            print(f"mutation:  {stamp}{note}, {run['generated_at'][:10]}")
+        if run is not None:
+            claims.append(
+                Claim("README.md", r"(\d+)/\d+ mutations caught", run["caught"],
+                      "the caught-mutant count in the measured-results block"))
 
     problems = check(claims)
 

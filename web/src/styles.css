@@ -570,6 +570,36 @@ label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 
 .pill.danger  { background: var(--danger-soft);  color: var(--danger);  border-color: var(--danger-border); }
 .pill.unknown { background: var(--unknown-soft); color: var(--unknown); border-color: var(--unknown-border); }
 .pill.neutral { background: var(--surface-2);    color: var(--text-dim); border-color: var(--border); }
+
+/* --- incident severity ---------------------------------------------------
+   `data-sev` is set on the incident page, the incidents list and the
+   dashboard, and had no rule behind it anywhere: CRITICAL, HIGH, MEDIUM and
+   LOW all rendered as the same plain uppercase text. An operator scanning a
+   list of five incidents could not see which one was critical without reading
+   every row.
+
+   Toned like the pills, and reusing their tokens rather than new colours --
+   severity and risk are the same question asked about different things, and
+   two vocabularies for one idea is how a console stops being scannable. The
+   word itself is still the label, so this adds a cue rather than replacing
+   one (P1-08). `--warn-ink`, not `--warn`: the fill colour lands near 3:1 as
+   text on its own tint. */
+[data-sev] {
+  display: inline-flex; align-items: center; padding: 2px 9px;
+  border-radius: 999px; border: 1px solid transparent;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em;
+}
+[data-sev="CRITICAL"] { background: var(--danger-soft);  color: var(--danger);
+                        border-color: var(--danger-border); }
+[data-sev="HIGH"]     { background: var(--danger-soft);  color: var(--danger);
+                        border-color: var(--danger-border); }
+[data-sev="MEDIUM"]   { background: var(--warn-soft);    color: var(--warn-ink);
+                        border-color: var(--warn-border); }
+[data-sev="LOW"]      { background: var(--surface-2);    color: var(--text-dim);
+                        border-color: var(--border); }
+/* CRITICAL is the only one that should stop an eye travelling down a column. */
+[data-sev="CRITICAL"] { font-weight: 700; box-shadow: inset 2px 0 0 var(--danger); }
 /* UNKNOWN is a live state, not a finished one. The pulse says "still open"
    without implying anything about which way it will resolve. */
 .pill.unknown::before {

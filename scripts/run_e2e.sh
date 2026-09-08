@@ -92,8 +92,17 @@ with session_scope() as s:
     print(f"    {r['action'].id} is UNKNOWN")
 PYEOF
 
+# stdout is the token and nothing else -- `issue_token.py` puts the dev-secret
+# warning and the curl hint on stderr, which is already discarded here.
+#
+# This used to `grep -oE 'USR_A_OWNER\.[a-f0-9]{64}'`, which coupled the script
+# to one token FORMAT. ADR-0049 changed tokens to `mo1.<payload>.<signature>`
+# and the pattern stopped matching anything -- so with `set -e` and `pipefail`
+# the run died here, before the check below could say why, and `make e2e` and
+# CI's browser job both reported a silent failure. Reading the value the script
+# is documented to print cannot break that way again.
 TOKEN="$(DATABASE_URL="$DB" "$PY" scripts/issue_token.py USR_A_OWNER 2>/dev/null \
-         | grep -oE 'USR_A_OWNER\.[a-f0-9]{64}' | head -1)"
+         | tr -d '[:space:]')"
 if [ -z "$TOKEN" ]; then
   echo "could not mint a token against ${DB##*/}" >&2
   exit 1

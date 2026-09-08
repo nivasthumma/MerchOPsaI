@@ -4,6 +4,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { EFFECTS } from "../api/client";
 import { ErrorBanner, Money, StatusPill, VerificationPill } from "./Bits";
 
 describe("VerificationPill", () => {
@@ -65,6 +66,25 @@ describe("ErrorBanner", () => {
   it("renders nothing when there is no error", () => {
     const { container } = render(<ErrorBanner error={null} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("says what every outcome means for whether anything happened", () => {
+    // Walked from `EFFECTS` rather than restated here: the point of deriving
+    // `Effect` from that list is that there is one place to add an outcome,
+    // and a test carrying its own copy would be a second place to forget.
+    //
+    // The type makes a missing entry a compile error; this makes an entry that
+    // renders nothing a test failure. An operator reading this banner is
+    // deciding between pressing the button again and opening the UNKNOWN
+    // queue, and a blank consequence gives them nothing to decide with.
+    for (const effect of EFFECTS) {
+      const { unmount } = render(
+        <ErrorBanner error={{ message: "boom", effect }} />);
+      const banner = document.querySelector(".banner-consequence");
+      expect(banner, `no consequence rendered for "${effect}"`).not.toBeNull();
+      expect(banner!.textContent!.length).toBeGreaterThan(20);
+      unmount();
+    }
   });
 
   it("shows a refusal with its code, not as a crash", () => {

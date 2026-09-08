@@ -117,7 +117,13 @@ export default function Incidents() {
 
   return (
     <div className="incidents">
-      <SectionHead title="Incidents" count={rows.length}>
+      {/* `matched`, the server's COUNT over the whole match — not
+          `rows.length`, which is the size of this page. The strip below and
+          the "Showing n of m" line under it were already careful about this;
+          the heading, which is the biggest number on the screen and the first
+          one read, was not, and it disagreed with both of them the moment the
+          list was capped. */}
+      <SectionHead title="Incidents" count={matched}>
         <button onClick={runDetection} disabled={busy}>
           {busy ? <Busy>detecting</Busy> : "Run detection"}
         </button>

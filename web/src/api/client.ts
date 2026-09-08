@@ -109,13 +109,21 @@ export function setToken(token: string): void {
  *  happen or not*. Three answers, and the difference between them is the
  *  difference between pressing the button again and opening the UNKNOWN queue.
  */
-export type Effect =
+export const EFFECTS = [
   /** The server refused before doing anything. Safe to correct and try again. */
-  | "refused"
+  "refused",
   /** A read. Whether it arrived or not, it changed nothing. */
-  | "read-only"
+  "read-only",
   /** A write whose fate is genuinely unknown: it may have been applied. */
-  | "unknown";
+  "unknown",
+] as const;
+
+/** Derived from the list above rather than written twice.
+ *
+ *  One source of truth, so a fourth outcome is a compile error everywhere it
+ *  has to be handled instead of a silent gap in one of them — and so a test
+ *  can walk the outcomes rather than restating them. */
+export type Effect = (typeof EFFECTS)[number];
 
 export class ApiError extends Error {
   constructor(

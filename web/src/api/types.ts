@@ -291,8 +291,19 @@ export interface EscalatedAction {
   escalated: boolean;
   escalated_at: string | null;
   last_verified_at: string | null;
-  /** When the sweep will look again. Null means it will not — either the
-   *  action is settled, or a human owns it now. */
+  /** When the sweep will look again.
+   *
+   *  Null does NOT mean "never". `unsettled_queue` matches
+   *  `next_verify_at IS NULL OR next_verify_at <= now`, so for a row the sweep
+   *  can still reach — unsettled, not escalated, attempts remaining — null
+   *  means **due now**: never scheduled, which is what a just-claimed action
+   *  carries and what every row written before the schedule existed carries.
+   *
+   *  It reads as "never" only for a row the sweep's other filters already
+   *  exclude: settled, escalated, or out of attempts. `Actions.tsx` renders
+   *  "due now" for the first case and an em dash for an escalated row, which
+   *  is right — this comment used to say the opposite, and a comment that
+   *  contradicts the query is how somebody "fixes" correct code. */
   next_verify_at: string | null;
   provider: string | null;
   environment: string | null;

@@ -1634,17 +1634,26 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
   scroll-margin-top: calc(var(--lp-head, 72px) + 36px);
   min-height: calc(100svh - var(--lp-head, 72px) - 36px);
   display: flex; flex-direction: column; justify-content: flex-start;
-  /* Sections settle on their own starts when a reader scrolls freely too --
-     proximity, not mandatory, so it assists the scroll rather than seizing
-     it. */
-  scroll-snap-align: start;
+  /* A section owns a screen, so what is IN it should occupy that screen. The
+     head keeps its own height and the block after it takes the rest, which is
+     what turns "a paragraph with half a screen of nothing under it" into a
+     section that looks finished. */
+  gap: 4px;
 }
+/* No `scroll-snap-align` here, and no `scroll-snap-type` on the root.
+   Proximity snapping was added so free scrolling would settle on section
+   starts the way a click does. What it actually did was scroll the page on
+   its own at load: `.lp-hero` is a section too, its top sits 99px down, and
+   the browser snapped to the nearest point before the reader touched
+   anything -- so the front door opened with the thesis and the disclosure
+   banner already scrolled off the top. Following a nav entry lands correctly
+   without it; that comes from `scroll-margin-top` and the height above, which
+   nothing has to snap to. */
 /* The hero sets its own two-column layout and the carousel its own height;
    neither wants a flex column, and both already fill a screen. */
 .landing section.lp-hero { display: grid; }
 @media (max-width: 940px) { .landing section.lp-hero { display: grid; } }
-html { scroll-snap-type: y proximity; }
-@media (prefers-reduced-motion: reduce) { html { scroll-snap-type: none; } }
+
 
 /* --- the measured band -------------------------------------------------- */
 .lp-stats {
@@ -2424,3 +2433,144 @@ p a:not(.linkish) {
 .lp-term code { font: inherit; color: inherit; background: none; padding: 0; }
 .lp-term b { color: var(--accent); font-weight: 600; }
 .lp-term .ok { color: var(--ok); }
+
+/* --- filling the screen a section owns -----------------------------------
+   The last child of a section -- the card grid, the stats band, the limits
+   list -- grows into whatever height is left, and its own children stretch
+   with it. Cards were a fixed band of text with a blank half-screen beneath;
+   now the row is as tall as the section and each card carries the same
+   weight down the row. */
+/* Centred in the leftover, not parked at the top of it. A section is a screen
+   tall so that following a nav entry hands the reader one section; the content
+   rarely fills a whole screen exactly, and the difference has to go somewhere.
+   Split above and below it reads as composition. All of it below reads as a
+   page that ran out.
+
+   `margin-block: auto` rather than `flex: 1` with `align-content: center`:
+   growing the grid box stretches its ROWS, so the shortest card in a row was
+   padded out to the tallest one's height and opened a void in the middle of
+   itself. Centring the box leaves every row its natural height. */
+.landing section > .lp-cards:last-child,
+.landing section > .lp-limits:last-child { margin-block: auto; }
+.landing section > .lp-split { flex: 1 1 auto; align-content: center; }
+/* The measured section is two blocks rather than one grid -- the band of
+   figures and the transcript under it. `auto` on the outside of the pair
+   centres them together, which is the same rule as `align-content: center`
+   written for siblings instead of grid rows. */
+.landing section > .lp-stats { margin-top: auto; }
+.landing section > .lp-term:last-child { margin-bottom: auto; }
+.lp-cards > .lp-card { display: flex; flex-direction: column; }
+.lp-card-mark > div { display: flex; flex-direction: column; flex: 1; }
+
+/* The line each card ends on: what the step writes, or what the state buys.
+   Pushed to the bottom edge so the four of them line up across the row no
+   matter how long the paragraph above each one runs -- a row of cards whose
+   last lines do not align reads as four unrelated boxes. */
+/* Grid stretches the cards in a row to the tallest of them, so a card whose
+   paragraph is a line shorter has height to give away. Putting it after this
+   line, as ordinary trailing space, reads as padding; `margin-top: auto` put
+   it BETWEEN the paragraph and this line and opened a hole in the middle of
+   the card. The outer edges still align, which is what makes the four read as
+   one object. */
+.lp-card-row {
+  margin: 12px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; line-height: 1.5; color: var(--text-2);
+}
+.lp-card-row > span {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text-dim); flex: none;
+}
+.lp-card-row code {
+  font-family: var(--mono); font-size: 12.5px; color: var(--accent);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 1px 6px;
+}
+.lp-card-row b { color: var(--text); font-weight: 600; }
+/* The state cards colour their own rule, so the four read as four states down
+   the row rather than as one grey band. */
+.lp-card.c-ok      .lp-card-row { border-top-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.lp-card.c-failed  .lp-card-row { border-top-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.lp-card.c-partial .lp-card-row { border-top-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.lp-card.c-unknown .lp-card-row { border-top-color: color-mix(in srgb, var(--unknown) 45%, transparent); }
+
+/* --- the ladder, down the page -------------------------------------------
+   Four boxes in a row is a grouping. This is a sequence, so it runs down the
+   page with a spine through the marks -- and a sequence read top to bottom
+   uses the height the section already owns instead of leaving it empty under
+   a band of cards. */
+.lp-ladder {
+  --lp-ladder-gap: 10px;
+  /* Where a mark's centre line sits inside its step: the row's 14px of top
+     padding plus half the 40px mark. Both ends of every connector are written
+     in terms of this, so they cannot drift apart from each other or from the
+     marks they join. */
+  --lp-mark-centre: 34px;
+  list-style: none; margin: 20px 0 0; padding: 0;
+  display: grid; gap: var(--lp-ladder-gap); position: relative;
+}
+.lp-ladder > li {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0 18px; align-items: start;
+  border-left-width: 1px; padding: 14px 18px;
+}
+/* The spine, drawn as a connector PER STEP rather than one line down the
+   container: from this step's mark to the next one's, on every step but the
+   last. A single line spanning the container has to guess where the first and
+   last marks are, and it guessed wrong -- the rows are different heights, so
+   it overshot VERIFIED by 33px and said there was a fifth step. A connector
+   that starts at a mark and ends at the next mark cannot overshoot, because
+   there is nothing after the last one to draw. */
+.lp-ladder > li { position: relative; }
+.lp-ladder > li:not(:last-child)::before {
+  content: ""; position: absolute; z-index: 0;
+  /* 18px of padding plus half the 40px mark: the mark's centre line. */
+  /* From this mark's centre to the NEXT mark's centre: down past this row's
+     bottom edge, across the gap, and 34px into the row below. Ending at the
+     row's edge instead left a 35px break in the spine above every mark. */
+  left: 37px; top: var(--lp-mark-centre); width: 2px;
+  bottom: calc(-1 * (var(--lp-ladder-gap) + var(--lp-mark-centre)));
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--border-strong), var(--accent-border));
+}
+.lp-ladder .lp-mark { position: relative; z-index: 1; background: var(--surface);
+                      border-radius: 11px; }
+/* The step's own text spreads across the row rather than stacking under the
+   title: at this width there is room for the sentence and the row it writes
+   side by side, and stacking them is what left four short cards floating in
+   the middle of a screen. */
+.lp-ladder > li > div {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 230px);
+  gap: 4px clamp(18px, 3vw, 40px); align-items: center;
+}
+.lp-ladder h4 { grid-column: 1 / -1; margin: 0 0 2px; }
+.lp-ladder .lp-card-row {
+  margin: 0; padding: 0 0 0 clamp(18px, 3vw, 40px);
+  border-top: 0; border-left: 1px solid var(--border);
+  min-height: 34px; align-items: center;
+}
+@media (max-width: 820px) {
+  .lp-ladder > li > div { grid-template-columns: minmax(0, 1fr); }
+  .lp-ladder .lp-card-row {
+    padding: 10px 0 0; border-left: 0; border-top: 1px solid var(--border);
+  }
+  .lp-ladder > li:not(:last-child)::before { display: none; }
+}
+/* Centred as a BLOCK, not by spreading its rows.
+   `align-content: center` on a grown grid leaves the grid BOX full height with
+   the rows floating inside it -- and the spine is drawn on the box, so it ran
+   from well above step 01 to well below step 04, saying there was a step
+   before the first and one after the last. That is the exact thing the comment
+   on `::before` says it must not do. `margin: auto 0` centres the box itself,
+   so the box is the height of the four steps and the spine can only be as long
+   as they are. */
+.landing section > .lp-ladder:last-child { margin-block: auto; }
+
+/* --- the four states, two by two ------------------------------------------
+   Not a sequence, so not a spine -- but four wide cards in one row are short
+   and wide with a blank screen under them, and two rows of two use the height
+   while giving each state room for what follows from it. */
+@media (min-width: 1000px) {
+  .lp-states .lp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

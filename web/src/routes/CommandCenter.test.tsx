@@ -80,16 +80,20 @@ describe("the recovery funnel — P1-03", () => {
   });
 
   it("never draws a later stage wider than an earlier one", async () => {
-    // The rule stated as "never imply at-risk equals recovered", carried by the
-    // geometry rather than by anyone remembering it. Recovered is forced above
-    // at-risk here; the widths must still not invert.
+    // The rule carried by the geometry rather than by anyone remembering it.
+    //
+    // The comment here used to say "Recovered is forced above at-risk" over
+    // data that nested perfectly (100k, 60k, 40k, 40k) -- so the test asserted
+    // that a well-ordered funnel draws in order, which every implementation
+    // does. It never exercised the case its own name describes. Recovered is
+    // genuinely above at-risk now.
     mocked.commandCenter.mockResolvedValue({
       ...DATA,
       funnel: [
         { stage: "AT_RISK", label: "At risk", amount_minor: 100_000 },
         { stage: "RECOVERABLE", label: "Recoverable", amount_minor: 60_000 },
         { stage: "ATTEMPTED", label: "Attempted", amount_minor: 40_000 },
-        { stage: "RECOVERED", label: "Recovered", amount_minor: 40_000 },
+        { stage: "RECOVERED", label: "Recovered", amount_minor: 140_000 },
       ] as CommandCenterData["funnel"],
     });
     renderCC();
@@ -97,8 +101,31 @@ describe("the recovery funnel — P1-03", () => {
     const bars = await screen.findAllByRole("img");
     const widths = bars.map(
       (b) => parseFloat((b as HTMLElement).style.width.replace("%", "")));
-    expect(widths).toEqual([100, 60, 40, 40]);
-    expect(widths).toEqual([...widths].sort((a, b) => b - a));
+    // 100, not 140. `.funnel-track` clips, so an unclamped bar drew at exactly
+    // the track's width -- a broken ledger rendered as a complete recovery,
+    // indistinguishable from a healthy one.
+    expect(widths).toEqual([100, 60, 40, 100]);
+    expect(Math.max(...widths)).toBeLessThanOrEqual(100);
+  });
+
+  it("scales the funnel by AT_RISK by name, not by whichever stage is first",
+     async () => {
+    // Every share is divided by this one figure. Taking it from array position
+    // means the whole chart silently rescales the day the server emits the
+    // stages in another order -- and the bars would still look plausible.
+    mocked.commandCenter.mockResolvedValue({
+      ...DATA,
+      funnel: [
+        { stage: "RECOVERED", label: "Recovered", amount_minor: 25_000 },
+        { stage: "AT_RISK", label: "At risk", amount_minor: 100_000 },
+      ] as CommandCenterData["funnel"],
+    });
+    renderCC();
+
+    const bars = await screen.findAllByRole("img");
+    const widths = bars.map(
+      (b) => parseFloat((b as HTMLElement).style.width.replace("%", "")));
+    expect(widths).toEqual([25, 100]);
   });
 
   it("describes each bar for a screen reader rather than relying on the drawing", async () => {

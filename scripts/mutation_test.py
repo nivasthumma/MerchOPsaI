@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -1116,6 +1117,18 @@ TOUCHED: set[str] = set()
 # by asking what changed in `app/` since this commit, and that question is
 # meaningless against the wrong one.
 MEASURED_TREE: str | None = None
+MEASURED_CLEAN: bool | None = None
+
+
+def _hms(seconds: float) -> str:
+    """`1h04m`, `52m`, `40s`. Two units at most: a duration printed to the
+    second is read as a measurement, and this is an estimate."""
+    s = int(seconds)
+    if s >= 3600:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s}s"
 
 # The same path `app.integrity` refuses to start on, and the flag that exempts
 # this process from it. Imported rather than repeated: a guard naming a
@@ -1218,14 +1231,22 @@ def main() -> int:
         return 1
     _hold(LOCK, None, None)
 
-    # Captured BEFORE the first mutation. `_write_report` records it as the
-    # tree this score describes, and `check_counts.py` asks what changed in
-    # `app/` since it to decide whether the score still holds -- a question
-    # that is meaningless against a commit made while the run was working.
-    global MEASURED_TREE
-    _head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
-                           capture_output=True, text=True)
-    MEASURED_TREE = _head.stdout.strip() or None
+    global MEASURED_TREE, MEASURED_CLEAN
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                          cwd=ROOT, capture_output=True, text=True)
+    MEASURED_TREE = head.stdout.strip() or None
+    # And whether the code about to be measured IS that commit. Captured here,
+    # before the first mutation makes the tree dirty by design.
+    #
+    # A hash alone says which commit was checked out, not what was in the
+    # files: a score taken with uncommitted edits present is a score for a tree
+    # nobody else has, and recording only the hash makes it indistinguishable
+    # from one taken on the commit itself. That is ADR-0035's second failure --
+    # an artifact with no conditions attached -- in the artifact that ADR was
+    # written to produce.
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", "app", "alembic"],
+                           cwd=ROOT, capture_output=True, text=True)
+    MEASURED_CLEAN = dirty.returncode == 0 and not dirty.stdout.strip()
 
     # Preflight. An anchor is a copy of code kept somewhere else, so it drifts
     # when the code moves — and a drifted anchor is reported as a SKIP that
@@ -1243,7 +1264,7 @@ def main() -> int:
         return 1
 
     baseline_pass, baseline_total, baseline_failed = run_suite()
-    print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass")
+    print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass", flush=True)
     if baseline_failed:
         print(f"  baseline is not clean ({baseline_failed}); aborting.")
         return 1
@@ -1252,12 +1273,34 @@ def main() -> int:
     invalid = []
     rows = []
 
-    for label, relpath, find, replace in mutations:
+    # Progress, one line per mutant, as it happens.
+    #
+    # This used to accumulate every row in memory and print the table at the
+    # end. A full run is 88 mutants and takes over two and a half hours, so
+    # for that whole time the only output was the banner: no way to tell
+    # mutant 3 from mutant 80, whether a suite had wedged, or whether anything
+    # was being caught. `flush=True` because stdout redirected to a file is
+    # block-buffered, which is how a run gets started and then shows one line
+    # for two hours -- the caller should not have to know to pass `-u`.
+    started = time.monotonic()
+
+    def progress(n: int, label: str, status: str, detail: str) -> None:
+        done = time.monotonic() - started
+        # Remaining time from the average so far, which is what a reader
+        # actually wants from a bar. Only after two, because one sample of a
+        # 90-second step extrapolated over 88 of them is a guess presented as
+        # an estimate.
+        eta = f"  eta {_hms((done / n) * (len(mutations) - n))}" if n >= 2 else ""
+        print(f"[{n:>2}/{len(mutations)}] {label:<52} {status:<9} {detail}"
+              f"  ({_hms(done)}{eta})", flush=True)
+
+    for n, (label, relpath, find, replace) in enumerate(mutations, 1):
         path = ROOT / relpath
         original = path.read_text()
         if find not in original:
             rows.append((label, "SKIP", "anchor not found", ""))
             survivors.append(label)
+            progress(n, label, "SKIP", "anchor not found")
             continue
         try:
             TOUCHED.add(relpath)
@@ -1297,6 +1340,7 @@ def main() -> int:
             elif caught == 0 and tests_ok:
                 survivors.append(label)
                 rows.append((label, "SURVIVED", "no scenario or test caught it", ""))
+                progress(n, label, "SURVIVED", "no scenario or test caught it")
             else:
                 # Reached when scenarios caught it, or when the scenario suite
                 # crashed but the unit tests still returned a verdict.
@@ -1305,15 +1349,7 @@ def main() -> int:
                     detail += " + unit tests"
                 rows.append((label, "CAUGHT", detail,
                              ", ".join(failed[:4]) + ("…" if len(failed) > 4 else "")))
-
-            # Printed as it happens, not only in the table at the end. A full
-            # run is 108 mutants and the better part of four hours; with the
-            # result withheld until the end it is impossible to tell a run that
-            # is working from one that is stuck, and killing it to find out
-            # throws away everything it had done.
-            done = len(rows)
-            print(f"  [{done:3}/{len(mutations)}] {rows[-1][1]:<10} {label}",
-                  flush=True)
+                progress(n, label, "CAUGHT", detail)
         finally:
             path.write_text(original)
             _hold(LOCK, None, None)
@@ -1382,6 +1418,7 @@ def _write_report(rows, caught_n: int, mutations) -> None:
     REPORT.write_text(json.dumps({
         "generated_at": datetime.now(UTC).isoformat(),
         "tree": MEASURED_TREE,
+        "tree_clean": MEASURED_CLEAN,
         "complete": len(mutations) == len(MUTATIONS),
         "defined": len(MUTATIONS),
         "run": len(mutations),

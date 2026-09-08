@@ -187,6 +187,13 @@ describe("filtering and saved views", () => {
       .toBeInTheDocument();
     expect(screen.getByText(/counted in SQL, not summed across this page/))
       .toBeInTheDocument();
+
+    // Including the heading. This test carried the right name and asserted the
+    // sentence and the strip but never the count beside the title -- which was
+    // `rows.length`, so the biggest number on the page said 2 while the line
+    // below it said "Showing 2 of 40" and the strip said 40.
+    const head = screen.getByRole("heading", { name: "Incidents" }).parentElement!;
+    expect(head.querySelector(".count")).toHaveTextContent("40");
   });
 
   it("says nothing when the whole match fits", async () => {

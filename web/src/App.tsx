@@ -7,6 +7,7 @@ import {
   ForkDiagram, LadderMark, LandingHeader, LimitMark, ScreenCarousel, SECTIONS,
   SectionHead, settleReveals, StateMark, useReveal,
 } from "./components/Landing";
+import { Money } from "./components/Bits";
 import { ThemeToggle } from "./components/Theme";
 import { CommandPalette } from "./components/CommandPalette";
 import { ToastHost } from "./components/Toast";
@@ -221,16 +222,20 @@ function MainNav() {
 function OpsStrip({ m }: { m: Metrics | null }) {
   if (!m) return null;
 
-  const rupees = (minor: number) =>
-    `₹${(minor / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
-
   return (
     <div className="strip">
       <span className={`strip-cell ${m.gated > 0 ? "warn" : ""}`}>
         Gated <b>{m.gated}</b>
       </span>
       <span className="strip-cell">Approved {m.window_hours}h <b>{m.approved}</b></span>
-      <span className="strip-cell">Moved <b>{rupees(m.moved_minor)}</b></span>
+      {/* `Money`, not a second formatter. This cell used to hand-roll the
+          same `toLocaleString` call and drop the one thing `Money` adds: the
+          title carrying the raw minor units. Its own comment says why —
+          "rendering them as rupees without saying so is how off-by-100 bugs
+          reach a refund dialog" — and this was the cell rendering them without
+          saying so. Two implementations of money is two places to get money
+          wrong. */}
+      <span className="strip-cell">Moved <b><Money minor={m.moved_minor} /></b></span>
       <span className={`strip-cell ${m.rejected > 0 ? "danger" : ""}`}>
         Rejected <b>{m.rejected}</b>
       </span>
@@ -545,28 +550,46 @@ function Landing({ health }: { health: Health | null }) {
           Nothing is recorded as done until the provider has been read back
           independently. The first three are claims.
         </SectionHead>
-        <div className="lp-cards is-stagger">
-          <div className="lp-card lp-card-mark">
+        {/* Each card ends with the row this step actually writes. The ladder
+            is a claim about the database, not a diagram, and naming the column
+            is what makes it checkable rather than a slogan. */}
+        {/* Down the page rather than across it. Four boxes in a row is a
+            grouping; this is a sequence, and a spine running through the marks
+            says so without a caption. It also uses the height the section has
+            instead of leaving it blank under a band of cards. */}
+        <ol className="lp-ladder is-stagger">
+          <li className="lp-card lp-card-mark">
             <LadderMark step={1} />
             <div><h4>01 · PROPOSED</h4>
             <p>The agent reasons broadly and can propose anything. Proposing is
-              free; nothing has happened.</p></div></div>
-          <div className="lp-card lp-card-mark">
+              free; nothing has happened, and nothing has been sent.</p>
+            <p className="lp-card-row"><span>writes</span>
+              <code>tool_calls</code></p></div></li>
+          <li className="lp-card lp-card-mark">
             <LadderMark step={2} />
             <div><h4>02 · GATED</h4>
-            <p>Deterministic policy, outside the model. A human signs for
-              anything that moves money.</p></div></div>
-          <div className="lp-card lp-card-mark">
+            <p>Deterministic policy, outside the model. A person signs for
+              anything that moves money, and a second person for the largest
+              of it.</p>
+            <p className="lp-card-row"><span>writes</span>
+              <code>policy_decision</code></p></div></li>
+          <li className="lp-card lp-card-mark">
             <LadderMark step={3} />
             <div><h4>03 · SUBMITTED</h4>
-            <p>A <code>200</code> and a refund id. An idempotency key derived
-              server-side means a retry cannot double-refund.</p></div></div>
-          <div className="lp-card lp-card-mark">
+            <p>A <code>200</code> and a refund id. The idempotency key is
+              derived server-side from the action, so a retry of the same
+              request cannot become a second refund.</p>
+            <p className="lp-card-row"><span>writes</span>
+              <code>external_reference</code></p></div></li>
+          <li className="lp-card lp-card-mark">
             <LadderMark step={4} />
             <div><h4>04 · VERIFIED</h4>
-            <p>A separate read, against provider state, after the fact. Only
-              this step is evidence.</p></div></div>
-        </div>
+            <p>A separate read, against provider state, after the fact and on
+              its own schedule. Only this step is evidence, and only this one
+              closes the action.</p>
+            <p className="lp-card-row"><span>writes</span>
+              <code>verification_state</code></p></div></li>
+        </ol>
       </section>
 
       <section className="lp-states" id="states" ref={rStates}>
@@ -575,16 +598,30 @@ function Landing({ health }: { health: Health | null }) {
           Reading the provider back gives one of four answers, and the fourth is
           the one the rest of the system is built around.
         </SectionHead>
+        {/* Naming a state is worth nothing without saying what follows from
+            it. The second line of each card is the behaviour the state buys. */}
         <div className="lp-cards is-stagger">
           <div className="lp-card c-ok"><StateMark kind="ok" /><h4>SUCCESS</h4>
-            <p>Verified at the provider. The money moved.</p></div>
+            <p>Verified at the provider, by a read that happened after the
+              call and separately from it. The money moved.</p>
+            <p className="lp-card-row"><span>then</span> the action closes and
+              the recovery ledger counts it as recovered</p></div>
           <div className="lp-card c-failed"><StateMark kind="failed" /><h4>FAILED</h4>
-            <p>Verified as not having taken effect. No money moved.</p></div>
+            <p>Verified as not having taken effect. Not "the call errored" —
+              the provider was read and shows no refund. No money moved.</p>
+            <p className="lp-card-row"><span>then</span> the action closes; the
+              exposure stays on the books as still at risk</p></div>
           <div className="lp-card c-partial"><StateMark kind="partial" /><h4>PARTIAL</h4>
-            <p>Accepted, but the provider reflects less than was asked.</p></div>
+            <p>Accepted, but the provider reflects less than was asked. The
+              request was not rejected and it did not fully take effect.</p>
+            <p className="lp-card-row"><span>then</span> the difference is
+              recorded as a discrepancy rather than rounded away</p></div>
           <div className="lp-card c-unknown"><StateMark kind="unknown" /><h4>UNKNOWN</h4>
-            <p>Could not be established. Unresolved work on a backoff schedule,
-              escalating to a person after five attempts. Never retried.</p></div>
+            <p>Could not be established. The response never arrived, or arrived
+              saying nothing conclusive.</p>
+            <p className="lp-card-row"><span>then</span> re-read on a backoff
+              schedule, escalated to a person after five attempts, and
+              <b> never retried</b></p></div>
         </div>
       </section>
 
@@ -599,8 +636,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>110 of them critical</em></div>
           <div><b>136<i>/136</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>1410</b><span>Automated tests</span>
-            <em>1086 backend · 324 frontend</em></div>
+          <div><b>1430</b><span>Automated tests</span>
+            <em>1101 backend · 329 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -620,7 +657,7 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  1086 python tests · 324 vitest · 187 scenarios · 136 mutants"}
+              {"measured:  1101 python tests · 329 vitest · 187 scenarios · 136 mutants"}
             </span>
             <span className="ln">{"browser:   14 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>

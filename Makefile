@@ -69,6 +69,11 @@ ps:         ; docker compose ps
 # the same DATABASE_URL the application does rather than one typed twice.
 seed-docker: ; docker compose exec api python scripts/seed_data.py
 mutants:    ; $(PY) scripts/mutation_test.py
+# The same question asked of the frontend suite. 12 mutants and minutes rather
+# than 88 and hours, because it runs Vitest rather than the scenario suite --
+# and because the controls worth breaking in a browser are the ones that
+# misstate money, a count, or what the system did.
+mutants-web: ; $(PY) scripts/mutation_test_web.py
 # Is a run in progress? Answered from the repository root, because
 # `ls .mutation-in-progress` is relative and reports "no run" from any
 # subdirectory -- which is how a live mutant got reverted mid-run once.

@@ -177,7 +177,10 @@ function Figure({ label, minor, hint }:
  *  the plan states as "never imply at-risk equals recovered", enforced by the
  *  geometry rather than by remembering it. */
 function Funnel({ stages }: { stages: FunnelStage[] }) {
-  const top = stages[0]?.amount_minor ?? 0;
+  // AT_RISK by name, not `stages[0]`. Every share on this chart is divided by
+  // it, and taking the denominator from array position means the whole funnel
+  // silently rescales if the server ever emits the stages in another order.
+  const top = stages.find((s) => s.stage === "AT_RISK")?.amount_minor ?? 0;
 
   return (
     <section className="card">
@@ -191,7 +194,18 @@ function Funnel({ stages }: { stages: FunnelStage[] }) {
       ) : (
         <ol className="funnel">
           {stages.map((s) => {
-            const share = top > 0 ? s.amount_minor / top : 0;
+            // Clamped. The four figures nest -- at risk >= recoverable >=
+            // attempted >= recovered, MerchantOps §49 -- and when they do not,
+            // `revenue.invariants_broken` says so in the card above this one.
+            // What this chart must not do meanwhile is draw the reassuring
+            // version: `.funnel-track` clips at its own width, so a stage
+            // larger than AT_RISK rendered as a bar that was exactly full,
+            // which is a broken ledger drawn as a complete recovery.
+            //
+            // Clamped rather than refused: the banner already reports it, and
+            // a page that will not render is a page nobody can use to find out
+            // why.
+            const share = top > 0 ? Math.min(s.amount_minor / top, 1) : 0;
             return (
               <li key={s.stage}>
                 <div className="funnel-head">

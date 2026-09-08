@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import type { Effect } from "../api/client";
 import type { TaskStatus, VerificationState } from "../api/types";
 
 export function StatusPill({ status }: { status: TaskStatus | string }) {
@@ -39,7 +40,13 @@ export function Money({ minor }: { minor: number | null | undefined }) {
   if (minor == null) return <span className="muted">—</span>;
   return (
     <span title={`${minor} minor units`}>
-      ₹{(minor / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+      {/* Both bounds stated. `maximumFractionDigits` otherwise defaults to
+          max(minimumFractionDigits, 3), which leaves the number of decimals on
+          a money figure implicit. I could not find an input where the default
+          actually prints three — integer/100 rounds cleanly at that width — so
+          this is the contract written down, not a defect fixed. */}
+      ₹{(minor / 100).toLocaleString("en-IN",
+        { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
     </span>
   );
 }
@@ -50,7 +57,15 @@ export function Money({ minor }: { minor: number | null | undefined }) {
  *  occurred". Stated here rather than left to the reader, because the reader's
  *  default assumption after an error is that nothing happened, and for a write
  *  that failed mid-flight that assumption is exactly wrong. */
-const CONSEQUENCE: Record<string, string> = {
+/** Keyed by `Effect`, not by `string`.
+ *
+ *  It used to be `Record<string, string>`, so a fourth outcome added to
+ *  `Effect` would have compiled fine here and rendered no consequence at all —
+ *  in the one place whose whole purpose is to tell an operator whether the
+ *  thing they just pressed happened. The type is the guarantee; the lookup
+ *  below still guards at runtime, because the error object arrives as
+ *  `unknown` and its `effect` could be any string. */
+const CONSEQUENCE: Record<Effect, string> = {
   refused:
     "The server refused this before doing anything. Nothing changed.",
   "read-only":
@@ -65,7 +80,7 @@ const CONSEQUENCE: Record<string, string> = {
 export function ErrorBanner({ error }: { error: unknown }) {
   if (!error) return null;
   const e = error as {
-    message?: string; code?: string; isConflict?: boolean; effect?: string;
+    message?: string; code?: string; isConflict?: boolean; effect?: Effect;
   };
   // A refusal by the approval state machine is expected, not a fault, and it
   // keeps its softer tone. An unknown outcome is the loudest thing here.

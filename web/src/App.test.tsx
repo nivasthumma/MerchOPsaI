@@ -78,11 +78,18 @@ describe("run configuration", () => {
       .toBeInTheDocument();
   });
 
-  it("says execution is real when it is", async () => {
+  it("says execution is real when it is, and against what", async () => {
     health.mockResolvedValue({ ...OK, razorpay_execution_is_real: true,
                                payment_adapter: "live_test_mode" });
     renderApp();
     expect(await screen.findByText(/Live Razorpay Test Mode/)).toBeInTheDocument();
+    // The summary line names the environment, not just the fact of being live.
+    // Only the body was asserted, so a frontend mutation run shortened this
+    // sentence to "Execution is live." and all 311 tests passed — the front
+    // door announcing that real money can move without saying where, which is
+    // the one detail that decides whether that sentence is alarming.
+    expect(await screen.findByText(/against Razorpay test mode/))
+      .toBeInTheDocument();
   });
 
   it("distinguishes 'no credential found' from a deliberate choice", async () => {

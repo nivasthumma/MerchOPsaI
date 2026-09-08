@@ -99,6 +99,40 @@ describe("the UNKNOWN queue is work, not a status list", () => {
     expect(headers).toContain("Attempts");
   });
 
+  it("reads a null schedule as due now, not as no retry at all", async () => {
+    // `unsettled_queue` matches `next_verify_at IS NULL OR <= now`, so for a
+    // row the sweep can still reach — unsettled, not escalated, attempts
+    // remaining — null means it is eligible on the next pass. Rendering that
+    // as "never" would tell an operator to go and reconcile by hand something
+    // the system is about to look at itself.
+    //
+    // `types.ts` used to document the field as the opposite, and the two words
+    // this renders were asserted nowhere: a control with a comment inviting
+    // somebody to invert it and no test to stop them.
+    mocked.actionCenter.mockResolvedValue({
+      ...UNKNOWN,
+      unknown: UNKNOWN.unknown.map((r, i) =>
+        i === 0 ? { ...r, next_verify_at: null, escalated: false } : r),
+    } as ActionCenter);
+    renderActions("/actions?section=unknown");
+
+    const row = (await screen.findByText(UNKNOWN.unknown[0].id))
+      .closest("tr") as HTMLElement;
+    expect(within(row).getByText("due now")).toBeInTheDocument();
+  });
+
+  it("says an escalated action has no next retry rather than due now", async () => {
+    // The other half of the same rule: escalation clears the schedule to take
+    // the action OUT of the automatic loop, so null means something different
+    // here and must not read as "about to be retried".
+    mocked.actionCenter.mockResolvedValue(ESCALATED);
+    renderActions("/actions?section=escalated");
+
+    const row = (await screen.findByText(ESCALATED.escalated[0].id))
+      .closest("tr") as HTMLElement;
+    expect(within(row).queryByText("due now")).toBeNull();
+  });
+
   it("names the provider and the environment the action was placed in", async () => {
     mocked.actionCenter.mockResolvedValue(UNKNOWN);
     renderActions();

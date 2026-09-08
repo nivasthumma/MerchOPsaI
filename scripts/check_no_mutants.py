@@ -40,11 +40,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 _EXEMPT = "MERCHANTOPS_MUTATION_RUN"
 
-# Importing the mutation list reaches `app.integrity`, which refuses to import
+# Importing the mutation lists reaches `app.integrity`, which refuses to import
 # the application while the marker is on disk. That guard is right, and this
 # script is the one caller that must work anyway: "is a run in progress, and is
-# my tree clean?" is a question asked DURING a run. It reads the mutation table
+# my tree clean?" is a question asked DURING a run. It reads the mutation tables
 # and the working tree; it never executes application code.
+#
 # Scoped to the import and then put back. Leaving it set would exempt whatever
 # imports this module for the rest of the process -- which is not hypothetical:
 # `tests/unit/test_gates.py` imports it, and a leaked exemption made three
@@ -52,7 +53,8 @@ _EXEMPT = "MERCHANTOPS_MUTATION_RUN"
 _prior = os.environ.get(_EXEMPT)
 os.environ[_EXEMPT] = "1"
 try:
-    from scripts.mutation_test import MUTATIONS
+    from scripts.mutation_test import MUTATIONS as PY_MUTATIONS
+    from scripts.mutation_test_web import MUTATIONS as WEB_MUTATIONS
 finally:
     if _prior is None:
         os.environ.pop(_EXEMPT, None)
@@ -61,9 +63,15 @@ finally:
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The harness stores every replacement string as data, so of course it contains
-# all of them. Excluded by name rather than by pattern.
-SELF = "scripts/mutation_test.py"
+# Both harnesses. The frontend one rewrites `web/src` the same way the backend
+# one rewrites `app/`, and a guard that knew about only one of them would have
+# been a guard against half the ways a mutant reaches a commit -- which is not
+# a guard, because the half it misses is the half nobody is watching.
+MUTATIONS = [*PY_MUTATIONS, *WEB_MUTATIONS]
+
+# Each harness stores every replacement string as data, so of course it
+# contains all of them. Excluded by name rather than by pattern.
+SELF = {"scripts/mutation_test.py", "scripts/mutation_test_web.py"}
 
 
 def _staged(relpath: str) -> str | None:
@@ -93,30 +101,34 @@ def status() -> int:
 
         python scripts/check_no_mutants.py --status
     """
-    lock = ROOT / ".mutation-in-progress"
-    if not lock.exists():
+    locks = [ROOT / ".mutation-in-progress", ROOT / ".mutation-web-in-progress"]
+    live = [p for p in locks if p.exists()]
+    if not live:
         print("No mutation run in progress.")
         # A stale mutant with no lock means a killed run, which is exactly what
         # the main check is for -- so it is worth saying here rather than
         # letting "no run in progress" read as "nothing to worry about".
         return main()
-    print("A mutation run IS in progress. Do not stage app/ or alembic/.\n")
-    # The lock is JSON so a killed run can be recovered from it (it carries the
-    # original text of the file being rewritten). Rendered rather than dumped:
-    # this is what a human runs mid-run to ask how far in it is, and a wall of
-    # escaped source is not an answer.
-    raw = lock.read_text().rstrip()
-    try:
-        held = json.loads(raw)
-    except ValueError:
-        print(raw)
-        return 0
-    print(held.get("note", "Mutation test in progress."))
-    if held.get("file"):
-        print(f"Currently mutated: {held['file']}")
-    done = held.get("rewritten_so_far") or []
-    if done:
-        print(f"Rewritten so far ({len(done)}): " + ", ".join(done))
+    print("A mutation run IS in progress. Do not stage app/, alembic/ or "
+          "web/src/.\n")
+    for lock in live:
+        # The python harness's lock is JSON so a killed run can be recovered
+        # from it (it carries the original text of the file being rewritten).
+        # Rendered rather than dumped: this is what a human runs mid-run to ask
+        # how far in it is, and a wall of escaped source is not an answer. The
+        # web harness writes plain text, which is printed as it stands.
+        raw = lock.read_text().rstrip()
+        try:
+            held = json.loads(raw)
+        except ValueError:
+            print(raw)
+            continue
+        print(held.get("note", "Mutation test in progress."))
+        if held.get("file"):
+            print(f"Currently mutated: {held['file']}")
+        done = held.get("rewritten_so_far") or []
+        if done:
+            print(f"Rewritten so far ({len(done)}): " + ", ".join(done))
     return 0
 
 
@@ -134,7 +146,7 @@ def main() -> int:
     # overstates what it found is a guard people start discounting.
     found: dict[tuple[str, str], list[str]] = {}
     for label, relpath, _find, replace in MUTATIONS:
-        if relpath == SELF:
+        if relpath in SELF:
             continue
         if relpath not in cache:
             cache[relpath] = read(relpath)

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
@@ -10,6 +10,7 @@ import { readRecent, subscribeRecent, forgetRecent, type RecentTask } from "./re
 
 export default function App() {
   const location = useLocation();
+  const nav = useNavigate();
   const [health, setHealth] = useState<Health | null>(null);
   const [me, setMe] = useState<Principal | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -61,6 +62,11 @@ export default function App() {
     setToken(draft.trim());
     setTok(draft.trim());
     setDraft("");
+    // Off the sign-in page once there is a token. Leaving somebody on
+    // `/signin` after they have signed in means the address bar disagrees with
+    // the screen, and the back button walks them into a page that no longer
+    // exists for them.
+    if (location.pathname === "/signin") nav("/", { replace: true });
   }
 
   // Signed out, this is a public landing page and nothing else: no operations
@@ -72,11 +78,18 @@ export default function App() {
   // Same address and same port either way -- `/` is the landing until a token
   // exists and the Command Center after it.
   if (!token) {
+    // Two signed-out pages, not one page with an anchor. Signing in is a
+    // decision with its own address: it can be linked to, bookmarked, and
+    // returned to by the back button, and the page it lives on owes the reader
+    // nothing except the way in.
+    const signingIn = location.pathname === "/signin";
     return (
       <ToastHost>
         <a className="skip" href="#main">Skip to content</a>
-        <main className="landing-page" id="main">
-          <SignIn draft={draft} setDraft={setDraft} save={save} health={health} />
+        <main className={signingIn ? "auth-page" : "landing-page"} id="main">
+          {signingIn
+            ? <SignIn draft={draft} setDraft={setDraft} save={save} />
+            : <Landing health={health} />}
         </main>
       </ToastHost>
     );
@@ -386,11 +399,8 @@ function Mark() {
   );
 }
 
-function SignIn(
-  { draft, setDraft, save, health }:
-  { draft: string; setDraft: (s: string) => void; save: () => void;
-    health: Health | null },
-) {
+/** The public page. Explains the product and points at the way in. */
+function Landing({ health }: { health: Health | null }) {
   // The public face of the product AND the way in, on one port. Signed out,
   // `/` is this page; signing in replaces it with the Command Center. The
   // token panel stays in the document rather than behind a route, so the "Sign
@@ -408,7 +418,7 @@ function SignIn(
           <a href="#measured">Measured</a>
           <a href="#limits">Not claimed</a>
         </nav>
-        <a className="lp-btn sm" href="#signin">Sign in</a>
+        <Link className="lp-btn sm" to="/signin">Sign in</Link>
       </header>
 
       {/* Under the header and on the page's own measure, not floated above it.
@@ -430,7 +440,7 @@ function SignIn(
             when the system says a refund happened, <b>a refund happened</b>.
           </p>
           <div className="lp-cta">
-            <a className="lp-btn" href="#signin">Sign in <span aria-hidden="true">→</span></a>
+            <Link className="lp-btn" to="/signin">Sign in <span aria-hidden="true">→</span></Link>
             <a className="lp-btn ghost" href="#states">What it does</a>
           </div>
           <ul className="lp-ticks">
@@ -581,41 +591,69 @@ function SignIn(
         </ul>
       </section>
 
-      <div className="signin" id="signin">
-        <div className="signin-panel">
-        <h2 className="signin-h">Sign in</h2>
-        <p className="signin-sub">
-          A token identifies you. Everything you can do is read from the
-          database on every request.
+    </div>
+  );
+}
+
+/** The way in, on its own address.
+ *
+ *  Split down the middle: the left half states what this is and stays dark in
+ *  either theme, the right half is the form on a plain ground. A credential
+ *  screen should look like one thing to do, and the split is what stops the
+ *  explanation and the field competing for the same attention. */
+function SignIn(
+  { draft, setDraft, save }:
+  { draft: string; setDraft: (s: string) => void; save: () => void },
+) {
+  return (
+    <div className="auth">
+      <aside className="auth-aside">
+        <Link className="auth-brand" to="/">
+          <span aria-hidden="true">◨</span> MerchantOps
+        </Link>
+        <h2 className="auth-quote">
+          An HTTP 200 is not <span>a business outcome.</span>
+        </h2>
+        <p className="auth-quote-sub">
+          Every financial action here is read back at the provider before it
+          counts as done.
         </p>
-
-        <div className="signin-field">
-          <label htmlFor="tok">Mint one with <code>make token USER_ID=USR_A_OWNER</code></label>
-          <input
-            id="tok" type="password" value={draft} placeholder="paste token"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") save(); }}
-          />
-          <button className="primary" onClick={save} disabled={!draft.trim()}>
-            Use token
-          </button>
-        </div>
-
-        <p className="signin-note">
-          The token identifies you and carries no permissions — those are read
-          from the database on every request, so a token cannot grant itself
-          authority. Stored in this browser only, never sent anywhere but the
-          API.
-        </p>
-
-        {/* The four states, as a quiet echo of what the console is about.
-            Labels only: nothing here claims a value. */}
-        <ul className="signin-states" aria-label="Verification states">
-          <li><b className="ok">✓</b> SUCCESS</li>
-          <li><b className="danger">✕</b> FAILED</li>
-          <li><b className="warn">◐</b> PARTIAL</li>
-          <li><b className="unknown">?</b> UNKNOWN</li>
+        <ul className="auth-states" aria-label="Verification states">
+          <li><b className="ok">✓</b> SUCCESS<em>the money moved</em></li>
+          <li><b className="danger">✕</b> FAILED<em>no money moved</em></li>
+          <li><b className="warn">◐</b> PARTIAL<em>less than was asked</em></li>
+          <li><b className="unknown">?</b> UNKNOWN<em>not established</em></li>
         </ul>
+        <Link className="auth-back" to="/">← Back to the overview</Link>
+      </aside>
+
+      <div className="auth-form">
+        <div className="signin-panel">
+          <h2 className="signin-h">Sign in</h2>
+          <p className="signin-sub">
+            A token identifies you. Everything you can do is read from the
+            database on every request.
+          </p>
+
+          <div className="signin-field">
+            <label htmlFor="tok">
+              Mint one with <code>make token USER_ID=USR_A_OWNER</code>
+            </label>
+            <input
+              id="tok" type="password" value={draft} placeholder="paste token"
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") save(); }}
+            />
+            <button className="primary" onClick={save} disabled={!draft.trim()}>
+              Use token
+            </button>
+          </div>
+
+          <p className="signin-note">
+            The token carries no permissions — those are read from the database
+            on every request, so a token cannot grant itself authority. It is
+            stored in this browser only and sent nowhere but the API.
+          </p>
         </div>
       </div>
     </div>

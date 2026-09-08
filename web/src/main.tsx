@@ -41,6 +41,11 @@ const router = createBrowserRouter([
       { path: "scenarios", element: <Scenarios /> },
       { path: "operations", element: <Operations /> },
       { path: "settings", element: <Settings /> },
+      // Signed out this renders the sign-in page and signed in it
+      // redirects home, both handled in `App`. It needs to exist here
+      // regardless: without a route the path falls to the error
+      // boundary and a signed-out visitor clicking "Sign in" gets a 404.
+      { path: "signin", element: <CommandCenter /> },
     ],
   },
 ]);

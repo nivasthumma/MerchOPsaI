@@ -1650,6 +1650,89 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-card.c-unknown { border-left-color: var(--unknown); background: var(--unknown-soft); }
 .lp-card.c-unknown h4 { color: var(--unknown); }
 
+/* --- the sign-in page ----------------------------------------------------
+   Its own address, and a split: the left half states what this is and stays
+   dark in either theme, the right half is the form on a plain ground.
+
+   The dark half is a fixed palette rather than a token one -- it is the same
+   ink in light mode and dark mode, so the page reads as one designed object
+   instead of two halves that swap places when the OS theme changes. Contrast
+   is fixed with it, which is why it can be checked once and trusted. */
+.auth-page { min-height: 100vh; background: var(--bg); }
+.auth {
+  min-height: 100vh;
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+}
+@media (max-width: 900px) { .auth { grid-template-columns: minmax(0, 1fr); } }
+
+.auth-aside {
+  position: relative; overflow: hidden;
+  padding: clamp(32px, 5vw, 64px);
+  display: flex; flex-direction: column; gap: 26px;
+  background: #0c1a15;   /* deliberate constant: not a theme token */
+  color: #e6efea;
+}
+.auth-aside::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(760px 460px at 80% 0%, rgba(111,195,163,0.16), transparent 60%),
+    radial-gradient(560px 420px at 6% 96%, rgba(167,139,250,0.12), transparent 62%),
+    repeating-linear-gradient(0deg, transparent 0 55px, rgba(255,255,255,0.02) 55px 56px);
+}
+.auth-aside > * { position: relative; }
+
+.auth-brand {
+  display: inline-flex; align-items: center; gap: 11px; align-self: start;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: #e6efea; text-decoration: none;
+}
+.auth-brand span {
+  width: 28px; height: 28px; border-radius: 9px; letter-spacing: 0;
+  display: grid; place-items: center; font-size: 14px;
+  background: linear-gradient(150deg, #6fc3a3, #4f9b7f); color: #06120d;
+  box-shadow: 0 0 0 1px #2c5a49, 0 8px 22px -10px #6fc3a3;
+}
+.auth-quote {
+  margin: auto 0 0; font-family: var(--display); font-weight: 600;
+  font-size: clamp(28px, 3.4vw, 42px); line-height: 1.04;
+  letter-spacing: -0.03em; text-wrap: balance; max-width: 15ch;
+}
+.auth-quote span { display: block; color: #6fc3a3; }
+.auth-quote-sub {
+  margin: 0; color: #9fb3aa; font-size: 15.5px; line-height: 1.6; max-width: 42ch;
+}
+.auth-states {
+  list-style: none; margin: 0 0 auto; padding: 22px 0 0;
+  border-top: 1px solid #1e3029; display: grid; gap: 11px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.11em;
+  color: #cfdcd6;
+}
+.auth-states li { display: flex; align-items: baseline; gap: 10px; }
+.auth-states b { font-size: 12px; width: 12px; }
+.auth-states em {
+  font-style: normal; color: #7d9187; letter-spacing: 0;
+  font-family: var(--sans); font-size: 12.5px; margin-left: 4px;
+}
+.auth-states .ok { color: #6fc3a3; }
+.auth-states .danger { color: #ff7a6b; }
+.auth-states .warn { color: #e8933f; }
+.auth-states .unknown { color: #a78bfa; }
+.auth-back {
+  color: #9fb3aa; text-decoration: none; font-size: 13.5px; align-self: start;
+}
+.auth-back:hover { color: #e6efea; }
+
+/* The form half. Plain ground, one thing to do. */
+.auth-form {
+  display: grid; place-items: center;
+  padding: clamp(32px, 5vw, 64px);
+  background: var(--bg-elev);
+}
+.auth-form .signin-panel {
+  border: 0; box-shadow: none; background: transparent; padding: 0;
+  max-width: 420px;
+}
+
 /* --- the sign-in screen --------------------------------------------------
    The first screen anybody sees. It was a form card pinned to the left of an
    otherwise empty page; it now centres and leads with what the product is for,

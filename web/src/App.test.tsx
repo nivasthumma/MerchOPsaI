@@ -35,16 +35,26 @@ const OK: Health = {
   auth: "bearer_hmac", auth_secret_is_development_default: false,
 };
 
-function renderApp() {
+function renderApp(at = "/") {
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={[at]}>
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<div>SIGNED IN</div>} />
+          {/* Signed out this is the sign-in page and signed in it is the app,
+              which is what `App` decides. The element only has to exist. */}
+          <Route path="signin" element={<div>SIGNED IN</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
   );
+}
+
+/** The sign-in page. It has its own address now, so a test that wants the
+ *  token field asks for it by name rather than expecting it on the front
+ *  page — which is a landing page and deliberately has no credential on it. */
+function renderSignIn() {
+  return renderApp("/signin");
 }
 
 beforeEach(() => {
@@ -97,14 +107,27 @@ describe("run configuration", () => {
 describe("token gate", () => {
   it("asks for a token before rendering any authenticated route", async () => {
     health.mockResolvedValue(OK);
-    renderApp();
+    renderSignIn();
     expect(await screen.findByLabelText(/Mint one with/)).toBeInTheDocument();
     expect(screen.queryByText("SIGNED IN")).toBeNull();
   });
 
-  it("renders the route once a token is supplied, and forgets it on sign-out", async () => {
+  it("shows the public page, and no credential, at the front door", async () => {
+    // `/` is a landing page signed out. A token field on it would be a
+    // credential prompt shown to everyone who arrives, including the people
+    // who have no account and are only reading.
     health.mockResolvedValue(OK);
     renderApp();
+    expect(await screen.findByRole("navigation", { name: "On this page" }))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText(/Mint one with/)).toBeNull();
+    expect(screen.getAllByRole("link", { name: /Sign in/ }).length)
+      .toBeGreaterThan(0);
+  });
+
+  it("renders the route once a token is supplied, and forgets it on sign-out", async () => {
+    health.mockResolvedValue(OK);
+    renderSignIn();
     await userEvent.type(await screen.findByLabelText(/Mint one with/), "USR_A_OWNER.sig");
     await userEvent.click(screen.getByRole("button", { name: /Use token/ }));
     expect(await screen.findByText("SIGNED IN")).toBeInTheDocument();
@@ -116,7 +139,7 @@ describe("token gate", () => {
 
   it("stores the token as a password field, not in plain view", async () => {
     health.mockResolvedValue(OK);
-    renderApp();
+    renderSignIn();
     expect(await screen.findByLabelText(/Mint one with/)).toHaveAttribute("type", "password");
   });
 });
@@ -136,9 +159,7 @@ describe("page scaffolding", () => {
     // needs a token -- offering them there is offering a dead end. The landing
     // page has its own nav, named for the sections it actually scrolls to.
     health.mockResolvedValue(OK);
-    renderApp();
-    expect(await screen.findByRole("navigation", { name: "On this page" }))
-      .toBeInTheDocument();
+    renderSignIn();
     expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
 
     await userEvent.type(await screen.findByLabelText(/Mint one with/),
@@ -184,9 +205,17 @@ describe("the task rail", () => {
   });
 
   it("is absent before sign-in, when there is nothing to navigate to", async () => {
+    // Checked on both signed-out pages. The rail is application chrome, and
+    // neither the landing page nor the sign-in page is the application.
     localStorage.removeItem("merchantops.token");
     health.mockResolvedValue(OK);
-    renderApp();
+
+    const landing = renderApp();
+    await screen.findByRole("navigation", { name: "On this page" });
+    expect(screen.queryByRole("complementary", { name: "Recent tasks" })).toBeNull();
+    landing.unmount();
+
+    renderSignIn();
     await screen.findByLabelText(/Mint one with/);
     expect(screen.queryByRole("complementary", { name: "Recent tasks" })).toBeNull();
   });

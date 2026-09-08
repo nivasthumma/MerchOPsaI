@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
+import { ScreenCarousel, useReveal } from "./components/Landing";
 import { CommandPalette } from "./components/CommandPalette";
 import { ThemeToggle } from "./components/Theme";
 import { ToastHost } from "./components/Toast";
@@ -401,6 +402,12 @@ function Mark() {
 
 /** The public page. Explains the product and points at the way in. */
 function Landing({ health }: { health: Health | null }) {
+  const rProblem = useReveal<HTMLElement>();
+  const rLadder = useReveal<HTMLElement>();
+  const rStates = useReveal<HTMLElement>();
+  const rMeasured = useReveal<HTMLElement>();
+  const rLimits = useReveal<HTMLElement>();
+
   // The public face of the product AND the way in, on one port. Signed out,
   // `/` is this page; signing in replaces it with the Command Center. The
   // token panel stays in the document rather than behind a route, so the "Sign
@@ -492,7 +499,11 @@ function Landing({ health }: { health: Health | null }) {
         </div>
       </section>
 
-      <section id="problem">
+      <section className="lp-shots" aria-label="The console">
+        <ScreenCarousel />
+      </section>
+
+      <section id="problem" ref={rProblem}>
         <h3 className="lp-h2">The provider accepting is not the money moving</h3>
         <p className="lp-lede">
           A refund call returns <code>200 OK</code> with a refund id. Most
@@ -507,7 +518,7 @@ function Landing({ health }: { health: Health | null }) {
         </p>
       </section>
 
-      <section id="ladder">
+      <section id="ladder" ref={rLadder}>
         <h3 className="lp-h2">Four steps, and only the last one is evidence</h3>
         <p className="lp-lede">
           Nothing is recorded as done until the provider has been read back
@@ -529,7 +540,7 @@ function Landing({ health }: { health: Health | null }) {
         </div>
       </section>
 
-      <section className="lp-states" id="states">
+      <section className="lp-states" id="states" ref={rStates}>
         <h3 className="lp-h2">Uncertainty is a state, not an error</h3>
         <p className="lp-lede">
           Reading the provider back gives one of four answers, and the fourth is
@@ -548,7 +559,7 @@ function Landing({ health }: { health: Health | null }) {
         </div>
       </section>
 
-      <section id="measured">
+      <section id="measured" ref={rMeasured}>
         <h3 className="lp-h2">Numbers the repository can reproduce</h3>
         <p className="lp-lede">
           Every figure comes from a command, and a check in CI fails the build
@@ -566,7 +577,7 @@ function Landing({ health }: { health: Health | null }) {
         </div>
       </section>
 
-      <section id="limits">
+      <section id="limits" ref={rLimits}>
         <h3 className="lp-h2">What this does not do</h3>
         <p className="lp-lede">
           A page that lists only strengths is marketing. These are the limits,

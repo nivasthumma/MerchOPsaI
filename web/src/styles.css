@@ -1650,6 +1650,63 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-card.c-unknown { border-left-color: var(--unknown); background: var(--unknown-soft); }
 .lp-card.c-unknown h4 { color: var(--unknown); }
 
+/* --- landing: motion ------------------------------------------------------
+   Transform and opacity only, which are the two properties a browser animates
+   on the compositor. The resting state is VISIBLE: an element is only hidden
+   once `data-reveal="pending"` has been set by the observer, so a page whose
+   JavaScript never runs shows its content rather than a blank, and so does a
+   screenshot taken before it does. */
+[data-reveal="pending"] { opacity: 0; transform: translateY(14px); }
+[data-reveal="in"] {
+  opacity: 1; transform: none;
+  transition: opacity 520ms cubic-bezier(0.2, 0, 0.2, 1),
+              transform 520ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { opacity: 1 !important; transform: none !important;
+                  transition: none !important; }
+}
+
+/* --- landing: the console, as it renders --------------------------------- */
+.lp-shots { padding-top: 4px; }
+.carousel {
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface); overflow: hidden; box-shadow: var(--shadow);
+}
+/* The frame holds its own height from the first slide, so the page does not
+   jump as slides swap or as a lazy image arrives. */
+.carousel-frame { position: relative; aspect-ratio: 1360 / 850; background: var(--surface-2); }
+.slide {
+  position: absolute; inset: 0; margin: 0;
+  opacity: 0; transition: opacity 620ms cubic-bezier(0.2, 0, 0.2, 1);
+  pointer-events: none;
+}
+.slide[data-on="true"] { opacity: 1; pointer-events: auto; }
+.slide img { display: block; width: 100%; height: 100%; object-fit: cover;
+             object-position: top center; }
+@media (prefers-reduced-motion: reduce) { .slide { transition: none; } }
+
+.carousel-bar {
+  display: flex; align-items: center; gap: 16px 24px; flex-wrap: wrap;
+  padding: 14px 18px; border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.carousel-said { min-width: 0; }
+.carousel-said b { display: block; font-size: 14.5px; color: var(--text); }
+.carousel-said span { display: block; margin-top: 2px; color: var(--text-2);
+                      font-size: 13.5px; line-height: 1.5; max-width: 66ch; }
+.carousel-dots { margin-left: auto; display: flex; gap: 8px; }
+.carousel-dots button {
+  width: 9px; height: 9px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--border-strong); background: transparent;
+  cursor: pointer; transition: background var(--t), border-color var(--t),
+                               transform var(--t);
+}
+.carousel-dots button:hover { border-color: var(--text-dim); }
+.carousel-dots button.on {
+  background: var(--accent); border-color: var(--accent); transform: scale(1.25);
+}
+
 /* --- the sign-in page ----------------------------------------------------
    Its own address, and a split: the left half states what this is and stays
    dark in either theme, the right half is the form on a plain ground.

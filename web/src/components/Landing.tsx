@@ -265,30 +265,54 @@ export function SectionHead(
 
 /** Which section the reader is actually looking at.
  *
- *  The band is the middle of the viewport rather than the top: a heading that
- *  has only just crossed the top edge is not what somebody is reading, and a
- *  spy anchored there lights the next section up while the previous one still
- *  fills the screen.
+ *  The last section whose top has passed under the header, which is the only
+ *  definition that agrees with where a click lands. The first version watched
+ *  for a section intersecting a thin band across the middle of the viewport,
+ *  and it was wrong in the one case that matters most: click "How it works",
+ *  arrive at "How it works", and the header lights "The four states" -- because
+ *  a section scrolled to the top puts its *successor* across the middle of the
+ *  screen. The nav and the heading under it then said different things, which
+ *  is worse than no spy at all.
+ *
+ *  Position, not intersection, so the answer is the same one the browser used
+ *  to decide where to stop.
  */
 export function useActiveSection(ids: readonly string[]) {
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const seen = new Map<string, boolean>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) seen.set(e.target.id, e.isIntersecting);
-        // First in document order wins, so scrolling up lands on the section
-        // whose top is nearest rather than on whichever fired last.
-        setActive(ids.find((id) => seen.get(id)) ?? null);
-      },
-      { rootMargin: "-45% 0px -50% 0px" },
-    );
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (el) io.observe(el);
-    }
-    return () => io.disconnect();
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      // The same line `scroll-margin-top` scrolls to, read from the property
+      // the header publishes -- one number, one place, so the spy cannot
+      // disagree with the scroll by a few pixels.
+      const head = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--lp-head"),
+      ) || 72;
+      const line = head + 36;
+      let current: string | null = null;
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        // +1 for the sub-pixel the browser may stop short by; without it a
+        // section scrolled exactly to its own margin does not count as reached.
+        if (el && el.getBoundingClientRect().top <= line + 1) current = id;
+      }
+      // Past the end of the page nothing new can come into view, so the last
+      // section stays lit rather than the spy going dark on the footer.
+      const atEnd = window.innerHeight + window.scrollY
+                    >= document.documentElement.scrollHeight - 2;
+      setActive(atEnd ? ids[ids.length - 1] ?? current : current);
+    };
+    const onScroll = () => { frame ||= requestAnimationFrame(measure); };
+
+    measure();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, [ids]);
   return active;
 }
@@ -329,10 +353,13 @@ export function LandingHeader({ tools }: { tools: ReactNode }) {
   useEffect(() => {
     const el = headRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const publish = (h: number) =>
-      document.documentElement.style.setProperty("--lp-head", `${Math.ceil(h)}px`);
-    publish(el.getBoundingClientRect().height);
-    const ro = new ResizeObserver(([e]) => publish(e.contentRect.height));
+    // The border box, both times. `contentRect` excludes the header's bottom
+    // border and its progress line, so the two publishers disagreed by three
+    // pixels and every offset derived from this was short by that much.
+    const publish = () => document.documentElement.style.setProperty(
+      "--lp-head", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

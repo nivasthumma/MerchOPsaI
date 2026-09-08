@@ -1482,9 +1482,14 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
   max-width: 1180px; margin: 0 auto;
   display: flex; align-items: center; gap: 14px 26px;
   padding: 15px clamp(18px, 4vw, 40px);
-  transition: padding var(--t);
 }
-.lp-topwrap.is-stuck .lp-top { padding-block: 10px; }
+/* The header keeps ONE height.
+   It used to condense on stick, which meant every offset measured against it
+   had two answers: `scroll-margin-top` was computed from the tall header,
+   the page then scrolled and the header became short, and the section landed
+   ten pixels lower than the spy's line -- so the first section a reader
+   clicked scrolled correctly and lit nothing. The stuck state still reads as
+   one, through the edge and the shadow, without moving anything. */
 
 .lp-brand {
   display: flex; align-items: center; gap: 11px; margin: 0;
@@ -1570,12 +1575,39 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-btn.sm { padding: 9px 16px; font-size: 14px; }
 
 /* --- sections ----------------------------------------------------------- */
-/* Clear of the sticky header, with room to breathe. `--lp-head` is the header's
-   measured height, published by `LandingHeader`; the fallback is its height at
-   rest, for the moment before the observer runs. A constant here was five
-   pixels short at 1440 and eighteen behind at 1024, where the pill row wraps
-   and the bar is half again as tall. */
-.landing section { scroll-margin-top: calc(var(--lp-head, 69px) + 28px); }
+/* --- one section to a screen ---------------------------------------------
+   Following a nav entry lands on a section, and that section owns the screen:
+   nothing of the next one shows, so there is never a second section heading
+   under the header competing with the one you asked for.
+
+   `svh` rather than `vh` because on a phone `vh` is the viewport with the
+   browser chrome retracted -- a section sized in it is taller than the screen
+   the reader actually has, and the next heading creeps back in.
+
+   `min-height`, not `height`: a section with more content than fits simply
+   grows. Content sits at the TOP of the space, not centred in it -- centred,
+   a section scrolled to from the nav put four hundred pixels of nothing
+   between the header and the heading the reader had just asked for.
+
+   `--lp-head` is the header's measured height, published by `LandingHeader`;
+   the fallback is its height at rest, for the moment before the observer runs.
+   A constant was five pixels short at 1440 and eighteen behind at 1024, where
+   the pill row wraps and the bar is half again as tall. */
+.landing section {
+  scroll-margin-top: calc(var(--lp-head, 72px) + 36px);
+  min-height: calc(100svh - var(--lp-head, 72px) - 36px);
+  display: flex; flex-direction: column; justify-content: flex-start;
+  /* Sections settle on their own starts when a reader scrolls freely too --
+     proximity, not mandatory, so it assists the scroll rather than seizing
+     it. */
+  scroll-snap-align: start;
+}
+/* The hero sets its own two-column layout and the carousel its own height;
+   neither wants a flex column, and both already fill a screen. */
+.landing section.lp-hero { display: grid; }
+@media (max-width: 940px) { .landing section.lp-hero { display: grid; } }
+html { scroll-snap-type: y proximity; }
+@media (prefers-reduced-motion: reduce) { html { scroll-snap-type: none; } }
 
 /* --- the measured band -------------------------------------------------- */
 .lp-stats {

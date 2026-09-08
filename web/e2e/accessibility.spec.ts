@@ -170,7 +170,7 @@ test.describe("signed out", () => {
     await scanAnonymously(browser, "/signin", /A token identifies you/);
   });
 
-  test("following the landing nav never parks a section behind the header",
+  test("following the landing nav shows exactly one section, clear of the header",
        async ({ browser }) => {
     // Two ways this broke, both of which look like the page simply lost a
     // heading:
@@ -185,8 +185,8 @@ test.describe("signed out", () => {
     // Checked at more than one width because the first failure only appears at
     // one, and on the section's own <header> rather than the section box --
     // that is the element a reader loses.
-    for (const width of [1440, 1180] as const) {
-      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+    for (const [width, height] of [[1440, 900], [1180, 720]] as const) {
+      const ctx = await browser.newContext({ viewport: { width, height } });
       const page = await ctx.newPage();
       try {
         await page.goto("/");
@@ -203,6 +203,30 @@ test.describe("signed out", () => {
             const head = section.querySelector(".lp-sec-head") ?? section;
             return Math.round(head.getBoundingClientRect().top - header.bottom);
           }), `"${label}" at ${width}px sits behind the header`).toBeGreaterThan(0);
+
+          // And the header agrees with where the reader landed. The spy used
+          // to watch for a section crossing the middle of the viewport, so
+          // arriving at "How it works" lit "The four states" -- the nav and
+          // the heading directly under it saying different things.
+          await expect.poll(async () =>
+            page.locator(".lp-nav a.on").textContent(),
+          `"${label}" at ${width}px is not the entry the header lit`,
+          ).toBe(label);
+
+          // And it is the ONLY section heading in view. Sections are a screen
+          // tall so that following a nav entry hands the reader that section
+          // and nothing else; before that, arriving at one section showed the
+          // next one's heading in the same frame.
+          await expect.poll(async () => page.evaluate(() => {
+            const bottom = document.querySelector(".lp-topwrap")!
+              .getBoundingClientRect().bottom;
+            return [...document.querySelectorAll(".landing section .lp-sec-head")]
+              .filter((e) => {
+                const r = e.getBoundingClientRect();
+                return r.bottom > bottom && r.top < window.innerHeight - 2;
+              }).length;
+          }), `"${label}" at ${width}px shares the screen with another section`,
+          ).toBe(1);
         }
       } finally {
         await ctx.close();

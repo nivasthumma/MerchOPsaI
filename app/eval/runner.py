@@ -6,11 +6,9 @@ above all whether an external financial effect occurred. Never prose equality.
 """
 from __future__ import annotations
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import yaml
 from sqlalchemy import text
@@ -979,13 +977,6 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
     return res
 
 
-# A database this may drop and rebuild 167 times. The suffixes are the ones
-# `scripts/run_scenarios.py`, `tests/conftest.py` and `scripts/run_e2e.sh`
-# create for themselves; a name without one is somebody's working database
-# until proven otherwise.
-_DISPOSABLE = ("_eval", "_test", "_e2e", "_scratch")
-
-
 def _refuse_to_destroy_a_working_database(url: str) -> None:
     """`run_all` drops and recreates the schema once per scenario.
 
@@ -996,28 +987,21 @@ def _refuse_to_destroy_a_working_database(url: str) -> None:
     they were looking at 167 times in a row. Their open task became "Unknown
     task" with nothing connecting the two events.
 
-    `scripts/run_e2e.sh` has had its own database from the start, and says why
-    in a comment. The evaluation path never got the same treatment, and this is
-    the guard that makes the omission impossible to repeat: the entry point
-    picks a scratch database, and this refuses to run if something bypassed it.
-
-    Override with MERCHANTOPS_ALLOW_DESTRUCTIVE_EVAL=1 when the target really
-    is disposable and simply does not carry one of the usual suffixes.
+    The rule itself now lives in `scripts/dbutil`, shared with the seeder's
+    `--force` path. It was written here first and `make ci` promptly destroyed a
+    working database a different way, through `SEED_FORCE=1 make seed` -- the
+    same defect one target earlier, because the fix had been aimed at this
+    suite rather than at the class of "commands that drop a schema".
     """
-    if os.environ.get("MERCHANTOPS_ALLOW_DESTRUCTIVE_EVAL"):
-        return
-    name = urlsplit(url).path.lstrip("/")
-    if any(name.endswith(sfx) for sfx in _DISPOSABLE):
-        return
-    raise RuntimeError(
-        f"Refusing to run the evaluation suite against {name!r}: it drops and "
-        f"rebuilds the schema once per scenario, and that name does not end in "
-        f"any of {', '.join(_DISPOSABLE)}, so it looks like a working database "
-        f"rather than a scratch one.\n\n"
-        f"Use `make eval`, which points at {name}_eval and creates it on "
-        f"demand, or set EVAL_DATABASE_URL to a database you are willing to "
-        f"lose.\n\n"
-        f"Set MERCHANTOPS_ALLOW_DESTRUCTIVE_EVAL=1 if this really is disposable."
+    from scripts.dbutil import refuse_to_destroy_a_working_database
+
+    refuse_to_destroy_a_working_database(
+        url,
+        what="the evaluation suite drops and rebuilds the schema once per "
+             "scenario",
+        instead=("Use `make eval`, which points at a _eval sibling and creates "
+                 "it on demand, or set EVAL_DATABASE_URL to a database you are "
+                 "willing to lose."),
     )
 
 

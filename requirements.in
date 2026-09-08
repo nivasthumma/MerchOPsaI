@@ -15,17 +15,17 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 sqlalchemy==2.0.52
-alembic==1.19.1
+alembic==1.19.2
 psycopg2-binary==2.9.12
-pydantic==2.13.4
+pydantic==2.13.5
 pydantic-settings==2.15.0
-streamlit==1.62.0
+streamlit==1.63.0
 pytest==9.1.1
 pyyaml==6.0.3
 python-dotenv==1.2.3
-anthropic==1.0.0
+anthropic==1.4.0
 httpx==0.28.1
-redis==6.4.0
+redis==8.1.0
 
 # Personal data and the SSO client secret are encrypted at rest (ADR-0052).
 # A direct dependency since `app/crypto.py` imports it: it was present only

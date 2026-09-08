@@ -1658,6 +1658,45 @@
         "title": "EscalatedAction",
         "type": "object"
       },
+      "EvidenceRow": {
+        "additionalProperties": false,
+        "description": "One piece of evidence, as `app/tools/contracts.Evidence` produces it.\n\nDeclared because `evidence: list` -- a bare list -- says \"array of\nanything\" in the OpenAPI document, so a client generates `unknown[]` and\nthe compile-time contract check has nothing to check. `untrusted` in\nparticular is the \u00a736 injection tag, and a consumer that cannot see it in\nthe schema cannot be expected to honour it.\n\n`value` stays `Any` on purpose: it is a tool's finding, and a rate, a\ncount, an id and a free-text string are all legitimate. That is an open\nfield by nature rather than one nobody got round to.",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "untrusted": {
+            "default": false,
+            "title": "Untrusted",
+            "type": "boolean"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "key",
+          "source"
+        ],
+        "title": "EvidenceRow",
+        "type": "object"
+      },
       "FailureClassView": {
         "additionalProperties": false,
         "description": "MerchantOps \u00a756. A code says what broke; this says whether trying again\nis even the question.",
@@ -1682,7 +1721,10 @@
             "type": "string"
           },
           "evidence": {
-            "items": {},
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRow"
+            },
             "title": "Evidence",
             "type": "array"
           },
@@ -1716,7 +1758,6 @@
           "owning_subsystem",
           "recommended_next_action",
           "correlation_id",
-          "evidence",
           "is_classified"
         ],
         "title": "FailureClassView",
@@ -2195,8 +2236,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/EvidenceRow"
                 },
                 "type": "array"
               },
@@ -2307,8 +2347,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/TimelineEntry"
                 },
                 "type": "array"
               },
@@ -4524,6 +4563,159 @@
         "title": "TaskView",
         "type": "object"
       },
+      "TimelineDetail": {
+        "additionalProperties": false,
+        "description": "The keys an incident timeline entry may carry.\n\nA closed set, and not a guess at one: `app/api/main.py` filters the audit\npayload against exactly this list before it reaches the response. Declaring\nthe fields rather than the dict is what makes the OpenAPI document say what\na timeline entry can actually contain.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "intervention": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intervention"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          }
+        },
+        "title": "TimelineDetail",
+        "type": "object"
+      },
+      "TimelineEntry": {
+        "additionalProperties": false,
+        "description": "One row of an incident's timeline. Every entry is a recorded event with\nits own timestamp -- never an inferred step.\n\n`detail` was annotated `str | None` on the first attempt at typing this,\nand the suite failed immediately with\n`input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,\nand that is the argument for declaring these fields rather than leaving\nthem as `dict`: a wrong type fails loudly at the boundary, where an absent\none fails silently in a consumer.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "detail": {
+            "$ref": "#/components/schemas/TimelineDetail",
+            "default": {}
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "at",
+          "event"
+        ],
+        "title": "TimelineEntry",
+        "type": "object"
+      },
       "ToolCallView": {
         "additionalProperties": false,
         "properties": {
@@ -4569,7 +4761,9 @@
           },
           "evidence": {
             "default": [],
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/EvidenceRow"
+            },
             "title": "Evidence",
             "type": "array"
           },
@@ -4835,7 +5029,9 @@
           },
           "reverified": {
             "default": [],
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Reverified",
             "type": "array"
           },

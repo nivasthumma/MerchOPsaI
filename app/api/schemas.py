@@ -33,12 +33,46 @@ Audit payloads, tool arguments and tool output are JSON whose shape belongs to
 the event, not to this module. Those are typed `dict` rather than modelled, and
 the ones keyed by data (`{status: count}`) are `dict[str, int]`. Inventing a
 rigid schema for them would be precision this API does not actually have.
+
+## Where a `dict` survives, and why
+
+ADR-0032 replaced bare-dict ROUTES with response models. It did not reach
+inside them, and 31 fields stayed loosely typed. Two of those hid a real
+defect: `by_incident` and `by_method` were `list[dict]`, so money reached the
+wire as a string in the only two places on the ledger without a declared
+integer behind it.
+
+The rest were audited on 2026-09-08 and split three ways.
+
+**Typed, because the shape is knowable:** the evidence rows (`EvidenceRow`),
+the incident timeline (`TimelineEntry` / `TimelineDetail`, whose keys the API
+filters against a closed list before returning them), the ledger breakdowns
+(`IncidentExposure` / `MethodExposure`), and the bare `list`s that meant
+"array of anything" in the schema. Typing the timeline immediately caught a
+wrong guess -- `detail` is a dict, never a string -- which is the argument in
+miniature: a declared type fails at the boundary, an absent one fails in a
+consumer.
+
+**Open by nature, and left open deliberately:** `TraceEvent.payload` and
+`ActivityEvent.payload` (an audit payload's shape is the event's, and there are
+dozens), `ToolCallView.arguments` and `.data` (per-tool by design -- a refund
+result and a metrics read share nothing), `IncidentSummary.signals` (each
+detection rule emits its own, which is why §12 names the canonical four rather
+than a schema), `ScenarioView.expect` / `.setup` (scenario YAML), and
+`SavedView.filter`. Declaring these would mean inventing a union that grows
+with every new event, tool or rule, and a schema that lies about being closed
+is worse than one that admits it is open.
+
+**Empirically checked rather than reasoned about:** every GET endpoint was
+walked and scanned for a value that is a string but reads as a number -- the
+signature of the money bug. Zero across thirteen endpoints, so that class is
+closed rather than presumed closed.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.failures import Retryability
 from app.models import TaskStatus, VerificationState
@@ -67,6 +101,69 @@ class Contract(BaseModel):
 
 
 # ---------------------------------------------------------------- primitives
+class EvidenceRow(Contract):
+    """One piece of evidence, as `app/tools/contracts.Evidence` produces it.
+
+    Declared because `evidence: list` -- a bare list -- says "array of
+    anything" in the OpenAPI document, so a client generates `unknown[]` and
+    the compile-time contract check has nothing to check. `untrusted` in
+    particular is the §36 injection tag, and a consumer that cannot see it in
+    the schema cannot be expected to honour it.
+
+    `value` stays `Any` on purpose: it is a tool's finding, and a rate, a
+    count, an id and a free-text string are all legitimate. That is an open
+    field by nature rather than one nobody got round to.
+    """
+    key: str
+    value: Any = None
+    source: str
+    untrusted: bool = False
+    id: str | None = None
+
+
+class TimelineDetail(Contract):
+    """The keys an incident timeline entry may carry.
+
+    A closed set, and not a guess at one: `app/api/main.py` filters the audit
+    payload against exactly this list before it reaches the response. Declaring
+    the fields rather than the dict is what makes the OpenAPI document say what
+    a timeline entry can actually contain.
+    """
+    at: str | None = None
+    to: str | None = None
+    reason: str | None = None
+    decision: str | None = None
+    rule: str | None = None
+    plan_id: str | None = None
+    intervention: str | None = None
+    state: str | None = None
+    status: str | None = None
+    # `from` is a Python keyword, so the field is named for the wire and
+    # accessed through the alias. Renaming the wire key instead would change
+    # the contract to suit the implementation language.
+    from_: str | None = Field(default=None, alias="from")
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True,
+                              serialize_by_alias=True)
+
+
+class TimelineEntry(Contract):
+    """One row of an incident's timeline. Every entry is a recorded event with
+    its own timestamp -- never an inferred step.
+
+    `detail` was annotated `str | None` on the first attempt at typing this,
+    and the suite failed immediately with
+    `input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,
+    and that is the argument for declaring these fields rather than leaving
+    them as `dict`: a wrong type fails loudly at the boundary, where an absent
+    one fails silently in a consumer.
+    """
+    at: str
+    event: str
+    detail: TimelineDetail = TimelineDetail()
+    task_id: str | None = None
+
+
 class FailureClassView(Contract):
     """MerchantOps §56. A code says what broke; this says whether trying again
     is even the question."""
@@ -76,7 +173,7 @@ class FailureClassView(Contract):
     owning_subsystem: str
     recommended_next_action: str
     correlation_id: str | None
-    evidence: list
+    evidence: list[EvidenceRow] = []
     is_classified: bool
 
 
@@ -232,7 +329,10 @@ class ToolCallView(Contract):
     risk_level: str | None = None
     policy_decision: str | None = None
     duration_ms: int | None = None
-    evidence: list = []
+    evidence: list[EvidenceRow] = []
+    # A tool's own normalised output. Shape is per-tool by design -- a
+    # refund result and a metrics read have nothing in common -- so this
+    # stays open, and says so rather than looking unfinished.
     data: dict = {}
 
 
@@ -693,9 +793,9 @@ class IncidentSummary(Contract):
     resolved_at: str | None = None
     # Detail only.
     signals: dict | None = None
-    evidence: list[dict] | None = None
+    evidence: list[EvidenceRow] | None = None
     recovery: PlanView | None = None
-    timeline: list[dict] | None = None
+    timeline: list[TimelineEntry] | None = None
     tasks: list[dict] | None = None
     # The financial actions this incident produced — plan P0-07's last four
     # stages. Same row shape the Action Center serves, so the incident page and
@@ -940,7 +1040,7 @@ class WebhookAck(Contract):
     event_id: str | None = None
     stored_id: str | None = None
     note: str | None = None
-    reverified: list = []
+    reverified: list[str] = []
     incident_id: str | None = None
 
 

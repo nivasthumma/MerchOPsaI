@@ -1540,6 +1540,35 @@ export interface components {
             verify_attempts: number;
         };
         /**
+         * EvidenceRow
+         * @description One piece of evidence, as `app/tools/contracts.Evidence` produces it.
+         *
+         *     Declared because `evidence: list` -- a bare list -- says "array of
+         *     anything" in the OpenAPI document, so a client generates `unknown[]` and
+         *     the compile-time contract check has nothing to check. `untrusted` in
+         *     particular is the §36 injection tag, and a consumer that cannot see it in
+         *     the schema cannot be expected to honour it.
+         *
+         *     `value` stays `Any` on purpose: it is a tool's finding, and a rate, a
+         *     count, an id and a free-text string are all legitimate. That is an open
+         *     field by nature rather than one nobody got round to.
+         */
+        EvidenceRow: {
+            /** Id */
+            id?: string | null;
+            /** Key */
+            key: string;
+            /** Source */
+            source: string;
+            /**
+             * Untrusted
+             * @default false
+             */
+            untrusted: boolean;
+            /** Value */
+            value?: unknown;
+        };
+        /**
          * FailureClassView
          * @description MerchantOps §56. A code says what broke; this says whether trying again
          *     is even the question.
@@ -1551,8 +1580,11 @@ export interface components {
             correlation_id: string | null;
             /** Error Code */
             error_code: string;
-            /** Evidence */
-            evidence: unknown[];
+            /**
+             * Evidence
+             * @default []
+             */
+            evidence: components["schemas"]["EvidenceRow"][];
             /** Is Classified */
             is_classified: boolean;
             /** Owning Subsystem */
@@ -1761,9 +1793,7 @@ export interface components {
             /** Detection Version */
             detection_version?: string | null;
             /** Evidence */
-            evidence?: {
-                [key: string]: unknown;
-            }[] | null;
+            evidence?: components["schemas"]["EvidenceRow"][] | null;
             /** Id */
             id: string;
             /** Legal Transitions */
@@ -1792,9 +1822,7 @@ export interface components {
                 [key: string]: unknown;
             }[] | null;
             /** Timeline */
-            timeline?: {
-                [key: string]: unknown;
-            }[] | null;
+            timeline?: components["schemas"]["TimelineEntry"][] | null;
             /** Title */
             title: string;
             /** Type */
@@ -2510,6 +2538,59 @@ export interface components {
             user_id: string;
             versions: components["schemas"]["RunVersions"];
         };
+        /**
+         * TimelineDetail
+         * @description The keys an incident timeline entry may carry.
+         *
+         *     A closed set, and not a guess at one: `app/api/main.py` filters the audit
+         *     payload against exactly this list before it reaches the response. Declaring
+         *     the fields rather than the dict is what makes the OpenAPI document say what
+         *     a timeline entry can actually contain.
+         */
+        TimelineDetail: {
+            /** At */
+            at?: string | null;
+            /** Decision */
+            decision?: string | null;
+            /** From */
+            from?: string | null;
+            /** Intervention */
+            intervention?: string | null;
+            /** Plan Id */
+            plan_id?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Rule */
+            rule?: string | null;
+            /** State */
+            state?: string | null;
+            /** Status */
+            status?: string | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * TimelineEntry
+         * @description One row of an incident's timeline. Every entry is a recorded event with
+         *     its own timestamp -- never an inferred step.
+         *
+         *     `detail` was annotated `str | None` on the first attempt at typing this,
+         *     and the suite failed immediately with
+         *     `input: {'rule': 'success_rate_below_baseline'}`. It is a dict, always,
+         *     and that is the argument for declaring these fields rather than leaving
+         *     them as `dict`: a wrong type fails loudly at the boundary, where an absent
+         *     one fails silently in a consumer.
+         */
+        TimelineEntry: {
+            /** At */
+            at: string;
+            /** @default {} */
+            detail: components["schemas"]["TimelineDetail"];
+            /** Event */
+            event: string;
+            /** Task Id */
+            task_id?: string | null;
+        };
         /** ToolCallView */
         ToolCallView: {
             /** Arguments */
@@ -2531,7 +2612,7 @@ export interface components {
              * Evidence
              * @default []
              */
-            evidence: unknown[];
+            evidence: components["schemas"]["EvidenceRow"][];
             /** Id */
             id: string;
             /** Policy Decision */
@@ -2623,7 +2704,7 @@ export interface components {
              * Reverified
              * @default []
              */
-            reverified: unknown[];
+            reverified: string[];
             /** Status */
             status: string;
             /** Stored Id */

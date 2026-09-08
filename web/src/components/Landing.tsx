@@ -15,6 +15,7 @@
  *  worth its weight and this is the note that says so.
  */
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 /** Reveal children as they arrive, once.
  *
@@ -134,5 +135,215 @@ export function ScreenCarousel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- diagrams
+ *
+ * Drawn rather than described, because each of these says something a
+ * paragraph has to spend a sentence on: that the ladder is a sequence with one
+ * step that counts, and that the four states are two verified answers, one
+ * partial, and one that is not an answer at all.
+ *
+ * Inline SVG, no library. Every shape carries an explicit fill, colours come
+ * from the same tokens as the rest of the page so they hold in both themes,
+ * and the viewBox leaves room for the strokes so nothing clips at the edges.
+ * Each is `aria-hidden`: the heading and the copy beside it already say this
+ * in words, and a screen reader should not hear it twice.
+ */
+
+/** The ladder: three claims and one piece of evidence. */
+export function LadderMark({ step }: { step: 1 | 2 | 3 | 4 }) {
+  const done = step === 4;
+  return (
+    <svg viewBox="0 0 44 44" width="40" height="40" aria-hidden="true"
+         className={`lp-mark ${done ? "is-evidence" : ""}`}>
+      <rect x="1.5" y="1.5" width="41" height="41" rx="11"
+            fill="var(--surface-2)" stroke="var(--border)" />
+      {/* Rungs fill up to the current step, so the four marks read as a
+          sequence when they sit side by side. */}
+      {[0, 1, 2, 3].map((n) => (
+        <rect key={n} x={11} y={30 - n * 6} width={22} height={3} rx={1.5}
+              fill={n < step ? (done ? "var(--ok)" : "var(--text-dim)")
+                             : "var(--border-strong)"} />
+      ))}
+      {done ? (
+        <path d="M15 15.5l4.2 4.2 8-8.4" fill="none" stroke="var(--ok)"
+              strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      ) : null}
+    </svg>
+  );
+}
+
+/** The four states, each drawn as what it means rather than as a letter. */
+export function StateMark({ kind }: { kind: "ok" | "failed" | "partial" | "unknown" }) {
+  const stroke = {
+    ok: "var(--ok)", failed: "var(--danger)",
+    partial: "var(--warn)", unknown: "var(--unknown)",
+  }[kind];
+  return (
+    <svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true" className="lp-state-mark">
+      <circle cx="20" cy="20" r="17" fill="none" stroke={stroke}
+              strokeWidth="1.6" opacity="0.45"
+              /* UNKNOWN is the only one whose ring is broken: the outcome was
+                 never closed, and the shape says so before the label does. */
+              strokeDasharray={kind === "unknown" ? "4 5" : undefined} />
+      {kind === "ok" ? (
+        <path d="M13 20.5l4.6 4.6 9.4-9.8" fill="none" stroke={stroke}
+              strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      ) : null}
+      {kind === "failed" ? (
+        <path d="M14 14l12 12M26 14L14 26" fill="none" stroke={stroke}
+              strokeWidth="2.6" strokeLinecap="round" />
+      ) : null}
+      {kind === "partial" ? (
+        /* Half filled, to the extent the provider actually reflected. */
+        <path d="M20 5.5a14.5 14.5 0 0 0 0 29z" fill={stroke} opacity="0.9" />
+      ) : null}
+      {kind === "unknown" ? (
+        <text x="20" y="26" textAnchor="middle" fill={stroke}
+              fontSize="17" fontWeight="700" fontFamily="var(--display)">?</text>
+      ) : null}
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ header
+ *
+ * The section list used to sit at the foot, on the reasoning that a table of
+ * contents competes with the one thing a visitor came to do. That was half
+ * right: a list of links does. An indicator that follows the reader down the
+ * page is not a list of links -- it is the page saying where you are, which is
+ * the one thing a long single-scroll page cannot otherwise tell you.
+ */
+
+export const SECTIONS = [
+  { id: "console", label: "The console" },
+  { id: "problem", label: "The problem" },
+  { id: "ladder", label: "How it works" },
+  { id: "states", label: "The four states" },
+  { id: "measured", label: "Measured" },
+  { id: "limits", label: "Not claimed" },
+] as const;
+
+/** Every section opens the same way: what it is, what it says, and why.
+ *
+ *  The kicker is not decoration -- it is the label that section carries in the
+ *  header, so a reader who followed "How it works" lands on a block that says
+ *  "How it works" back to them. Without it each section opened on a sentence
+ *  in display type with nothing naming it, and a page of six of those reads as
+ *  six unrelated statements rather than one argument.
+ */
+export function SectionHead(
+  { kicker, title, children }:
+  { kicker: string; title: ReactNode; children?: ReactNode },
+) {
+  return (
+    <header className="lp-sec-head">
+      <p className="lp-kicker">{kicker}</p>
+      <h3 className="lp-h2">{title}</h3>
+      {children ? <p className="lp-lede">{children}</p> : null}
+    </header>
+  );
+}
+
+/** Which section the reader is actually looking at.
+ *
+ *  The band is the middle of the viewport rather than the top: a heading that
+ *  has only just crossed the top edge is not what somebody is reading, and a
+ *  spy anchored there lights the next section up while the previous one still
+ *  fills the screen.
+ */
+export function useActiveSection(ids: readonly string[]) {
+  const [active, setActive] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const seen = new Map<string, boolean>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) seen.set(e.target.id, e.isIntersecting);
+        // First in document order wins, so scrolling up lands on the section
+        // whose top is nearest rather than on whichever fired last.
+        setActive(ids.find((id) => seen.get(id)) ?? null);
+      },
+      { rootMargin: "-45% 0px -50% 0px" },
+    );
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) io.observe(el);
+    }
+    return () => io.disconnect();
+  }, [ids]);
+  return active;
+}
+
+/** True once the page has moved at all. */
+function useScrolled() {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 8);
+    on();
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  return scrolled;
+}
+
+/** The landing page's header: brand, the section spy, and the way in.
+ *
+ *  Full width rather than on the page's measure, because a bar that stops
+ *  short of the window edge reads as a floating panel that happens to be at
+ *  the top, not as the page's header.
+ */
+export function LandingHeader({ tools }: { tools: ReactNode }) {
+  const active = useActiveSection(SECTIONS.map((s) => s.id));
+  const scrolled = useScrolled();
+  const navRef = useRef<HTMLElement | null>(null);
+  const [ind, setInd] = useState<{ x: number; w: number } | null>(null);
+
+  // The pill slides between links instead of each link painting its own. One
+  // moving object is legible; five fading in and out is a flicker. Measured
+  // from layout, so it survives the labels changing length or wrapping.
+  useEffect(() => {
+    const nav = navRef.current;
+    const on = nav?.querySelector<HTMLElement>("a.on");
+    if (!nav || !on) return setInd(null);
+    const a = on.getBoundingClientRect();
+    const b = nav.getBoundingClientRect();
+    if (a.width === 0) return setInd(null);
+    setInd({ x: a.left - b.left, w: a.width });
+  }, [active]);
+
+  return (
+    <header className={`lp-topwrap${scrolled ? " is-stuck" : ""}`}>
+      <div className="lp-top">
+        <a className="lp-brand" href="#top">
+          <span aria-hidden="true">◨</span> MerchantOps
+        </a>
+
+        <nav
+          className="lp-nav" aria-label="On this page" ref={navRef}
+          style={ind
+            ? ({ "--ind-x": `${ind.x}px`, "--ind-w": `${ind.w}px` } as CSSProperties)
+            : undefined}
+          data-ind={ind ? "on" : undefined}
+        >
+          {SECTIONS.map((s) => (
+            <a
+              key={s.id} href={`#${s.id}`} className={active === s.id ? "on" : ""}
+              aria-current={active === s.id ? "true" : undefined}
+            >
+              {s.label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="lp-tools">{tools}</div>
+      </div>
+      {/* How far down the page the reader is. Driven by the scroller itself
+          where the browser supports it, and simply absent where it does not --
+          a progress bar is worth no JavaScript on a scroll handler. */}
+      <span className="lp-progress" aria-hidden="true" />
+    </header>
   );
 }

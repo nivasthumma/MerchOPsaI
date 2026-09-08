@@ -3,9 +3,12 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, getToken, isDemoSession, setToken } from "./api/client";
 import type { Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
-import { LadderMark, ScreenCarousel, StateMark, useReveal } from "./components/Landing";
-import { CommandPalette } from "./components/CommandPalette";
+import {
+  LadderMark, LandingHeader, ScreenCarousel, SECTIONS, SectionHead, StateMark,
+  useReveal,
+} from "./components/Landing";
 import { ThemeToggle } from "./components/Theme";
+import { CommandPalette } from "./components/CommandPalette";
 import { ToastHost } from "./components/Toast";
 import { readRecent, subscribeRecent, forgetRecent, type RecentTask } from "./recent";
 
@@ -402,6 +405,7 @@ function Mark() {
 
 /** The public page. Explains the product and points at the way in. */
 function Landing({ health }: { health: Health | null }) {
+  const rShots = useReveal<HTMLElement>();
   const rProblem = useReveal<HTMLElement>();
   const rLadder = useReveal<HTMLElement>();
   const rStates = useReveal<HTMLElement>();
@@ -413,18 +417,19 @@ function Landing({ health }: { health: Health | null }) {
   // token panel stays in the document rather than behind a route, so the "Sign
   // in" control is a scroll and not a navigation -- one page, one address.
   return (
-    <div className="landing">
-      {/* The page's own header. Named for the sections it leads to, which are
-          the content's headings rather than invented labels. */}
-      {/* Brand and the way in, and nothing else. The section list that used to
-          sit here was a table of contents for a page you can see all of by
-          scrolling -- six links competing with the one thing a visitor is
-          here to do. It moves to the foot, where a reader who has read the
-          page and wants to go back to a part of it will look for it. */}
-      <header className="lp-top">
-        <p className="lp-brand"><span aria-hidden="true">◨</span> MerchantOps</p>
+    <div className="landing" id="top">
+      {/* The section list is back at the top, where a reader who is halfway
+          down a long page can see it. It is not the list of links it was: the
+          pill follows the section actually on screen, so the header answers
+          "where am I" rather than only "where can I go". */}
+      <LandingHeader tools={<>
+        {/* The page follows the viewer's system theme and this overrides it.
+            It belongs here rather than only inside the console: somebody
+            deciding whether they trust a financial tool should not have to
+            sign in first to read it on the ground they prefer. */}
+        <ThemeToggle />
         <Link className="lp-btn sm" to="/signin">Sign in</Link>
-      </header>
+      </>} />
 
       {/* Under the header and on the page's own measure, not floated above it.
           This is the disclosure that execution is mocked, that the planner is
@@ -433,7 +438,7 @@ function Landing({ health }: { health: Health | null }) {
           it -- but it is part of the page, not a bar bolted to the top of it. */}
       <RunNotices health={health} />
 
-      <section className="lp-hero">
+      <section className="lp-hero is-entering">
         <div className="lp-hero-copy">
           <p className="lp-eyebrow">Payments control plane</p>
           <h2 className="lp-h1">
@@ -497,18 +502,22 @@ function Landing({ health }: { health: Health | null }) {
         </div>
       </section>
 
-      <section className="lp-shots" aria-label="The console">
+      <section className="lp-shots" id="console" ref={rShots}>
+        <SectionHead kicker="The console" title="Four screens, as they actually render">
+          Real screenshots of the running application against seeded data, not
+          mockups. Everything below is what an operator sees after signing in.
+        </SectionHead>
         <ScreenCarousel />
       </section>
 
       <section id="problem" ref={rProblem}>
-        <h3 className="lp-h2">The provider accepting is not the money moving</h3>
-        <p className="lp-lede">
+        <SectionHead kicker="The problem"
+                     title="The provider accepting is not the money moving">
           A refund call returns <code>200 OK</code> with a refund id. Most
           systems record that as done. It is not done — it is <b>submitted</b>.
           A provider can accept a request and apply less than was asked, or
           nothing at all, and the response looks identical either way.
-        </p>
+        </SectionHead>
         <p className="lp-lede">
           Worse is when the response never arrives. A system that guesses there
           either refunds twice, or tells a merchant their customer was paid
@@ -517,12 +526,12 @@ function Landing({ health }: { health: Health | null }) {
       </section>
 
       <section id="ladder" ref={rLadder}>
-        <h3 className="lp-h2">Four steps, and only the last one is evidence</h3>
-        <p className="lp-lede">
+        <SectionHead kicker="How it works"
+                     title="Four steps, and only the last one is evidence">
           Nothing is recorded as done until the provider has been read back
           independently. The first three are claims.
-        </p>
-        <div className="lp-cards">
+        </SectionHead>
+        <div className="lp-cards is-stagger">
           <div className="lp-card lp-card-mark">
             <LadderMark step={1} />
             <div><h4>01 · PROPOSED</h4>
@@ -547,12 +556,12 @@ function Landing({ health }: { health: Health | null }) {
       </section>
 
       <section className="lp-states" id="states" ref={rStates}>
-        <h3 className="lp-h2">Uncertainty is a state, not an error</h3>
-        <p className="lp-lede">
+        <SectionHead kicker="The four states"
+                     title="Uncertainty is a state, not an error">
           Reading the provider back gives one of four answers, and the fourth is
           the one the rest of the system is built around.
-        </p>
-        <div className="lp-cards">
+        </SectionHead>
+        <div className="lp-cards is-stagger">
           <div className="lp-card c-ok"><StateMark kind="ok" /><h4>SUCCESS</h4>
             <p>Verified at the provider. The money moved.</p></div>
           <div className="lp-card c-failed"><StateMark kind="failed" /><h4>FAILED</h4>
@@ -566,29 +575,28 @@ function Landing({ health }: { health: Health | null }) {
       </section>
 
       <section id="measured" ref={rMeasured}>
-        <h3 className="lp-h2">Numbers the repository can reproduce</h3>
-        <p className="lp-lede">
+        <SectionHead kicker="Measured"
+                     title="Numbers the repository can reproduce">
           Every figure comes from a command, and a check in CI fails the build
           when the documentation and the tree disagree about any of them.
-        </p>
-        <div className="lp-stats">
+        </SectionHead>
+        <div className="lp-stats is-stagger">
           <div><b>167<i>/167</i></b><span>Scenarios</span>
             <em>110 of them critical</em></div>
           <div><b>88<i>/88</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>932</b><span>Automated tests</span>
-            <em>627 backend · 305 frontend</em></div>
+          <div><b>933</b><span>Automated tests</span>
+            <em>627 backend · 306 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
       </section>
 
       <section id="limits" ref={rLimits}>
-        <h3 className="lp-h2">What this does not do</h3>
-        <p className="lp-lede">
+        <SectionHead kicker="Not claimed" title="What this does not do">
           A page that lists only strengths is marketing. These are the limits,
-          in the repository's own words.
-        </p>
+          in the repository&apos;s own words.
+        </SectionHead>
         <ul className="lp-limits">
           {/* Deliberately does not restate the banner above, which already
               says execution is mocked and that the controls around it are
@@ -609,12 +617,13 @@ function Landing({ health }: { health: Health | null }) {
       </section>
 
       <footer className="lp-foot">
-        <nav className="lp-foot-nav" aria-label="On this page">
-          <a href="#problem">The problem</a>
-          <a href="#ladder">How it works</a>
-          <a href="#states">The four states</a>
-          <a href="#measured">Measured</a>
-          <a href="#limits">Not claimed</a>
+        {/* The same list the header carries, from the same source — two
+            hand-written copies of a page's own contents drift, and the one at
+            the foot is the copy nobody notices has. */}
+        <nav className="lp-foot-nav" aria-label="Back to a section">
+          {SECTIONS.map((sec) => (
+            <a key={sec.id} href={`#${sec.id}`}>{sec.label}</a>
+          ))}
         </nav>
         <p className="lp-foot-note">
           Synthetic data throughout. Not affiliated with Razorpay.

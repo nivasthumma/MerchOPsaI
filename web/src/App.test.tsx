@@ -2,7 +2,7 @@
 // A demo that quietly executes against a mock, or an API signing tokens with a
 // development secret, must be visible without being looked for.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -123,6 +123,27 @@ describe("token gate", () => {
     expect(screen.queryByLabelText(/Mint one with/)).toBeNull();
     expect(screen.getAllByRole("link", { name: /Sign in/ }).length)
       .toBeGreaterThan(0);
+  });
+
+  it("gives every landing section a heading and a header link that reaches it", async () => {
+    // Two failures this catches, both silent in a browser: a nav entry whose
+    // target id was renamed or removed, which scrolls nowhere; and a section
+    // that opens straight into display type with nothing naming it, which is
+    // what the page looked like before every block got a kicker.
+    health.mockResolvedValue(OK);
+    renderApp();
+    const nav = await screen.findByRole("navigation", { name: "On this page" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.length).toBeGreaterThan(4);
+
+    for (const link of links) {
+      const id = link.getAttribute("href")!.replace("#", "");
+      const section = document.getElementById(id);
+      expect(section, `no section with id "${id}"`).not.toBeNull();
+      // The label in the header is the label at the top of the section.
+      expect(within(section!).getByText(link.textContent!)).toBeInTheDocument();
+      expect(within(section!).getByRole("heading", { level: 3 })).toBeInTheDocument();
+    }
   });
 
   it("renders the route once a token is supplied, and forgets it on sign-out", async () => {

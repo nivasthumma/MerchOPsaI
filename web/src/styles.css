@@ -1883,6 +1883,16 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 .lp-card.c-partial h4 { color: var(--warn-ink); }
 .lp-card.c-unknown { border-left-color: var(--unknown); background: var(--unknown-soft); }
 .lp-card.c-unknown h4 { color: var(--unknown); }
+/* This is the one card with a tinted ground, and `--text-dim` is calibrated
+   against the page background rather than against a tint: on `--unknown-soft`
+   it lands at 4.19:1, under the 4.5:1 this 10px label needs. `--text-dim-on-tint`
+   exists for exactly this and gives 6.21:1. In dark the two tokens are the same
+   value, so this changes nothing there -- it was already 5.22:1.
+
+   Found by the axe scan only after the scan started measuring a settled page;
+   while the hero was still fading in, every element under it was composited and
+   the real finding was buried under a false one. */
+.lp-card.c-unknown .lp-card-row > span { color: var(--text-dim-on-tint); }
 
 /* --- landing: motion ------------------------------------------------------
    Transform and opacity only, which are the two properties a browser animates

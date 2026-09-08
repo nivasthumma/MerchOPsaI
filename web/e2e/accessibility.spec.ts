@@ -64,7 +64,10 @@ async function scan(page: Page, label: string) {
  *  does not depend on the toggle working. */
 async function inBothThemes(page: Page, url: string, ready: RegExp | string) {
   for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
+    // `reducedMotion` for the same reason as `scanAnonymously` below: a scan
+    // that lands mid-animation measures a blended colour rather than the one
+    // the palette defines.
+    await page.emulateMedia({ colorScheme: scheme, reducedMotion: "reduce" });
     await page.goto(url);
     await expect(page.getByText(ready).first()).toBeVisible();
     await scan(page, `${url} (${scheme})`);
@@ -148,7 +151,20 @@ test("a failure state stays readable", async ({ page }) => {
 test.describe("signed out", () => {
   async function scanAnonymously(browser: Browser, url: string, ready: RegExp) {
     for (const scheme of ["light", "dark"] as const) {
-      const ctx = await browser.newContext({ colorScheme: scheme });
+      // Animations neutralised, which is a real user setting this stylesheet
+      // already honours -- not a test convenience.
+      //
+      // Without it the landing page fails contrast in dark, and the finding is
+      // an artefact of WHEN the scan runs. `.lp-panel` enters on `lpRise`, an
+      // opacity 0 -> 1 rise that is still at 0.957 more than a second in, so
+      // axe composites the text against a partly transparent panel and reports
+      // 3.86:1 for `.lp-panel-top`. Measured settled, the same element is
+      // `--text-dim` #7b8f86 on `--surface-2` #0f1815 -- 5.26:1, which passes.
+      //
+      // Darkening a token to satisfy that would have been fixing the palette to
+      // match a measurement taken while the page was still fading in.
+      const ctx = await browser.newContext({
+        colorScheme: scheme, reducedMotion: "reduce" });
       const page = await ctx.newPage();
       try {
         await page.goto(url);

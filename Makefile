@@ -99,6 +99,10 @@ cleanroom:  ; @$(PY) scripts/check_cleanroom.py
 # line disagreed with another in the same file -- so the drift had been there
 # long enough for a second number to be written beside the first.
 counts:     ; @$(PY) scripts/check_counts.py
+# Does the evaluation suite assert what it appears to? A mistyped expect
+# key is silently dropped, and the scenario still passes -- contributing
+# to the 167/167 this repository publishes.
+scenarios:  ; @$(PY) scripts/check_scenarios.py
 # The fast pre-push subset, NOT everything CI runs -- the workflow also does
 # migrations against an unstamped database, the OpenAPI contract checks, the
 # frontend lint/typecheck/test/audit, the browser journeys, the dependency
@@ -127,6 +131,7 @@ ci:
 	$(MAKE) lint-sh
 	$(MAKE) cleanroom
 	$(MAKE) test
+	$(MAKE) scenarios
 	DATABASE_URL=$(CI_DB) $(MAKE) counts
 	DATABASE_URL=$(CI_DB) $(MAKE) eval
 demo: seed  ; $(PY) scripts/demo.py

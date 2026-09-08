@@ -466,6 +466,19 @@ jobs:
             || { echo "::error::Seed is not deterministic — evaluation cannot be reproducible."; exit 1; }
           echo "Seed reproduces byte-identically."
 
+      - name: The suite asserts what it appears to
+        # Before running it, because a green 167/167 from scenarios that grade
+        # nothing is the most expensive kind of wrong. Four ways that happens
+        # and none is visible in the result: a mistyped `expect` key silently
+        # dropped, a field declared on `Expect` that `runner.py` never reads,
+        # an empty `expect`, and two scenarios sharing an id.
+        #
+        # `Expect` inherits pydantic's `extra="ignore"`, which is what makes
+        # the first one possible. `app/api/schemas.py` solved exactly that for
+        # responses with `extra="forbid"`; the evaluation schema never got the
+        # same treatment.
+        run: python scripts/check_scenarios.py
+
       - name: Run evaluation suite
         run: python scripts/run_scenarios.py
 

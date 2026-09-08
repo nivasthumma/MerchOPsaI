@@ -80,6 +80,9 @@ mutants-web: ; $(PY) scripts/mutation_test_web.py
 mutants-status: ; @$(PY) scripts/check_no_mutants.py --status
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
+# The restore drill: dump a migrated database, restore it, and prove what came
+# back. Runs in the suite too -- this is the way to run just it.
+dr-drill:   ; PYTHONPATH=. $(PY) -m pytest tests/integration/test_disaster_recovery.py -q
 # Bring a real database to the current schema. Handles the three states a
 # database can be in -- empty, existing-but-unstamped, already stamped -- which
 # a bare `alembic upgrade head` does not. See ADR-0030.
@@ -228,4 +231,5 @@ serve: web-build
         worker worker-once image up down clean logs ps seed-docker mutants compare harden token ci demo \
         lint lint-fix audit cleanroom \
         migrate migrate-status migrate-sql migration openapi openapi-check \
+        dr-drill \
         web-setup web web-build web-test serve

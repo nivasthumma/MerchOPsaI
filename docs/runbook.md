@@ -160,10 +160,48 @@ enforced by a PostgreSQL trigger, and it is the evidence that an action was
 authorised. Business data can in principle be re-derived from the provider;
 the record of *who approved what* cannot.
 
+**And `ENCRYPTION_KEY`, which is not in the dump.** Since ADR-0052 the customer
+names, addresses and the SSO client secret are ciphertext at rest. A backup
+taken faithfully every night and stored perfectly is **unrecoverable** without
+the key that reads it — and nothing about the database will say so until
+somebody tries to read a name. Store it somewhere the database backup is not,
+record which key each dump needs, and treat losing it exactly as seriously as
+losing the dump. `ENCRYPTION_KEY_PREVIOUS` must be retained for as long as any
+backup written under the old key is still within its retention window.
+
 ### Taking a backup
 
 ```bash
-pg_dump --format=custom --file=merchantops-$(date -u +%Y%m%dT%H%M%SZ).dump merchantops
+pg_dump --enable-row-security \
+  --format=custom --file=merchantops-$(date -u +%Y%m%dT%H%M%SZ).dump merchantops
+```
+
+`--enable-row-security` is not optional, and it is not the real answer either.
+
+Twenty-odd tables carry `FORCE ROW LEVEL SECURITY` since `f692a958917d`, and
+`pg_dump` **refuses outright** on them without it:
+
+```
+ERROR:  query would be affected by row-level security policy for table "agent_actions"
+```
+
+The command above without the flag is what this runbook used to say, and it
+stopped working on 2026-09-05 — the day after the procedure was rehearsed by
+hand, and it went unnoticed until the drill below was automated.
+
+The flag makes the dump succeed, and that is the part to be careful about:
+under RLS a dump contains **what the dumping role can see**. It is complete here
+only because `app.tenancy` lets an unbound session read everything, which that
+module states as a deliberate choice — and names fail-closed as a worthwhile
+next step. Take that step with this flag in place and every backup silently
+becomes empty: it will restore without a murmur and hold nothing.
+
+**In production, back up with a role that has `BYPASSRLS`.** Then the dump does
+not depend on how a policy happens to treat an unbound session:
+
+```sql
+CREATE ROLE merchantops_backup LOGIN BYPASSRLS PASSWORD '…';
+GRANT pg_read_all_data TO merchantops_backup;
 ```
 
 ### Restoring, and the step people skip
@@ -192,11 +230,20 @@ are stated as what the current architecture actually supports:
 | **RPO** | = backup interval | No replication, no WAL archiving. With nightly dumps you lose up to a day. |
 | **RTO** | restore time + verify | Single instance, no standby. Rehearsed on the seeded dataset (96 KB dump) in under a second; **not** timed against a production-sized one. Do that before quoting a number to anybody. |
 
-The procedure above was rehearsed on 2026-09-04, not just written: dump,
-restore into a fresh database, confirm `audit_no_update` and `audit_no_delete`
-survived `pg_restore`, then `make harden` to prove both are refused. They were.
-That tells you the shape of the procedure is right. It does not tell you what it
-costs at scale, which is the number an RTO actually needs.
+The procedure above was rehearsed by hand on 2026-09-04, and RLS broke it on
+2026-09-05. A rehearsal is a date in a document: it says the shape was right
+once, and it cannot notice the day a schema change breaks it.
+
+So it runs every build now. `tests/integration/test_disaster_recovery.py`
+migrates a database, seeds it, dumps it, restores it, and asserts what a restore
+can silently lose — every row, the append-only triggers *and that they are still
+enforced*, the ciphertext, and the schema revision. It also asserts that a
+restore performed without `ENCRYPTION_KEY` cannot read personal data, so the
+warning above is backed by something that fails.
+
+That tells you the shape of the procedure is right, and keeps telling you. It
+does not tell you what it costs at scale, which is the number an RTO actually
+needs.
 
 Both are worse than a payments system should accept. Closing them means
 streaming replication and point-in-time recovery, which is real infrastructure

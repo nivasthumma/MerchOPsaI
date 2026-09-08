@@ -63,6 +63,25 @@ export default function App() {
     setDraft("");
   }
 
+  // Signed out, this is a public landing page and nothing else: no operations
+  // header, no navigation to screens that need a token, no "execution is
+  // mocked" strip. Carrying the console's chrome onto a page whose only job is
+  // to explain the product and let someone in made it read as an app that had
+  // failed to load rather than as a front door.
+  //
+  // Same address and same port either way -- `/` is the landing until a token
+  // exists and the Command Center after it.
+  if (!token) {
+    return (
+      <ToastHost>
+        <a className="skip" href="#main">Skip to content</a>
+        <main className="landing-page" id="main">
+          <SignIn draft={draft} setDraft={setDraft} save={save} health={health} />
+        </main>
+      </ToastHost>
+    );
+  }
+
   return (
     <ToastHost>
       {/* Keyboard users should not have to tab through the header on every
@@ -121,9 +140,7 @@ export default function App() {
               entrance animation actually runs. Under prefers-reduced-motion the
               animation is neutralised in CSS; the key change is harmless. */}
           <div className="route" key={location.pathname}>
-            {token
-              ? <Outlet context={{ me, health, onHealth: setHealth }} />
-              : <SignIn draft={draft} setDraft={setDraft} save={save} />}
+            <Outlet context={{ me, health, onHealth: setHealth }} />
           </div>
         </main>
       </div>
@@ -370,23 +387,206 @@ function Mark() {
 }
 
 function SignIn(
-  { draft, setDraft, save }:
-  { draft: string; setDraft: (s: string) => void; save: () => void },
+  { draft, setDraft, save, health }:
+  { draft: string; setDraft: (s: string) => void; save: () => void;
+    health: Health | null },
 ) {
-  // The first screen anybody sees, and it was a form card pinned to the left
-  // of an otherwise empty page. It now leads with what this system is for --
-  // the same sentence the rest of the product is built around -- because the
-  // sign-in is the one screen where a reader has nothing else to look at.
+  // The public face of the product AND the way in, on one port. Signed out,
+  // `/` is this page; signing in replaces it with the Command Center. The
+  // token panel stays in the document rather than behind a route, so the "Sign
+  // in" control is a scroll and not a navigation -- one page, one address.
   return (
-    <div className="signin">
-      <div className="signin-panel">
-        <p className="signin-mark"><span aria-hidden="true">◨</span> MerchantOps · Control plane</p>
+    <div className="landing">
+      {/* The page's own header. Named for the sections it leads to, which are
+          the content's headings rather than invented labels. */}
+      <header className="lp-top">
+        <p className="lp-brand"><span aria-hidden="true">◨</span> MerchantOps</p>
+        <nav className="lp-nav" aria-label="On this page">
+          <a href="#problem">The problem</a>
+          <a href="#ladder">How it works</a>
+          <a href="#states">The four states</a>
+          <a href="#measured">Measured</a>
+          <a href="#limits">Not claimed</a>
+        </nav>
+        <a className="lp-btn sm" href="#signin">Sign in</a>
+      </header>
 
-        <h2 className="signin-h">An HTTP 200 is not a business outcome.</h2>
+      {/* Under the header and on the page's own measure, not floated above it.
+          This is the disclosure that execution is mocked, that the planner is
+          deterministic and that the signing secret is the development default,
+          and the front door is exactly where an unfamiliar reader most needs
+          it -- but it is part of the page, not a bar bolted to the top of it. */}
+      <RunNotices health={health} />
+
+      <section className="lp-hero">
+        <div className="lp-hero-copy">
+          <p className="lp-eyebrow">Payments control plane</p>
+          <h2 className="lp-h1">
+            An HTTP 200 is not <span>a business outcome.</span>
+          </h2>
+          <p className="lp-sub">
+            An agent that investigates payment incidents and can refund money.
+            The hard part was never the reasoning — it was making sure that
+            when the system says a refund happened, <b>a refund happened</b>.
+          </p>
+          <div className="lp-cta">
+            <a className="lp-btn" href="#signin">Sign in <span aria-hidden="true">→</span></a>
+            <a className="lp-btn ghost" href="#states">What it does</a>
+          </div>
+          <ul className="lp-ticks">
+            <li><b>✓</b> Policy decided outside the model</li>
+            <li><b>✓</b> Every action read back</li>
+            <li><b>✓</b> Uncertainty is a state</li>
+          </ul>
+        </div>
+
+        {/* One refund climbing the ladder and stopping at the honest answer.
+            The thesis, rather than a screenshot of it. */}
+        <div className="lp-panel">
+          <div className="lp-panel-top">
+            Refund <b>ACT_D6412DD8B500</b>
+            <span className="lp-tag"><i aria-hidden="true" /> unresolved</span>
+          </div>
+          <ol className="lp-steps">
+            <li>
+              <span className="g ok" aria-hidden="true">✓</span>
+              <span className="t">Duplicate found and evidence gathered
+                <small>2 independent reads</small></span>
+              <span className="v">Recorded</span>
+            </li>
+            <li>
+              <span className="g hold" aria-hidden="true">◼</span>
+              <span className="t">Policy required a person
+                <small>high_risk_requires_approval</small></span>
+              <span className="v">Held</span>
+            </li>
+            <li>
+              <span className="g ok" aria-hidden="true">✓</span>
+              <span className="t">Approved, then submitted to the provider
+                <small>idempotency key derived server-side</small></span>
+              <span className="v">Sent</span>
+            </li>
+            <li>
+              <span className="g unk" aria-hidden="true">?</span>
+              <span className="t">The response never arrived
+                <small>attempt 1 of 5 · next check in 30s</small></span>
+              <span className="v is-unk">Unknown</span>
+            </li>
+          </ol>
+          <p className="lp-panel-foot">
+            The refund may have landed. It may not have. The system records
+            <b> UNKNOWN</b> and re-reads provider state on a schedule — it never
+            retries, because retrying an unknown financial action is how you
+            refund twice.
+          </p>
+        </div>
+      </section>
+
+      <section id="problem">
+        <h3 className="lp-h2">The provider accepting is not the money moving</h3>
+        <p className="lp-lede">
+          A refund call returns <code>200 OK</code> with a refund id. Most
+          systems record that as done. It is not done — it is <b>submitted</b>.
+          A provider can accept a request and apply less than was asked, or
+          nothing at all, and the response looks identical either way.
+        </p>
+        <p className="lp-lede">
+          Worse is when the response never arrives. A system that guesses there
+          either refunds twice, or tells a merchant their customer was paid
+          when they were not.
+        </p>
+      </section>
+
+      <section id="ladder">
+        <h3 className="lp-h2">Four steps, and only the last one is evidence</h3>
+        <p className="lp-lede">
+          Nothing is recorded as done until the provider has been read back
+          independently. The first three are claims.
+        </p>
+        <div className="lp-cards">
+          <div className="lp-card"><h4>01 · PROPOSED</h4>
+            <p>The agent reasons broadly and can propose anything. Proposing is
+              free; nothing has happened.</p></div>
+          <div className="lp-card"><h4>02 · GATED</h4>
+            <p>Deterministic policy, outside the model. A human signs for
+              anything that moves money.</p></div>
+          <div className="lp-card"><h4>03 · SUBMITTED</h4>
+            <p>A <code>200</code> and a refund id. An idempotency key derived
+              server-side means a retry cannot double-refund.</p></div>
+          <div className="lp-card"><h4>04 · VERIFIED</h4>
+            <p>A separate read, against provider state, after the fact. Only
+              this step is evidence.</p></div>
+        </div>
+      </section>
+
+      <section className="lp-states" id="states">
+        <h3 className="lp-h2">Uncertainty is a state, not an error</h3>
+        <p className="lp-lede">
+          Reading the provider back gives one of four answers, and the fourth is
+          the one the rest of the system is built around.
+        </p>
+        <div className="lp-cards">
+          <div className="lp-card c-ok"><h4>SUCCESS</h4>
+            <p>Verified at the provider. The money moved.</p></div>
+          <div className="lp-card c-failed"><h4>FAILED</h4>
+            <p>Verified as not having taken effect. No money moved.</p></div>
+          <div className="lp-card c-partial"><h4>PARTIAL</h4>
+            <p>Accepted, but the provider reflects less than was asked.</p></div>
+          <div className="lp-card c-unknown"><h4>UNKNOWN</h4>
+            <p>Could not be established. Unresolved work on a backoff schedule,
+              escalating to a person after five attempts. Never retried.</p></div>
+        </div>
+      </section>
+
+      <section id="measured">
+        <h3 className="lp-h2">Numbers the repository can reproduce</h3>
+        <p className="lp-lede">
+          Every figure comes from a command, and a check in CI fails the build
+          when the documentation and the tree disagree about any of them.
+        </p>
+        <div className="lp-stats">
+          <div><b>167<i>/167</i></b><span>Scenarios</span>
+            <em>110 of them critical</em></div>
+          <div><b>87<i>/88</i></b><span>Injected defects caught</span>
+            <em>the survivor now has a test</em></div>
+          <div><b>930</b><span>Automated tests</span>
+            <em>627 backend · 303 frontend</em></div>
+          <div><b>0</b><span>Dependency advisories</span>
+            <em>both ecosystems, pinned</em></div>
+        </div>
+      </section>
+
+      <section id="limits">
+        <h3 className="lp-h2">What this does not do</h3>
+        <p className="lp-lede">
+          A page that lists only strengths is marketing. These are the limits,
+          in the repository's own words.
+        </p>
+        <ul className="lp-limits">
+          {/* Deliberately does not restate the banner above, which already
+              says execution is mocked and that the controls around it are
+              unchanged. Saying it twice on one page is how a disclosure starts
+              reading as boilerplate. */}
+          <li><b>No refund has ever reached Razorpay.</b> Not once, in any
+            environment — so every claim on this page about verification is a
+            claim about a mock provider answering honestly.</li>
+          <li><b>Reconciliation is a sweep, not a daemon.</b> An UNKNOWN action
+            is re-read on a schedule somebody has to run.</li>
+          <li><b>21 of 590 payments are externally mapped</b>, and not one
+            mapping has been confirmed against a real provider. Null means
+            nobody checked.</li>
+          <li><b>The reasoning model has never run in anger.</b> The default
+            planner is deterministic, which is what makes the evaluation
+            reproducible and also a weaker test of the agent.</li>
+        </ul>
+      </section>
+
+      <div className="signin" id="signin">
+        <div className="signin-panel">
+        <h2 className="signin-h">Sign in</h2>
         <p className="signin-sub">
-          Every financial action here is read back at the provider before it
-          counts as done. Sign in to see what is waiting on a person, what the
-          money is doing, and what the system could not establish.
+          A token identifies you. Everything you can do is read from the
+          database on every request.
         </p>
 
         <div className="signin-field">
@@ -416,6 +616,7 @@ function SignIn(
           <li><b className="warn">◐</b> PARTIAL</li>
           <li><b className="unknown">?</b> UNKNOWN</li>
         </ul>
+        </div>
       </div>
     </div>
   );

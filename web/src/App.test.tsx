@@ -129,7 +129,23 @@ describe("page scaffolding", () => {
     expect(await screen.findByRole("link", { name: "Skip to content" }))
       .toHaveAttribute("href", "#main");
     expect(document.querySelector("main#main")).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Sections" })).toBeInTheDocument();
+  });
+
+  it("offers the application's sections only once there is a token", async () => {
+    // Signed out, `/` is the public landing page, and every one of those links
+    // needs a token -- offering them there is offering a dead end. The landing
+    // page has its own nav, named for the sections it actually scrolls to.
+    health.mockResolvedValue(OK);
+    renderApp();
+    expect(await screen.findByRole("navigation", { name: "On this page" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+
+    await userEvent.type(await screen.findByLabelText(/Mint one with/),
+                         "USR_A_OWNER.sig");
+    await userEvent.click(screen.getByRole("button", { name: /Use token/ }));
+    expect(await screen.findByRole("navigation", { name: "Sections" }))
+      .toBeInTheDocument();
   });
 });
 

@@ -266,6 +266,27 @@ def main() -> int:
         Claim("README.md", r"gap-closure plan, (\d+) ADRs", adr_count(),
               "the ADR count in the repository map"),
     ]
+    # The landing page's figures. They were the overview page's until that page
+    # was folded into this one -- and they arrived stale, because moving a
+    # number nothing gates is how a number goes wrong. Twice, in this case: the
+    # frontend count and the total were both behind before anybody looked.
+    lp = "web/src/App.tsx"
+    claims += [
+        Claim(lp, r"<b>(\d+)<i>/\d+</i></b><span>Scenarios", scen,
+              "the landing page's scenarios-passed figure"),
+        Claim(lp, r"<b>\d+<i>/(\d+)</i></b><span>Injected", mut,
+              "the landing page's mutant total"),
+        Claim(lp, r"<em>(\d+) backend · \d+ frontend</em>", py,
+              "the landing page's backend test count"),
+    ]
+    if web is not None:
+        claims += [
+            Claim(lp, r"<em>\d+ backend · (\d+) frontend</em>", web,
+                  "the landing page's frontend test count"),
+            Claim(lp, r"<b>(\d+)</b><span>Automated tests", py + web,
+                  "the landing page's combined test total"),
+        ]
+
     e2e = e2e_test_count()
     if e2e:
         print(f"browser:   {e2e} Playwright tests defined")

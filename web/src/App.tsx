@@ -570,8 +570,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>110 of them critical</em></div>
           <div><b>87<i>/88</i></b><span>Injected defects caught</span>
             <em>the survivor now has a test</em></div>
-          <div><b>930</b><span>Automated tests</span>
-            <em>627 backend · 303 frontend</em></div>
+          <div><b>932</b><span>Automated tests</span>
+            <em>627 backend · 305 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>

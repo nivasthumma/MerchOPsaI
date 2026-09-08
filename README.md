@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-649%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-663%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-167%2F167-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-77%2F78-yellow.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 649 tests · 167/167 scenarios · 88/88 mutations |
+| [📊 Measured results](#-measured-results) | 663 tests · 167/167 scenarios · 88/88 mutations |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -141,29 +141,44 @@ median task latency 52 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-88/88 mutations caught      complete run, 2026-09-08, 2h39m, tree 61e275c
+88/88 mutations caught      complete run, 2026-09-08, 2h22m, tree a8f1ee9
   └─ 42 graded red by a named scenario · 46 by unit tests alone
-     87 measured · 1 re-verified by hand, for the reason below
+     every one measured by the run itself — no hand-verified entries
 ```
 
+**That figure was measured entirely in Python.** `make mutants-web` asks the
+same question of the 308 Vitest tests, which had never been asked it — and the
+frontend had reason to be doubted. Three tests found by hand asserted less than
+their own names promised: one checked the sentence under a table and the strip
+beside it but never the count in the heading, which was the page size and
+wrong; one carried the comment "Recovered is forced above at-risk here" over
+data that nested perfectly, so it asserted that a correct funnel draws
+correctly; the third I wrote myself and deleted, because I could not construct
+an input that would make it fail. None of those is findable by grepping — every
+test in the suite has assertions and none are tautologies. Breaking the code
+and seeing whether the suite notices is the only thing that finds them.
+[ADR-0036](docs/adr/0036-the-frontend-suite-is-tested-too.md) records why the
+two scores are published separately rather than added together, and why
+`scripts/check_no_mutants.py` had to learn about both harnesses on the same
+day: it exists because a mutation that removes the human approval gate reached
+a pushed commit, and there is no reason the frontend version of that is less
+likely.
+
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes over two and a half hours. This is the second complete run since
-ADR-0029; the first measured 87/88 with a genuine survivor, which now has a test.*
+complete run takes over two hours. This is the third complete run since ADR-0029, and
+the first whose every mutant was measured by the run itself.*
 
-*The run reported one survivor and it was not one. **"tools: let a customer-contacting
-action run on the read path"** came back uncaught because ninety minutes in I checked
-for a running mutation with `ls .mutation-in-progress` from `web/` — a relative path,
-which found nothing — concluded the run had finished, and reverted the file the harness
-was actively mutating. Its suite therefore ran against unmutated code and reported
-SURVIVED for the only possible reason: there was nothing there to catch.*
-
-*Applied by hand afterwards it is caught twice over, by
-`test_every_tool_is_reachable_by_exactly_one_route` and
-`test_no_read_tool_changes_state_outside_this_system`. So the score is 88/88 and it is
-stated as what it is: 87 from the run, one re-verified by hand because I corrupted that
-mutant's result and knew exactly which one and in which direction. `make mutants-status`
-now answers that question from the repository root so the same mistake cannot be made
-from a subdirectory.*
+*The two before it are worth keeping on the record, because each one cost a score.
+The first measured 87/88 with a genuine survivor, which now has a test. The second
+reported a survivor that was not one: **"tools: let a customer-contacting action run on
+the read path"** came back uncaught because ninety minutes in I checked for a running
+mutation with `ls .mutation-in-progress` from `web/` — a relative path, which found
+nothing — concluded the run had finished, and reverted the file the harness was actively
+mutating. Its suite ran against unmutated code and reported SURVIVED for the only
+possible reason: there was nothing there to catch. That score was published as "87
+measured · 1 re-verified by hand" rather than as a clean 88, because it was not one.
+`make mutants-status` answers the question from the repository root now, so the same
+mistake cannot be made from a subdirectory — and this run needed no such footnote.*
 
 *The previous run's survivor was worth more than its score. **"reconciliation: escalate
 actions that already settled"** deleted the settled check inside `should_escalate`, and
@@ -422,9 +437,10 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make demo-state                          # give the console something to show
-make test                                # 649 tests
+make test                                # 663 tests
 make eval                                # 167 scenarios, on merchantops_eval
-make mutants                             # prove the suite catches regressions
+make mutants                             # prove the scenario suite catches regressions
+make mutants-web                         # the same question, asked of Vitest
 make harden                              # verify audit immutability on a live database
 make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
@@ -515,7 +531,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 307 Vitest tests
+make web-test                     # 311 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -944,14 +960,15 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 307 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 311 tests
 data/           167 scenarios + the last evaluation and mutation reports
-scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
-                mutation harness, and the gates: counts, mutants, locks
-tests/          unit · security · integration  (649 tests)
+scripts/        migrate, seed, spike, scenarios, demo, browser e2e, two
+                mutation harnesses (app/ and web/), and the gates: counts,
+                mutants, locks
+tests/          unit · security · integration  (663 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 35 ADRs
+                gap-closure plan, 36 ADRs
 ```
 
 ## 📄 License / disclaimer

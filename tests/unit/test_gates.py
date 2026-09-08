@@ -111,14 +111,121 @@ def test_it_reads_the_index_when_asked(monkeypatch):
     assert seen, "--staged never consulted the index"
 
 
-def test_the_harness_itself_is_excluded():
-    """`mutation_test.py` stores every replacement string as data, so a check
-    that did not exclude it would refuse every commit forever."""
-    assert check_no_mutants.SELF == "scripts/mutation_test.py"
-    assert not any(m[1] == check_no_mutants.SELF
-                   for m in check_no_mutants.MUTATIONS
-                   if m[3] in (ROOT / check_no_mutants.SELF).read_text()
-                   and m[1] != check_no_mutants.SELF)
+def test_both_harnesses_are_excluded_from_the_check():
+    """Each harness stores every replacement string it can apply, as data.
+
+    A check that did not exclude them would find all 103 replacements sitting
+    in `scripts/` and refuse every commit, forever. Both are named, and both
+    are asserted to actually contain the strings that make the exclusion
+    necessary — an exclusion for a file that does not need one is a hole
+    somebody added by accident.
+    """
+    assert {
+        "scripts/mutation_test.py", "scripts/mutation_test_web.py",
+    } == check_no_mutants.SELF
+    for name in check_no_mutants.SELF:
+        text = (ROOT / name).read_text()
+        assert any(replace in text
+                   for _, _, _, replace in check_no_mutants.MUTATIONS), name
+
+    # And nothing OUTSIDE those two carries a replacement string as data, which
+    # is what would make the exclusion list need a third entry nobody noticed.
+    for label, relpath, _find, replace in check_no_mutants.MUTATIONS:
+        if relpath in check_no_mutants.SELF:
+            continue
+        assert replace not in (ROOT / relpath).read_text(), label
+
+
+def test_the_guard_covers_the_frontend_harness_too():
+    """`web/src` is rewritten by `mutation_test_web.py` the same way `app/` is
+    rewritten by `mutation_test.py`.
+
+    A guard that knew about only the Python list would have been a guard
+    against half the ways a mutant reaches a commit — and the half it missed
+    would be the half nobody was watching. The original defect this file exists
+    for was a pushed commit containing `Decision.ALLOW,  # MUTANT`; there is no
+    reason the frontend version of that is less likely.
+    """
+    web = [m for m in check_no_mutants.MUTATIONS if m[1].startswith("web/")]
+    assert web, "the frontend mutations are not reaching the guard"
+    assert "scripts/mutation_test_web.py" in check_no_mutants.SELF
+
+
+def test_it_detects_a_frontend_mutant_it_is_shown(monkeypatch):
+    """Same load-bearing check as the backend one, for the other harness."""
+    label, relpath, _find, replace = next(
+        m for m in check_no_mutants.MUTATIONS if m[1].startswith("web/"))
+
+    monkeypatch.setattr(check_no_mutants, "_worktree",
+                        lambda p: replace if p == relpath else "")
+    monkeypatch.setattr(sys, "argv", ["check_no_mutants.py"])
+    assert check_no_mutants.main() == 1, label
+
+
+@pytest.mark.parametrize("harness", ["mutation_test", "mutation_test_web"])
+def test_every_anchor_names_exactly_one_place(harness):
+    """An anchor matching twice mutates whichever site comes first.
+
+    `replace(find, replace, 1)` takes the first match, so a duplicated anchor
+    breaks something other than the control its label names — and the run
+    reports a verdict about a control nobody chose. Checked for both harnesses,
+    because the backend list is 88 anchors long and nobody is reading it for
+    this.
+    """
+    import importlib
+
+    mod = importlib.import_module(f"scripts.{harness}")
+    dupes = [(label, rel, (ROOT / rel).read_text().count(find))
+             for label, rel, find, _ in mod.MUTATIONS
+             if (ROOT / rel).read_text().count(find) > 1]
+    assert dupes == []
+
+
+def test_every_frontend_anchor_still_matches_its_file():
+    """An anchor is a copy of code kept somewhere else, so it drifts when the
+    code moves — and a mutation that cannot be applied is a control with no
+    test, not a control that passed. The backend harness checks this at the top
+    of a two-hour run; here it is checked in the test suite, because five
+    minutes of Vitest is short enough that nobody would notice the difference.
+    """
+    from scripts import mutation_test_web
+
+    stale = [(label, rel) for label, rel, find, _ in mutation_test_web.MUTATIONS
+             if find not in (ROOT / rel).read_text()]
+    assert stale == []
+
+
+# ------------------------------------------------------------ mutation_test
+def test_the_run_reports_progress_per_mutant():
+    """A full run is 88 mutants and over two and a half hours.
+
+    It used to accumulate every row and print the table at the end, so for that
+    whole time the only output was the banner — no way to tell mutant 3 from
+    mutant 80, or a wedged suite from a slow one. Asserted on the source
+    because driving `main()` means running the suite 88 times.
+    """
+    src = (ROOT / "scripts" / "mutation_test.py").read_text()
+    assert "def progress(" in src
+    for status in ('"CAUGHT", detail', '"SURVIVED"', '"SKIP"'):
+        assert f"progress(n, label, {status}" in src, status
+    # Redirected to a file, stdout is block-buffered. Without this the caller
+    # has to know to pass `-u`, and if they do not the run shows one line for
+    # two hours — which is how this defect was found.
+    assert "flush=True" in src
+
+
+@pytest.mark.parametrize("seconds,expected", [
+    (0, "0s"), (45, "45s"), (59, "59s"),
+    (60, "1m00s"), (605, "10m05s"), (3599, "59m59s"),
+    (3600, "1h00m"), (9265, "2h34m"),
+])
+def test_durations_read_as_estimates_not_measurements(seconds, expected):
+    """Two units at most. A run length printed to the second reads as a
+    measurement; this is an estimate, and the boundaries between the three
+    formats are where a formatter like this goes wrong."""
+    from scripts import mutation_test
+
+    assert mutation_test._hms(seconds) == expected
 
 
 # ------------------------------------------------------------------ dbutil

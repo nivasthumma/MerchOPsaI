@@ -44,6 +44,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# CSI escape sequences, which is how a colourised tool breaks a pattern that
+# looks watertight. `^(\d+) tests collected` and `Tests\s+(\d+) passed` both
+# matched nothing the day these counters ran somewhere pytest and Vitest
+# decided they had a terminal -- the codes land BETWEEN the anchor and the
+# digits, so the gate died claiming it could not collect a suite that had
+# collected 663 tests perfectly well.
+#
+# Stripped rather than suppressed, and suppressed as well: `--color=no` and
+# `NO_COLOR` cover the tools that honour them, and this covers the ones that do
+# not. A check whose result depends on whether the caller has a TTY is a check
+# people learn to ignore.
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _plain(text: str) -> str:
+    return _ANSI.sub("", text)
+
 
 # --------------------------------------------------------------- measuring
 def pytest_count() -> int:
@@ -53,12 +70,20 @@ def pytest_count() -> int:
     tests are one function and many cases, and the published number is the one
     a reader would see if they ran the suite.
     """
-    r = subprocess.run([sys.executable, "-m", "pytest", "tests", "--collect-only", "-q"],
+    # `-p no:cacheprovider` keeps a collection from writing `.pytest_cache`,
+    # and `--color=no` is load-bearing: pytest colourises when it thinks it has
+    # a terminal, and the escape codes land BETWEEN the start of the line and
+    # the digits -- so `^(\d+) tests collected` matched nothing and the gate
+    # died with "could not collect the Python suite" over a suite that had
+    # collected 663 tests perfectly well. A check that fails depending on
+    # whether the caller has a TTY is a check people learn to ignore.
+    r = subprocess.run([sys.executable, "-m", "pytest", "tests", "--collect-only",
+                        "-q", "--color=no", "-p", "no:cacheprovider"],
                        cwd=ROOT, capture_output=True, text=True,
-                       env={**os.environ, "PYTHONPATH": "."})
-    m = re.search(r"^(\d+) tests collected", r.stdout, re.M)
+                       env={**os.environ, "PYTHONPATH": ".", "NO_COLOR": "1"})
+    m = re.search(r"^(\d+) tests collected", _plain(r.stdout), re.M)
     if not m:
-        tail = (r.stdout + r.stderr).strip().splitlines()[-6:]
+        tail = _plain(r.stdout + r.stderr).strip().splitlines()[-6:]
         raise SystemExit("could not collect the Python suite:\n  "
                          + "\n  ".join(tail))
     return int(m.group(1))
@@ -82,10 +107,11 @@ def vitest_count() -> int | None:
     # gating a figure nobody can reproduce, which is the thing it exists to
     # stop. Slower, and it only runs where node_modules is present.
     r = subprocess.run(["npx", "vitest", "run"],
-                       cwd=ROOT / "web", capture_output=True, text=True)
-    m = re.search(r"Tests\s+(\d+) passed", r.stdout + r.stderr)
+                       cwd=ROOT / "web", capture_output=True, text=True,
+                       env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0"})
+    m = re.search(r"Tests\s+(\d+) passed", _plain(r.stdout + r.stderr))
     if not m:
-        tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
+        tail = _plain(r.stdout + r.stderr).strip().splitlines()[-5:]
         raise SystemExit("could not count the Vitest suite:\n  "
                          + "\n  ".join(tail))
     return int(m.group(1))
@@ -420,6 +446,23 @@ def main() -> int:
                 Claim("README.md", r"(\d+)/\d+ mutations caught",
                       run["caught"] + len(hand),
                       "the caught-mutant count in the measured-results block"))
+
+            # The breakdown under it, which was published and ungated. A
+            # mutant "graded red by a named scenario" is one the report lists
+            # scenario ids for; the rest were caught by the test suite alone.
+            # Both numbers are derivable from the artifact, so both are gated:
+            # a split carried forward from a previous run would be exactly the
+            # kind of number that stops being true without anybody noticing,
+            # which is the entire argument of ADR-0035.
+            by_scenario = sum(1 for m in run.get("mutants", []) if m.get("scenarios"))
+            claims += [
+                Claim("README.md", r"(\d+) graded red by a named scenario",
+                      by_scenario,
+                      "the mutants graded red by a named scenario"),
+                Claim("README.md", r"· (\d+) by unit tests alone",
+                      len(run.get("mutants", [])) - by_scenario,
+                      "the mutants caught by the test suite alone"),
+            ]
 
     problems = check(claims)
 

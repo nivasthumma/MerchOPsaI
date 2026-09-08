@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -714,6 +715,17 @@ TOUCHED: set[str] = set()
 MEASURED_TREE: str | None = None
 
 
+def _hms(seconds: float) -> str:
+    """`1h04m`, `52m`, `40s`. Two units at most: a duration printed to the
+    second is read as a measurement, and this is an estimate."""
+    s = int(seconds)
+    if s >= 3600:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s}s"
+
+
 def main() -> int:
     # Optional substring filters. A full run is 20 mutants x (scenario suite +
     # test suite) and takes well over half an hour, which is too slow to sit in
@@ -777,7 +789,7 @@ def main() -> int:
         return 1
 
     baseline_pass, baseline_total, baseline_failed = run_suite()
-    print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass")
+    print(f"\nbaseline: {baseline_pass}/{baseline_total} scenarios pass", flush=True)
     if baseline_failed:
         print(f"  baseline is not clean ({baseline_failed}); aborting.")
         return 1
@@ -785,12 +797,34 @@ def main() -> int:
     survivors = []
     rows = []
 
-    for label, relpath, find, replace in mutations:
+    # Progress, one line per mutant, as it happens.
+    #
+    # This used to accumulate every row in memory and print the table at the
+    # end. A full run is 88 mutants and takes over two and a half hours, so
+    # for that whole time the only output was the banner: no way to tell
+    # mutant 3 from mutant 80, whether a suite had wedged, or whether anything
+    # was being caught. `flush=True` because stdout redirected to a file is
+    # block-buffered, which is how a run gets started and then shows one line
+    # for two hours -- the caller should not have to know to pass `-u`.
+    started = time.monotonic()
+
+    def progress(n: int, label: str, status: str, detail: str) -> None:
+        done = time.monotonic() - started
+        # Remaining time from the average so far, which is what a reader
+        # actually wants from a bar. Only after two, because one sample of a
+        # 90-second step extrapolated over 88 of them is a guess presented as
+        # an estimate.
+        eta = f"  eta {_hms((done / n) * (len(mutations) - n))}" if n >= 2 else ""
+        print(f"[{n:>2}/{len(mutations)}] {label:<52} {status:<9} {detail}"
+              f"  ({_hms(done)}{eta})", flush=True)
+
+    for n, (label, relpath, find, replace) in enumerate(mutations, 1):
         path = ROOT / relpath
         original = path.read_text()
         if find not in original:
             rows.append((label, "SKIP", "anchor not found", ""))
             survivors.append(label)
+            progress(n, label, "SKIP", "anchor not found")
             continue
         try:
             # Recorded BEFORE the write, and in the lock file as well as in
@@ -808,12 +842,14 @@ def main() -> int:
             if caught == 0 and tests_ok:
                 survivors.append(label)
                 rows.append((label, "SURVIVED", "no scenario or test caught it", ""))
+                progress(n, label, "SURVIVED", "no scenario or test caught it")
             else:
                 detail = "suite crashed" if crashed else f"{caught} scenario(s)"
                 if not tests_ok:
                     detail += " + unit tests"
                 rows.append((label, "CAUGHT", detail,
                              ", ".join(failed[:4]) + ("…" if len(failed) > 4 else "")))
+                progress(n, label, "CAUGHT", detail)
         finally:
             path.write_text(original)
 

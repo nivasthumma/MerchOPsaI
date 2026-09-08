@@ -36,13 +36,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.mutation_test import MUTATIONS
+from scripts.mutation_test import MUTATIONS as PY_MUTATIONS
+from scripts.mutation_test_web import MUTATIONS as WEB_MUTATIONS
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# The harness stores every replacement string as data, so of course it contains
-# all of them. Excluded by name rather than by pattern.
-SELF = "scripts/mutation_test.py"
+# Both harnesses. The frontend one rewrites `web/src` the same way the backend
+# one rewrites `app/`, and a guard that knew about only one of them would have
+# been a guard against half the ways a mutant reaches a commit -- which is not
+# a guard, because the half it misses is the half nobody is watching.
+MUTATIONS = [*PY_MUTATIONS, *WEB_MUTATIONS]
+
+# Each harness stores every replacement string as data, so of course it
+# contains all of them. Excluded by name rather than by pattern.
+SELF = {"scripts/mutation_test.py", "scripts/mutation_test_web.py"}
 
 
 def _staged(relpath: str) -> str | None:
@@ -72,15 +79,18 @@ def status() -> int:
 
         python scripts/check_no_mutants.py --status
     """
-    lock = ROOT / ".mutation-in-progress"
-    if not lock.exists():
+    locks = [ROOT / ".mutation-in-progress", ROOT / ".mutation-web-in-progress"]
+    live = [p for p in locks if p.exists()]
+    if not live:
         print("No mutation run in progress.")
         # A stale mutant with no lock means a killed run, which is exactly what
         # the main check is for -- so it is worth saying here rather than
         # letting "no run in progress" read as "nothing to worry about".
         return main()
-    print("A mutation run IS in progress. Do not stage app/ or alembic/.\n")
-    print(lock.read_text().rstrip())
+    print("A mutation run IS in progress. Do not stage app/, alembic/ or "
+          "web/src/.\n")
+    for lock in live:
+        print(lock.read_text().rstrip())
     return 0
 
 
@@ -98,7 +108,7 @@ def main() -> int:
     # overstates what it found is a guard people start discounting.
     found: dict[tuple[str, str], list[str]] = {}
     for label, relpath, _find, replace in MUTATIONS:
-        if relpath == SELF:
+        if relpath in SELF:
             continue
         if relpath not in cache:
             cache[relpath] = read(relpath)

@@ -103,7 +103,13 @@ def e2e_test_count() -> int | None:
     d = ROOT / "web" / "e2e"
     if not d.is_dir():
         return None
-    return sum(len(re.findall(r"^test\(", f.read_text(), re.M))
+    # `test(` anywhere, not `^test(`. The first version anchored to the start of
+    # a line and so missed every test inside a `test.describe` block -- it
+    # reported 11 while the runner reported 13, which is the same defect the
+    # Vitest counter had: a gate measuring something other than what the command
+    # prints. `test.describe`, `test.beforeEach` and the rest are excluded by
+    # requiring an opening paren straight after the name.
+    return sum(len(re.findall(r"\btest\(", f.read_text()))
                for f in d.glob("*.spec.ts"))
 
 

@@ -509,7 +509,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 303 Vitest tests
+make web-test                     # 305 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -821,7 +821,7 @@ are different claims.
     entirely. It required raising CI's Node from 20 to 24 (Vitest 5 needs ≥ 22.12),
     which `engines` plus `engine-strict` now enforce at install rather than thirty
     seconds into a test run. Verified by the full suite: 295 Vitest tests, the build,
-    and all 11 browser journeys and accessibility scans against `vite preview`,
+    and all 13 browser journeys and accessibility scans against `vite preview`,
     which is the part a Vite major could have broken silently.
 
     The router went the same way for the same reason, and stopped one major short of
@@ -938,7 +938,7 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 303 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 305 tests
 data/           167 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
                 mutation harness, and the gates: counts, mutants, locks

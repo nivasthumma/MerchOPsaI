@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="MerchantOps: why a payments agent needs a state that means I don't know.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>The Unknown State</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=Azeret+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* Two grounds, one page.
+
+   The hero and the closing band are dark; everything a reader actually reads
+   sits on light. A page dark from top to bottom asks for the same squint on
+   every paragraph, and the jump between the two is what makes the hero land.
+
+   Single-theme by choice: it commits to one visual world and paints every
+   colour explicitly, so it holds on whatever ground the host puts behind it. */
+:root {
+  --ink-bg:    #0a1310;
+  --ink-bg-2:  #060b09;
+  --ink-line:  #1c2b25;
+  --ink-line-2:#2a3f36;
+  --ink-txt:   #e8f0ec;
+  --ink-txt-2: #9fb3aa;
+  --ink-txt-3: #6f8378;
+
+  --ground:  #f4f7f5;
+  --panel:   #ffffff;
+  --panel-2: #f8faf9;
+  --line:    #e0e7e3;
+  --line-2:  #c7d3cd;
+  --text:    #0f1f1a;
+  --text-2:  #46584f;
+  --text-3:  #64766d;
+
+  /* Two values per accent. The mint that reads 8.5:1 on the dark band is
+     2.1:1 on white, so one value for both would put half the page below AA. */
+  --mint: #6fc3a3;      --mint-ink: #175e4c;    --mint-soft: #e4f0eb;
+  --violet: #a78bfa;    --violet-ink: #5b3fbf;  --violet-soft: #f1edfc;
+  --clay: #e8933f;      --clay-ink: #7a4212;    --clay-soft: #fbefe4;
+  --red: #ff7a6b;       --red-ink: #a93a34;
+
+  --display: "Bricolage Grotesque", Georgia, serif;
+  --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Azeret Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--text);
+       font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 clamp(18px, 4vw, 40px); }
+
+/* ============================================================ the dark band */
+.top, .hero { background: var(--ink-bg); color: var(--ink-txt); }
+.top { border-bottom: 1px solid var(--ink-line); }
+.top .wrap { display: flex; align-items: center; gap: 16px 24px;
+             padding: 16px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 11px; margin: 0;
+         font-family: var(--mono); font-size: 12px; letter-spacing: 0.15em;
+         text-transform: uppercase; color: var(--ink-txt); font-weight: 500; }
+.brand i {
+  width: 28px; height: 28px; border-radius: 9px; font-style: normal;
+  background: linear-gradient(150deg, var(--mint), #4f9b7f);
+  color: #06120d; display: grid; place-items: center;
+  font-size: 14px; font-weight: 700; letter-spacing: 0;
+  box-shadow: 0 0 0 1px #2c5a49, 0 8px 22px -10px var(--mint);
+}
+.top nav { margin-left: auto; display: flex; gap: 2px; flex-wrap: wrap; }
+.top nav a { padding: 7px 12px; border-radius: 7px; color: var(--ink-txt-2);
+             text-decoration: none; font-size: 14px; }
+.top nav a:hover { color: var(--ink-txt); background: rgba(255,255,255,0.05); }
+:where(a, button):focus-visible { outline: 2px solid var(--mint);
+                                  outline-offset: 3px; border-radius: 7px; }
+
+.hero { position: relative; overflow: hidden; }
+/* A ruled field, drawn not imaged. It reads as a ledger grid, which is what
+   this product is. */
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 78% 14%, rgba(111,195,163,0.13), transparent 62%),
+    radial-gradient(680px 440px at 8% 4%, rgba(167,139,250,0.09), transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0 63px, rgba(255,255,255,0.02) 63px 64px),
+    repeating-linear-gradient(90deg, transparent 0 63px, rgba(255,255,255,0.02) 63px 64px);
+}
+.hero .wrap { position: relative; display: grid; align-items: center;
+              gap: clamp(30px, 5vw, 58px);
+              grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr);
+              padding-top: clamp(46px, 7vw, 88px);
+              padding-bottom: clamp(46px, 7vw, 88px); }
+@media (max-width: 940px) { .hero .wrap { grid-template-columns: minmax(0, 1fr); } }
+
+.eyebrow { margin: 0 0 20px; font-family: var(--mono); font-size: 11px;
+           letter-spacing: 0.22em; text-transform: uppercase; color: var(--mint); }
+h1 { margin: 0; font-family: var(--display); font-weight: 700;
+     font-size: clamp(38px, 6vw, 70px); line-height: 0.99;
+     letter-spacing: -0.035em; text-wrap: balance; max-width: 13ch; }
+h1 span { display: block; color: var(--mint); }
+.sub { margin: 24px 0 0; font-size: clamp(16px, 1.5vw, 18.5px); line-height: 1.6;
+       color: var(--ink-txt-2); max-width: 46ch; }
+.sub b { color: var(--ink-txt); font-weight: 600; }
+
+.buttons { display: flex; gap: 11px; margin-top: 32px; flex-wrap: wrap; }
+.cta, .ghost { display: inline-flex; align-items: center; gap: 9px;
+               padding: 13px 21px; border-radius: 10px; font: inherit;
+               font-weight: 600; font-size: 15px; text-decoration: none;
+               transition: background 140ms ease, border-color 140ms ease; }
+.cta { background: var(--mint); color: #06120d; border: 1px solid var(--mint);
+       box-shadow: 0 12px 32px -14px rgba(111,195,163,0.8); }
+.cta:hover { background: #83d3b4; }
+.ghost { background: transparent; color: var(--ink-txt);
+         border: 1px solid var(--ink-line-2); }
+.ghost:hover { border-color: var(--ink-txt-3); }
+
+.ticks { list-style: none; margin: 28px 0 0; padding: 0; display: flex;
+         flex-wrap: wrap; gap: 9px 28px; color: var(--ink-txt-2); font-size: 14px; }
+.ticks li { display: flex; align-items: center; gap: 8px; }
+.ticks b { color: var(--mint); }
+
+/* the panel: one refund, climbing */
+.panel { border: 1px solid var(--ink-line-2); border-radius: 14px;
+         overflow: hidden; background: #0e1a16;
+         box-shadow: 0 44px 90px -50px #000; }
+.panel-top { display: flex; align-items: center; gap: 10px; padding: 13px 17px;
+             border-bottom: 1px solid var(--ink-line); background: #0c1713;
+             font-family: var(--mono); font-size: 12px; color: var(--ink-txt-2); }
+.panel-top b { color: var(--ink-txt); font-weight: 500; }
+.state-tag { margin-left: auto; display: inline-flex; align-items: center;
+             gap: 7px; font-size: 11px; color: var(--violet); }
+.state-tag i { width: 7px; height: 7px; border-radius: 50%;
+               background: var(--violet); box-shadow: 0 0 0 3px rgba(167,139,250,0.18); }
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto;
+            gap: 12px; align-items: baseline; padding: 13px 17px; }
+.steps li + li { border-top: 1px solid var(--ink-line); }
+.steps .g.ok { color: var(--mint); }
+.steps .g.hold { color: var(--clay); }
+.steps .g.unk { color: var(--violet); }
+.steps .t { color: var(--ink-txt); font-size: 14px; }
+.steps .t small { display: block; margin-top: 3px; color: var(--ink-txt-3);
+                  font-family: var(--mono); font-size: 12px; }
+.steps .v { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--ink-txt-3); white-space: nowrap; }
+.steps .v.is-unk { color: var(--violet); }
+.panel-foot { margin: 0; border-top: 1px solid var(--ink-line); background: #0c1713;
+              padding: 14px 17px; color: var(--ink-txt-2); font-size: 13px;
+              line-height: 1.55; }
+.panel-foot b { color: var(--violet); font-weight: 600; }
+
+/* ================================================================ the light */
+.band { background: var(--panel); border-bottom: 1px solid var(--line); }
+.band .wrap { display: grid; padding: 0;
+              grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.stat { padding: 26px clamp(18px, 3vw, 30px); }
+.stat + .stat { border-left: 1px solid var(--line); }
+@media (max-width: 760px) {
+  .stat + .stat { border-left: 0; border-top: 1px solid var(--line); }
+}
+.stat .n { font-family: var(--display); font-weight: 700; line-height: 1;
+           font-size: clamp(28px, 3.2vw, 36px); letter-spacing: -0.03em;
+           font-variant-numeric: tabular-nums; color: var(--text); }
+.stat .n em { font-style: normal; color: var(--text-3); }
+.stat .k { margin-top: 10px; font-family: var(--mono); font-size: 10px;
+           letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-3); }
+.stat .d { margin-top: 4px; color: var(--text-2); font-size: 13.5px; }
+
+section { border-bottom: 1px solid var(--line); }
+section .wrap { padding: clamp(44px, 6vw, 78px) clamp(18px, 4vw, 40px); }
+h2 { margin: 0; font-family: var(--display); font-weight: 700;
+     font-size: clamp(25px, 3.2vw, 36px); line-height: 1.1;
+     letter-spacing: -0.025em; text-wrap: balance; max-width: 20ch; }
+.lede { margin: 16px 0 0; color: var(--text-2); max-width: 62ch; font-size: 16.5px; }
+.lede + .lede { margin-top: 13px; }
+.lede b { color: var(--text); font-weight: 600; }
+code { font-family: var(--mono); font-size: 0.85em; color: var(--mint-ink);
+       background: var(--mint-soft); border: 1px solid #cfe3da;
+       border-radius: 5px; padding: 2px 6px; }
+
+.cards { display: grid; gap: 13px; margin-top: 34px;
+         grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line);
+        border-radius: 12px; padding: 19px; }
+.card h3 { margin: 0 0 8px; font-family: var(--mono); font-size: 11.5px;
+           letter-spacing: 0.12em; font-weight: 600; color: var(--text-3); }
+.card p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
+.card.is-unknown { border-color: #d9cdf5; background: var(--violet-soft); }
+.c-ok h3      { color: var(--mint-ink); }
+.c-failed h3  { color: var(--red-ink); }
+.c-partial h3 { color: var(--clay-ink); }
+.c-unknown h3 { color: var(--violet-ink); }
+
+.limits { list-style: none; margin: 32px 0 0; padding: 0; display: grid; gap: 15px; }
+.limits li { position: relative; padding-left: 22px; color: var(--text-2);
+             max-width: 66ch; line-height: 1.6; }
+.limits li::before { content: ""; position: absolute; left: 0; top: 11px;
+                     width: 11px; height: 1.5px; border-radius: 2px;
+                     background: var(--clay-ink); }
+.limits b { color: var(--text); font-weight: 600; }
+
+/* ============================================================== the closing */
+footer { background: var(--ink-bg-2); color: var(--ink-txt-3); }
+footer .wrap { padding: 34px clamp(18px, 4vw, 40px) 48px;
+               display: flex; gap: 10px 28px; flex-wrap: wrap; font-size: 13px; }
+footer .mono { font-family: var(--mono); color: var(--ink-txt-2); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><i>◨</i> MerchantOps</div>
+    <nav>
+      <a href="#problem">The problem</a>
+      <a href="#ladder">How it works</a>
+      <a href="#states">The four states</a>
+      <a href="#measured">Measured</a>
+      <a href="#limits">Not claimed</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">Payments control plane</p>
+      <h1>An HTTP 200 is not <span>a business outcome.</span></h1>
+      <p class="sub">
+        An agent that investigates payment incidents and can refund money. The
+        hard part was never the reasoning — it was making sure that when the
+        system says a refund happened, <b>a refund happened</b>.
+      </p>
+      <div class="buttons">
+        <a class="cta" href="#ladder">See how it verifies <span aria-hidden="true">→</span></a>
+        <a class="ghost" href="#limits">What it doesn't claim</a>
+      </div>
+      <ul class="ticks">
+        <li><b>✓</b> Policy decided outside the model</li>
+        <li><b>✓</b> Every action read back</li>
+        <li><b>✓</b> Uncertainty is a state</li>
+      </ul>
+    </div>
+
+    <!-- The panel is the thesis, not a screenshot: one refund climbing the
+         ladder and stopping at the honest answer. -->
+    <div class="panel">
+      <div class="panel-top">
+        Refund <b>ACT_D6412DD8B500</b>
+        <span class="state-tag"><i></i> unresolved</span>
+      </div>
+      <ol class="steps">
+        <li>
+          <span class="g ok" aria-hidden="true">✓</span>
+          <span class="t">Duplicate found and evidence gathered
+            <small>2 independent reads</small></span>
+          <span class="v">Recorded</span>
+        </li>
+        <li>
+          <span class="g hold" aria-hidden="true">◼</span>
+          <span class="t">Policy required a person
+            <small>high_risk_requires_approval</small></span>
+          <span class="v">Held</span>
+        </li>
+        <li>
+          <span class="g ok" aria-hidden="true">✓</span>
+          <span class="t">Approved, then submitted to the provider
+            <small>idempotency key derived server-side</small></span>
+          <span class="v">Sent</span>
+        </li>
+        <li>
+          <span class="g unk" aria-hidden="true">?</span>
+          <span class="t">The response never arrived
+            <small>attempt 1 of 5 · next check in 30s</small></span>
+          <span class="v is-unk">Unknown</span>
+        </li>
+      </ol>
+      <p class="panel-foot">
+        The refund may have landed. It may not have. The system records
+        <b>UNKNOWN</b> and re-reads provider state on a schedule — it never
+        retries, because retrying an unknown financial action is how you refund
+        twice.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="band">
+  <div class="wrap">
+    <div class="stat">
+      <div class="n">167<em>/167</em></div>
+      <div class="k">Scenarios</div>
+      <div class="d">110 of them critical</div>
+    </div>
+    <div class="stat">
+      <div class="n">87<em>/88</em></div>
+      <div class="k">Injected defects caught</div>
+      <div class="d">the survivor now has a test</div>
+    </div>
+    <div class="stat">
+      <div class="n">930</div>
+      <div class="k">Automated tests</div>
+      <div class="d">627 backend · 303 frontend</div>
+    </div>
+    <div class="stat">
+      <div class="n">0</div>
+      <div class="k">Dependency advisories</div>
+      <div class="d">both ecosystems, pinned</div>
+    </div>
+  </div>
+</div>
+
+<section id="problem">
+  <div class="wrap">
+    <h2>The provider accepting is not the money moving</h2>
+    <p class="lede">
+      A refund call returns <code>200 OK</code> with a refund id. Most systems
+      record that as done. It is not done — it is <b>submitted</b>. A provider
+      can accept a request and apply less than was asked, or nothing at all,
+      and the response looks identical either way.
+    </p>
+    <p class="lede">
+      Worse is when the response never arrives. A system that guesses there
+      either refunds twice or tells a merchant their customer was paid when
+      they were not.
+    </p>
+  </div>
+</section>
+
+<section id="ladder">
+  <div class="wrap">
+    <h2>Four steps, and only the last one is evidence</h2>
+    <p class="lede">
+      Nothing is recorded as done until the provider has been read back
+      independently. The first three are claims.
+    </p>
+    <div class="cards">
+      <div class="card">
+        <h3>01 · PROPOSED</h3>
+        <p>The agent reasons broadly and can propose anything. Proposing is
+          free; nothing has happened.</p>
+      </div>
+      <div class="card">
+        <h3>02 · GATED</h3>
+        <p>Deterministic policy, outside the model. A human signs for anything
+          that moves money.</p>
+      </div>
+      <div class="card">
+        <h3>03 · SUBMITTED</h3>
+        <p>A <code>200</code> and a refund id. An idempotency key derived
+          server-side means a retry cannot double-refund.</p>
+      </div>
+      <div class="card">
+        <h3>04 · VERIFIED</h3>
+        <p>A separate read, against provider state, after the fact. Only this
+          step is evidence.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="states">
+  <div class="wrap">
+    <h2>Uncertainty is a state, not an error</h2>
+    <p class="lede">
+      Read-back gives one of four answers, and the fourth is the one the rest
+      of the system is built around.
+    </p>
+    <div class="cards">
+      <div class="card c-ok">
+        <h3>SUCCESS</h3>
+        <p>Verified at the provider. The money moved.</p>
+      </div>
+      <div class="card c-failed">
+        <h3>FAILED</h3>
+        <p>Verified as not having taken effect. No money moved.</p>
+      </div>
+      <div class="card c-partial">
+        <h3>PARTIAL</h3>
+        <p>Accepted, but the provider reflects less than was asked.</p>
+      </div>
+      <div class="card c-unknown is-unknown">
+        <h3>UNKNOWN</h3>
+        <p>Could not be established. Unresolved work on a backoff schedule,
+          escalating to a person after five attempts. Never retried.</p>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:30px">
+      <b>UNKNOWN is the reason this exists.</b> A system that cannot say “I do
+      not know” has to guess, and there is no safe guess about money that may
+      or may not have left an account.
+    </p>
+  </div>
+</section>
+
+<section id="measured">
+  <div class="wrap">
+    <h2>Numbers the repository can reproduce</h2>
+    <p class="lede">
+      Every figure above comes from a command — <code>make eval</code>,
+      <code>make mutants</code>, <code>make ci</code> — and a check in CI fails
+      the build when the documentation and the tree disagree about any of them.
+      The mutation score is the honest one: 88 defects are injected into the
+      control logic one at a time to find out whether the suite actually
+      notices.
+    </p>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="wrap">
+    <h2>What this does not do</h2>
+    <p class="lede">
+      A page that lists only strengths is marketing. These are the limits, in
+      the repository's own words.
+    </p>
+    <ul class="limits">
+      <li><b>No refund has ever reached Razorpay.</b> Execution runs against a
+        mock adapter. Policy, approval, idempotency and verification are
+        identical — only the outbound call differs — and the console says so on
+        every screen rather than implying otherwise.</li>
+      <li><b>Reconciliation is a sweep, not a daemon.</b> An UNKNOWN action is
+        re-read on a schedule somebody has to run.</li>
+      <li><b>21 of 590 payments are externally mapped</b>, and not one mapping
+        has been confirmed against a real provider. Null means nobody checked —
+        deliberately a different claim from “checked and it was there”.</li>
+      <li><b>The reasoning model has never run in anger.</b> The default planner
+        is deterministic, which is what makes the evaluation reproducible and
+        also what makes it a weaker test of the agent.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span class="mono">Python 3.12 · FastAPI · PostgreSQL · React · TypeScript</span>
+    <span>Synthetic data throughout. Not affiliated with Razorpay.</span>
+  </div>
+</footer>
+
+</body>
+</html>

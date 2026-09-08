@@ -27,7 +27,7 @@
 // rules are excluded because they encode opinions this project has not adopted.
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 
 const TOKEN = process.env.E2E_TOKEN ?? "";
 
@@ -116,4 +116,57 @@ test("a failure state stays readable", async ({ page }) => {
   // their job rather than a duplicate.
   await expect(page.getByText(/Cannot reach the API/).first()).toBeVisible();
   await scan(page, "the error state (dark)");
+});
+
+/* ------------------------------------------------------- signed out
+ *
+ * The two pages every visitor sees first, and the two this file could not
+ * reach: `beforeEach` above puts a token in localStorage for every test, so
+ * the landing page and the sign-in page had no accessibility coverage at all
+ * from the moment they were written.
+ *
+ * They need their own browser context rather than a cleared one. The token is
+ * installed by an init script on the shared context, and an init script runs
+ * on every navigation — clearing storage after `goto` would be racing the
+ * thing that put it there.
+ */
+test.describe("signed out", () => {
+  async function scanAnonymously(browser: Browser, url: string, ready: RegExp) {
+    for (const scheme of ["light", "dark"] as const) {
+      const ctx = await browser.newContext({ colorScheme: scheme });
+      const page = await ctx.newPage();
+      try {
+        await page.goto(url);
+        await expect(page.getByText(ready).first()).toBeVisible();
+        const results = await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+          .analyze();
+        const summary = results.violations.map((v) =>
+          `  ${v.id} (${v.impact}) — ${v.help}\n`
+          + v.nodes.slice(0, 3).map((n) =>
+              `      ${n.target.join(" ")}\n`
+              + `        ${(n.failureSummary ?? "").split("\n").join("\n        ")}`,
+            ).join("\n"),
+        ).join("\n");
+        expect(results.violations, `${url} signed out (${scheme})\n${summary}`)
+          .toEqual([]);
+      } finally {
+        await ctx.close();
+      }
+    }
+  }
+
+  test("the landing page is accessible in both themes", async ({ browser }) => {
+    // The dark hero and the light body are two different grounds, and an
+    // accent legible on one can fail on the other -- which is exactly what a
+    // contrast check is for and exactly what no test was doing.
+    await scanAnonymously(browser, "/", /An HTTP 200 is not/);
+  });
+
+  test("the sign-in page is accessible in both themes", async ({ browser }) => {
+    // Its left half is a fixed dark palette that does NOT follow the theme, so
+    // it is checked under both settings to prove that is deliberate rather
+    // than a token that failed to switch.
+    await scanAnonymously(browser, "/signin", /A token identifies you/);
+  });
 });

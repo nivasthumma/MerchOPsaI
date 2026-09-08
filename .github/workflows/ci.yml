@@ -139,6 +139,19 @@ jobs:
           pip install -q --require-hashes -r requirements.lock
           pip install -q ruff pip-audit uv
 
+      - name: Lint the shell
+        # `scripts/run_e2e.sh` stands up a database, an API, a built bundle and
+        # a browser. Its first shellcheck run found a real one: an environment
+        # prefix where `E2E_API="$API_ORIGIN"` expanded the PARENT shell rather
+        # than the assignment on the line above it (SC2097/SC2098). It was
+        # correct only because API_ORIGIN happened to be set higher up; reorder
+        # that and the suite drives an empty origin while every journey still
+        # reports a result.
+        run: |
+          # The wheel ships the binary on PATH; there is no importable module.
+          pip install -q shellcheck-py
+          shellcheck scripts/*.sh
+
       - name: Lint
         # The rule set is curated in pyproject.toml rather than "everything
         # ruff knows" -- a gate that fires on style nobody agreed to is a gate

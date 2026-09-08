@@ -813,7 +813,7 @@ are different claims.
     entirely. It required raising CI's Node from 20 to 24 (Vitest 5 needs ≥ 22.12),
     which `engines` plus `engine-strict` now enforce at install rather than thirty
     seconds into a test run. Verified by the full suite: 295 Vitest tests, the build,
-    and all eleven browser journeys and accessibility scans against `vite preview`,
+    and all 11 browser journeys and accessibility scans against `vite preview`,
     which is the part a Vite major could have broken silently.
 
     The router went the same way for the same reason, and stopped one major short of

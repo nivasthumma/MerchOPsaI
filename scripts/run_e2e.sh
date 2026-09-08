@@ -148,8 +148,16 @@ cd web
 # `API_ORIGIN` is read by vite.config.ts, so the preview server proxies /api to
 # THIS api rather than to whatever is on :8000. The browser still makes only
 # same-origin requests, which is why the API needs no CORS.
-API_ORIGIN="$API_ORIGIN" \
-E2E_API="$API_ORIGIN" \
-E2E_PORT="$WEB_PORT" \
-E2E_TOKEN="$TOKEN" \
-  npx playwright test "$@"
+#
+# `export` rather than a command prefix. As a prefix, `E2E_API="$API_ORIGIN"`
+# expands API_ORIGIN from the PARENT shell, not from the assignment beside it
+# (shellcheck SC2097/SC2098). It happened to be correct because API_ORIGIN is
+# set at the top of this script -- but only by that accident. Reorder so it is
+# set only in the prefix and E2E_API becomes the empty string, and the suite
+# drives nothing while every journey still reports whatever the default gives
+# it. Exporting makes the dependency say what it is.
+export API_ORIGIN
+export E2E_API="$API_ORIGIN"
+export E2E_PORT="$WEB_PORT"
+export E2E_TOKEN="$TOKEN"
+npx playwright test "$@"

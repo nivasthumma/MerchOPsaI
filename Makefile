@@ -66,6 +66,11 @@ token:      ; @$(PY) scripts/issue_token.py $(USER_ID)
 # The gates CI runs, in the order CI runs them. `lint` and `audit` need the
 # dev tooling: pip install ruff pip-audit.
 lint:       ; $(PY) -m ruff check .
+# The shell is code too. `run_e2e.sh` stands up a database, an API and a
+# browser, and its first shellcheck run found an environment prefix whose
+# expansion read the parent shell rather than the assignment beside it.
+lint-sh:    ; @test -x .venv/bin/shellcheck || $(PY) -m pip install -q shellcheck-py
+	.venv/bin/shellcheck scripts/*.sh
 lint-fix:   ; $(PY) -m ruff check . --fix
 audit:      ; $(PY) -m pip_audit -r requirements.txt --progress-spinner off
 
@@ -119,6 +124,7 @@ ci:
 	DATABASE_URL=$(CI_DB) SEED_FORCE=1 $(MAKE) seed
 	DATABASE_URL=$(CI_DB) $(MAKE) harden
 	$(MAKE) lint
+	$(MAKE) lint-sh
 	$(MAKE) cleanroom
 	$(MAKE) test
 	DATABASE_URL=$(CI_DB) $(MAKE) counts

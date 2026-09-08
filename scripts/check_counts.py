@@ -83,6 +83,22 @@ def vitest_count() -> int | None:
     return len(lines)
 
 
+def e2e_test_count() -> int | None:
+    """How many browser tests the Playwright specs define.
+
+    Counted from `test(` and `test.describe`-free files rather than by running
+    Playwright: the number is a published claim, and running a browser to
+    check a sentence would put a browser download in the cheap gate. If the
+    specs ever grow a parametrised test this undercounts and the gate fails
+    loudly, which is the right way round.
+    """
+    d = ROOT / "web" / "e2e"
+    if not d.is_dir():
+        return None
+    return sum(len(re.findall(r"^test\(", f.read_text(), re.M))
+               for f in d.glob("*.spec.ts"))
+
+
 def adr_count() -> int:
     return len(list((ROOT / "docs" / "adr").glob("*.md")))
 
@@ -219,6 +235,13 @@ def main() -> int:
         Claim("README.md", r"gap-closure plan, (\d+) ADRs", adr_count(),
               "the ADR count in the repository map"),
     ]
+    e2e = e2e_test_count()
+    if e2e:
+        print(f"browser:   {e2e} Playwright tests defined")
+        claims.append(
+            Claim("README.md", r"all (\d+) browser journeys", e2e,
+                  "the browser-journey count"))
+
     if web is not None:
         claims += [
             Claim("README.md", r"React SPA — Vite \+ TypeScript \(ADR-0015\), (\d+) tests",

@@ -32,6 +32,10 @@ test:       ; PYTHONPATH=. $(PY) -m pytest tests -q
 eval:       ; $(PY) scripts/run_scenarios.py
 reconcile:  ; $(PY) scripts/reconcile.py
 mutants:    ; $(PY) scripts/mutation_test.py
+# Is a run in progress? Answered from the repository root, because
+# `ls .mutation-in-progress` is relative and reports "no run" from any
+# subdirectory -- which is how a live mutant got reverted mid-run once.
+mutants-status: ; @$(PY) scripts/check_no_mutants.py --status
 compare:    ; $(PY) scripts/compare_models.py
 harden:     ; $(PY) scripts/harden_db.py
 # Regenerate the pinned, hashed dependency set CI installs from.

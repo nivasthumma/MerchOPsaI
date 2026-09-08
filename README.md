@@ -423,6 +423,7 @@ make harden                              # verify audit immutability on a live d
 make ci                                  # the fast pre-push subset (see below)
 make demo                                # full end-to-end walkthrough
 make hooks                               # pre-commit: refuse to record a mutant
+make mutants-status                      # is a mutation run in progress?
 ```
 
 `make hooks` installs one pre-commit hook, and it exists because of a specific
@@ -433,6 +434,13 @@ flight. On 2026-09-08 a `git add -A` during a run pushed
 `Decision.ALLOW,  # MUTANT` — the mutation that removes the human approval gate
 on high-risk financial actions, which 49 scenarios exist to catch. It was found
 by reading `git show --name-only` afterwards, which is not a control.
+
+`make mutants-status` answers the companion question, and answers it from the
+repository root. `ls .mutation-in-progress` is a relative path: run from `web/`
+it reports no run in progress while one is ninety minutes in, and acting on
+that answer means reverting a file the harness is actively mutating. A question
+whose answer depends on which directory you are standing in is one that will
+eventually be answered wrongly.
 
 The check compares the file against the harness's own `MUTATIONS` list rather
 than grepping for a `# MUTANT` marker: a marker is a convention and conventions

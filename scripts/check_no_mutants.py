@@ -26,6 +26,7 @@ is excluded for that reason.
 
     python scripts/check_no_mutants.py            # the working tree
     python scripts/check_no_mutants.py --staged   # what a commit would record
+    python scripts/check_no_mutants.py --status   # is a run in progress?
 """
 from __future__ import annotations
 
@@ -54,6 +55,33 @@ def _staged(relpath: str) -> str | None:
 def _worktree(relpath: str) -> str | None:
     p = ROOT / relpath
     return p.read_text() if p.exists() else None
+
+
+def status() -> int:
+    """Is a mutation run in progress? Answered from the repository root.
+
+    This exists because of a specific mistake. `ls .mutation-in-progress` is a
+    RELATIVE path, and run from `web/` it found nothing and reported no run in
+    progress -- while one was ninety minutes in. Acting on that answer meant
+    deleting the harness's lock and reverting a file it was actively mutating,
+    which corrupted exactly one mutant's result.
+
+    A question whose answer depends on which directory you happen to be in is a
+    question that will eventually be answered wrongly, so it is answered here,
+    where the root is resolved from this file rather than from the shell.
+
+        python scripts/check_no_mutants.py --status
+    """
+    lock = ROOT / ".mutation-in-progress"
+    if not lock.exists():
+        print("No mutation run in progress.")
+        # A stale mutant with no lock means a killed run, which is exactly what
+        # the main check is for -- so it is worth saying here rather than
+        # letting "no run in progress" read as "nothing to worry about".
+        return main()
+    print("A mutation run IS in progress. Do not stage app/ or alembic/.\n")
+    print(lock.read_text().rstrip())
+    return 0
 
 
 def main() -> int:
@@ -116,4 +144,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(status() if "--status" in sys.argv else main())

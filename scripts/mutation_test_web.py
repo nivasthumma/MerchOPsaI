@@ -71,6 +71,35 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "  const total = d.counts[k];",
         "  const total = rows.length;  // MUTANT",
     ),
+    # --- the surfaces that exist to be honest (§41, §28, §26) --------------
+    (
+        # The audit count becomes the page length. A reader concludes there
+        # were two approvals because two fit on the screen -- the same defect
+        # this repository has written three times, in the one place where it
+        # reads as an event having not happened.
+        "audit: count the page instead of what the filter matched",
+        "web/src/routes/Audit.tsx",
+        "          [\"Matching\", page.matched],",
+        "          [\"Matching\", rows.length],  // MUTANT",
+    ),
+    (
+        # A stored-and-ignored policy key rendered as though it worked.
+        # Somebody sets it, believes small refunds auto-approve, and nothing
+        # happens -- which is the state the screen was built to end.
+        "policy: stop marking a control as not implemented",
+        "web/src/routes/Policy.tsx",
+        '  return c.why.startsWith("NOT IMPLEMENTED");',
+        "  return false;  // MUTANT",
+    ),
+    (
+        # Clearing an override becomes setting zero. Zero is a real limit that
+        # refuses every refund, so "back to default" becomes a quiet outage.
+        "policy: clear an override by setting it to zero",
+        "web/src/routes/Policy.tsx",
+        "      const minor = clear ? null : Math.round(Number(draft) * 100);",
+        "      const minor = clear ? 0 : Math.round(Number(draft) * 100);  // MUTANT",
+    ),
+
     # --- administration (§43) ----------------------------------------------
     (
         # The last-owner guard, removed from the UI. The server still refuses,

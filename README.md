@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-1158%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-1188%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations](https://img.shields.io/badge/mutations-136%20defined%20%C2%B7%20not%20measured-lightgrey.svg)](#-measured-results)
 
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 1158 tests · 187/187 scenarios · 141 mutants defined |
+| [📊 Measured results](#-measured-results) | 1188 tests · 187/187 scenarios · 141 mutants defined |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -459,7 +459,7 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make demo-state                          # give the console something to show
-make test                                # 1158 tests
+make test                                # 1188 tests
 make eval                                # 187 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -552,7 +552,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 373 Vitest tests
+make web-test                     # 400 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -875,7 +875,7 @@ are different claims.
     entirely. It required raising CI's Node from 20 to 24 (Vitest 5 needs ≥ 22.12),
     which `engines` plus `engine-strict` now enforce at install rather than thirty
     seconds into a test run. Verified by the full suite: 324 Vitest tests, the build,
-    and all 16 browser journeys and accessibility scans against `vite preview`,
+    and all 17 browser journeys and accessibility scans against `vite preview`,
     which is the part a Vite major could have broken silently.
 
     The router went the same way for the same reason, and stopped one major short of
@@ -995,11 +995,11 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 373 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 400 tests
 data/           187 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
                 mutation harness, and the gates: counts, mutants, locks
-tests/          unit · security · integration  (1158 tests)
+tests/          unit · security · integration  (1188 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
                 gap-closure plan, 56 ADRs

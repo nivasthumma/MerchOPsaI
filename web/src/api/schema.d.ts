@@ -149,6 +149,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search Audit
+         * @description Search the trail — §28.
+         *
+         *     The trail was visible wherever it was relevant: a task, an incident, the
+         *     live timeline. What was missing is the auditor's question, which is not
+         *     about one object -- "everything this person did", "every approval last
+         *     quarter", "what happened in that window".
+         *
+         *     ## Merchant-scoped in SQL, never afterwards
+         *
+         *     Row-level security covers `audit_logs`, and the WHERE clause says so too.
+         *     A filter applied in Python after the fact is a filter that can be forgotten,
+         *     and forgetting it leaks another merchant's activity by its shape even when
+         *     the payloads are redacted.
+         *
+         *     ## Keyset pagination, not OFFSET
+         *
+         *     `before_id` walks backwards through an append-only table. OFFSET over a
+         *     table receiving writes shows a row twice or skips one when something lands
+         *     mid-scroll -- which in an audit context is not a paging artefact, it is a
+         *     reader concluding an event is missing.
+         *
+         *     `matched` is the count of the FILTER, not of the page. Deriving a total from
+         *     a LIMITed query is a defect this repository has written three times.
+         */
+        get: operations["search_audit_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/refresh": {
         parameters: {
             query?: never;
@@ -1024,6 +1066,83 @@ export interface paths {
          *     404 rather than 403 for another merchant's payment: existence is not leaked.
          */
         get: operations["get_payment_lifecycle_payments__payment_id__lifecycle_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Policy
+         * @description What policy decides for this merchant, and which parts it may change.
+         *
+         *     §41. The policy engine has always been readable only by reading the engine.
+         *     Its decisions appear on six screens -- an operator sees WHY a refund was
+         *     held -- but nothing said what the rules were before one fired.
+         *
+         *     Every control is listed, including the ones a merchant cannot change. A
+         *     policy page showing only the editable part invites the reader to believe
+         *     that is all of policy, which is the opposite of what it is for.
+         */
+        get: operations["get_policy_policy_get"];
+        /**
+         * Set Policy
+         * @description Change the one control that is per-merchant — §41.
+         *
+         *     Owner only, and recorded. Raising a refund limit raises the amount this
+         *     system will move without a human saying so a second time, which is exactly
+         *     the kind of change that should be attributable afterwards.
+         *
+         *     `null` clears the override rather than setting zero. Zero is a real limit
+         *     that refuses every refund, and a UI that produced it by accident when
+         *     somebody meant "back to default" would be a quiet outage.
+         */
+        put: operations["set_policy_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/provider-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Provider Health
+         * @description How the provider has actually behaved — §26.
+         *
+         *     `/readiness` answers "is it reachable right now", which is the question a
+         *     load balancer asks. An operator deciding whether to keep acting asks a
+         *     different one: how has it been, on which operations, and is what I am
+         *     seeing now unusual. A single verdict cannot answer that.
+         *
+         *     ## UNKNOWN is its own column, never folded into failure
+         *
+         *     An action whose outcome could not be established is not a failure and not a
+         *     success, and a success rate computed as `succeeded / attempted` quietly
+         *     calls it one. Three columns, and the reader decides.
+         *
+         *     ## Latency is the provider's, not ours
+         *
+         *     `provider_latency_ms` is time spent in the call; verification time is
+         *     separate and excluded. Mixing them makes our own sweep look like their
+         *     slowness.
+         */
+        get: operations["provider_health_provider_health_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2238,6 +2357,43 @@ export interface components {
             running_tasks: number;
             /** Unknown Actions */
             unknown_actions: number;
+        };
+        /** AuditEntry */
+        AuditEntry: {
+            /** Correlation Id */
+            correlation_id?: string | null;
+            /** Created At */
+            created_at: string;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id: number;
+            /** Incident Id */
+            incident_id?: string | null;
+            /** Merchant Id */
+            merchant_id?: string | null;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            } | unknown[] | string | null;
+            /** Task Id */
+            task_id?: string | null;
+            /** User Id */
+            user_id?: string | null;
+        };
+        /** AuditPage */
+        AuditPage: {
+            /** Entries */
+            entries: components["schemas"]["AuditEntry"][];
+            /**
+             * Event Types
+             * @default []
+             */
+            event_types: string[];
+            /** Matched */
+            matched: number;
+            /** Next Cursor */
+            next_cursor?: number | null;
         };
         /**
          * CampaignBudget
@@ -3487,6 +3643,46 @@ export interface components {
             /** Stop Rule */
             stop_rule?: string | null;
         };
+        /** PolicyChange */
+        PolicyChange: {
+            /** After */
+            after?: number | null;
+            /** Before */
+            before?: number | null;
+            /** Changed */
+            changed: boolean;
+            /** Key */
+            key: string;
+            /** Merchant Id */
+            merchant_id: string;
+        };
+        /**
+         * PolicyControl
+         * @description One thing policy decides, and whether a merchant may change it.
+         */
+        PolicyControl: {
+            /** Default */
+            default: number | string | boolean;
+            /** Editable */
+            editable: boolean;
+            /** Effective */
+            effective: number | string | boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Overridden */
+            overridden: boolean;
+            /** Why */
+            why: string;
+        };
+        /** PolicyView */
+        PolicyView: {
+            /** Controls */
+            controls: components["schemas"]["PolicyControl"][];
+            /** Merchant Id */
+            merchant_id: string;
+        };
         /** ProviderChange */
         ProviderChange: {
             /**
@@ -3502,6 +3698,60 @@ export interface components {
             llm_provider: string;
             /** Llm Provider Source */
             llm_provider_source: string;
+        };
+        /** ProviderDay */
+        ProviderDay: {
+            /** Attempted */
+            attempted: number;
+            /** Day */
+            day: string;
+            /** Failed */
+            failed: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Unknown */
+            unknown: number;
+        };
+        /** ProviderHealth */
+        ProviderHealth: {
+            /** Detail */
+            detail: string;
+            /** Environment */
+            environment: string;
+            /** Execution Is Real */
+            execution_is_real: boolean;
+            /** History */
+            history: components["schemas"]["ProviderDay"][];
+            /** Mode */
+            mode: string;
+            /** Operations */
+            operations: components["schemas"]["ProviderOperation"][];
+            /** Status */
+            status: string;
+            /** Webhooks Received */
+            webhooks_received: number;
+            /** Webhooks Rejected */
+            webhooks_rejected: number;
+        };
+        /**
+         * ProviderOperation
+         * @description One kind of call, and how it has actually gone.
+         */
+        ProviderOperation: {
+            /** Action Type */
+            action_type: string;
+            /** Attempted */
+            attempted: number;
+            /** Failed */
+            failed: number;
+            /** P50 Latency Ms */
+            p50_latency_ms?: number | null;
+            /** P95 Latency Ms */
+            p95_latency_ms?: number | null;
+            /** Succeeded */
+            succeeded: number;
+            /** Unknown */
+            unknown: number;
         };
         /** ProviderRequest */
         ProviderRequest: {
@@ -3842,6 +4092,11 @@ export interface components {
         SetPermissionsRequest: {
             /** Permissions */
             permissions: string[];
+        };
+        /** SetPolicyRequest */
+        SetPolicyRequest: {
+            /** Refund Limit Minor */
+            refund_limit_minor?: number | null;
         };
         /** SettleReport */
         SettleReport: {
@@ -4489,6 +4744,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalQueue"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_audit_audit_get: {
+        parameters: {
+            query?: {
+                event_type?: string | null;
+                actor?: string | null;
+                since?: string | null;
+                until?: string | null;
+                before_id?: number | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditPage"];
                 };
             };
             /** @description Validation Error */
@@ -5581,6 +5874,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaymentLifecycle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_policy_policy_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_policy_policy_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPolicyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PolicyChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provider_health_provider_health_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderHealth"];
                 };
             };
             /** @description Validation Error */

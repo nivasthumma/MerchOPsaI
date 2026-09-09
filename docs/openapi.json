@@ -1210,6 +1210,145 @@
         "title": "AttentionCounts",
         "type": "object"
       },
+      "AuditEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
+          },
+          "merchant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant Id"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "created_at"
+        ],
+        "title": "AuditEntry",
+        "type": "object"
+      },
+      "AuditPage": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "event_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Event Types",
+            "type": "array"
+          },
+          "matched": {
+            "title": "Matched",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "entries",
+          "matched"
+        ],
+        "title": "AuditPage",
+        "type": "object"
+      },
       "CampaignBudget": {
         "additionalProperties": false,
         "description": "\u00a738's five bounds, each beside what has been used against it.\n\nA limit with no consumption reading is a limit nobody can see approaching,\nwhich for a merchant watching an ACTIVE campaign is the only thing they\nactually want to know.",
@@ -4543,6 +4682,139 @@
         "title": "PlanView",
         "type": "object"
       },
+      "PolicyChange": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "key",
+          "changed"
+        ],
+        "title": "PolicyChange",
+        "type": "object"
+      },
+      "PolicyControl": {
+        "additionalProperties": false,
+        "description": "One thing policy decides, and whether a merchant may change it.",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Default"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "effective": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Effective"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "overridden": {
+            "title": "Overridden",
+            "type": "boolean"
+          },
+          "why": {
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "effective",
+          "default",
+          "overridden",
+          "editable",
+          "why"
+        ],
+        "title": "PolicyControl",
+        "type": "object"
+      },
+      "PolicyView": {
+        "additionalProperties": false,
+        "properties": {
+          "controls": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyControl"
+            },
+            "title": "Controls",
+            "type": "array"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "controls"
+        ],
+        "title": "PolicyView",
+        "type": "object"
+      },
       "ProviderChange": {
         "additionalProperties": false,
         "properties": {
@@ -4575,6 +4847,157 @@
           "changed_from"
         ],
         "title": "ProviderChange",
+        "type": "object"
+      },
+      "ProviderDay": {
+        "additionalProperties": false,
+        "properties": {
+          "attempted": {
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "attempted",
+          "succeeded",
+          "failed",
+          "unknown"
+        ],
+        "title": "ProviderDay",
+        "type": "object"
+      },
+      "ProviderHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "execution_is_real": {
+            "title": "Execution Is Real",
+            "type": "boolean"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderDay"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOperation"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "webhooks_received": {
+            "title": "Webhooks Received",
+            "type": "integer"
+          },
+          "webhooks_rejected": {
+            "title": "Webhooks Rejected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "detail",
+          "mode",
+          "environment",
+          "execution_is_real",
+          "webhooks_received",
+          "webhooks_rejected",
+          "operations",
+          "history"
+        ],
+        "title": "ProviderHealth",
+        "type": "object"
+      },
+      "ProviderOperation": {
+        "additionalProperties": false,
+        "description": "One kind of call, and how it has actually gone.",
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "attempted": {
+            "title": "Attempted",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "p50_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P50 Latency Ms"
+          },
+          "p95_latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P95 Latency Ms"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action_type",
+          "attempted",
+          "succeeded",
+          "failed",
+          "unknown"
+        ],
+        "title": "ProviderOperation",
         "type": "object"
       },
       "ProviderRequest": {
@@ -5606,6 +6029,24 @@
           "permissions"
         ],
         "title": "SetPermissionsRequest",
+        "type": "object"
+      },
+      "SetPolicyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refund_limit_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Limit Minor"
+          }
+        },
+        "title": "SetPolicyRequest",
         "type": "object"
       },
       "SettleReport": {
@@ -7394,6 +7835,144 @@
           }
         },
         "summary": "List Approvals"
+      }
+    },
+    "/audit": {
+      "get": {
+        "description": "Search the trail \u2014 \u00a728.\n\nThe trail was visible wherever it was relevant: a task, an incident, the\nlive timeline. What was missing is the auditor's question, which is not\nabout one object -- \"everything this person did\", \"every approval last\nquarter\", \"what happened in that window\".\n\n## Merchant-scoped in SQL, never afterwards\n\nRow-level security covers `audit_logs`, and the WHERE clause says so too.\nA filter applied in Python after the fact is a filter that can be forgotten,\nand forgetting it leaks another merchant's activity by its shape even when\nthe payloads are redacted.\n\n## Keyset pagination, not OFFSET\n\n`before_id` walks backwards through an append-only table. OFFSET over a\ntable receiving writes shows a row twice or skips one when something lands\nmid-scroll -- which in an audit context is not a paging artefact, it is a\nreader concluding an event is missing.\n\n`matched` is the count of the FILTER, not of the page. Deriving a total from\na LIMITed query is a defect this repository has written three times.",
+        "operationId": "search_audit_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Audit"
       }
     },
     "/auth/refresh": {
@@ -9324,6 +9903,167 @@
           }
         },
         "summary": "Get Payment Lifecycle"
+      }
+    },
+    "/policy": {
+      "get": {
+        "description": "What policy decides for this merchant, and which parts it may change.\n\n\u00a741. The policy engine has always been readable only by reading the engine.\nIts decisions appear on six screens -- an operator sees WHY a refund was\nheld -- but nothing said what the rules were before one fired.\n\nEvery control is listed, including the ones a merchant cannot change. A\npolicy page showing only the editable part invites the reader to believe\nthat is all of policy, which is the opposite of what it is for.",
+        "operationId": "get_policy_policy_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Policy"
+      },
+      "put": {
+        "description": "Change the one control that is per-merchant \u2014 \u00a741.\n\nOwner only, and recorded. Raising a refund limit raises the amount this\nsystem will move without a human saying so a second time, which is exactly\nthe kind of change that should be attributable afterwards.\n\n`null` clears the override rather than setting zero. Zero is a real limit\nthat refuses every refund, and a UI that produced it by accident when\nsomebody meant \"back to default\" would be a quiet outage.",
+        "operationId": "set_policy_policy_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PolicyChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Policy"
+      }
+    },
+    "/provider-health": {
+      "get": {
+        "description": "How the provider has actually behaved \u2014 \u00a726.\n\n`/readiness` answers \"is it reachable right now\", which is the question a\nload balancer asks. An operator deciding whether to keep acting asks a\ndifferent one: how has it been, on which operations, and is what I am\nseeing now unusual. A single verdict cannot answer that.\n\n## UNKNOWN is its own column, never folded into failure\n\nAn action whose outcome could not be established is not a failure and not a\nsuccess, and a success rate computed as `succeeded / attempted` quietly\ncalls it one. Three columns, and the reader decides.\n\n## Latency is the provider's, not ours\n\n`provider_latency_ms` is time spent in the call; verification time is\nseparate and excluded. Mixing them makes our own sweep look like their\nslowness.",
+        "operationId": "provider_health_provider_health_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderHealth"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Provider Health"
       }
     },
     "/readiness": {

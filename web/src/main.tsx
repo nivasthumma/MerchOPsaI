@@ -5,6 +5,9 @@ import App from "./App";
 import { AppErrorBoundary } from "./components/ErrorBoundary";
 import AccessReview from "./routes/AccessReview";
 import Actions from "./routes/Actions";
+import Audit from "./routes/Audit";
+import Policy from "./routes/Policy";
+import Provider from "./routes/Provider";
 import Identity from "./routes/Identity";
 import People from "./routes/People";
 import Roles from "./routes/Roles";
@@ -53,6 +56,9 @@ const router = createBrowserRouter([
       { path: "people", element: <People /> },
       { path: "roles", element: <Roles /> },
       { path: "identity", element: <Identity /> },
+      { path: "policy", element: <Policy /> },
+      { path: "audit", element: <Audit /> },
+      { path: "provider", element: <Provider /> },
       { path: "settings", element: <Settings /> },
       // Signed out this renders the sign-in page and signed in it
       // redirects home, both handled in `App`. It needs to exist here

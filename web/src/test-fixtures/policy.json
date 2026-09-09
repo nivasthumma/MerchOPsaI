@@ -1,0 +1,50 @@
+{
+  "merchant_id": "MERCH_A",
+  "controls": [
+    {
+      "key": "refund_limit_minor",
+      "label": "Refund limit",
+      "effective": 500000,
+      "default": 500000,
+      "overridden": true,
+      "editable": true,
+      "why": "The largest single refund this merchant may issue. Above it the engine denies with `amount_limit_exceeded` rather than asking for approval -- a limit is a limit, not a prompt."
+    },
+    {
+      "key": "auto_approve_below_minor",
+      "label": "Auto-approve below",
+      "effective": 0,
+      "default": 0,
+      "overridden": true,
+      "editable": false,
+      "why": "NOT IMPLEMENTED. This key is stored on every merchant and read by no code path -- setting it changes nothing. It is listed so that is visible rather than assumed."
+    },
+    {
+      "key": "approval_ttl_seconds",
+      "label": "Approval expires after",
+      "effective": 900,
+      "default": 900,
+      "overridden": false,
+      "editable": false,
+      "why": "Platform-wide. An approval that outlives the situation it was granted for is a signature on a decision nobody is still making (\u00a721)."
+    },
+    {
+      "key": "dual_approval",
+      "label": "Two signatures on high risk",
+      "effective": true,
+      "default": true,
+      "overridden": false,
+      "editable": false,
+      "why": "Not configurable on purpose. A control a merchant can switch off under pressure is one that is off when it matters (\u00a725)."
+    },
+    {
+      "key": "computed_risk",
+      "label": "Risk is computed, never declared",
+      "effective": true,
+      "default": true,
+      "overridden": false,
+      "editable": false,
+      "why": "Risk comes from the registry, the arguments and the database. A caller-supplied risk level is a caller grading their own homework (\u00a724)."
+    }
+  ]
+}

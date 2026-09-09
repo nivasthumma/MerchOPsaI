@@ -131,6 +131,16 @@ test("the administration screens are accessible in both themes", async ({ page }
   await inBothThemes(page, "/identity", /Where accounts come from|Single sign-on/);
 });
 
+test("policy, audit and provider health are accessible in both themes", async ({ page }) => {
+  // Policy reuses the tinted permission rows, and the provider history draws
+  // its own segmented track -- the two places on these screens where colour
+  // carries meaning rather than decoration.
+  test.slow();
+  await inBothThemes(page, "/policy", /What the engine decides/);
+  await inBothThemes(page, "/audit", /Append-only/);
+  await inBothThemes(page, "/provider", /How the provider|By operation/);
+});
+
 test("a failure state stays readable", async ({ page }) => {
   // The one worth having most. A palette change that leaves an error banner
   // unreadable is discovered, otherwise, by somebody trying to read it during

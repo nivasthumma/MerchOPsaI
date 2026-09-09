@@ -9,7 +9,7 @@ import hmac
 import json
 import os
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Annotated
 
@@ -1078,6 +1078,299 @@ def set_permissions(role_name: str, body: schemas.SetPermissionsRequest,
                 "revoked": change["revoked"], "by": principal.user_id})
         return {"name": change["name"], "permissions": change["permissions"],
                 "granted": change["granted"], "revoked": change["revoked"]}
+
+
+@app.get("/provider-health", response_model=schemas.ProviderHealth,
+         response_model_exclude_unset=True)
+def provider_health(days: int = Query(14, ge=1, le=90),
+                    principal: Principal = Depends(current_principal)):
+    """How the provider has actually behaved — §26.
+
+    `/readiness` answers "is it reachable right now", which is the question a
+    load balancer asks. An operator deciding whether to keep acting asks a
+    different one: how has it been, on which operations, and is what I am
+    seeing now unusual. A single verdict cannot answer that.
+
+    ## UNKNOWN is its own column, never folded into failure
+
+    An action whose outcome could not be established is not a failure and not a
+    success, and a success rate computed as `succeeded / attempted` quietly
+    calls it one. Three columns, and the reader decides.
+
+    ## Latency is the provider's, not ours
+
+    `provider_latency_ms` is time spent in the call; verification time is
+    separate and excluded. Mixing them makes our own sweep look like their
+    slowness.
+    """
+    from app.api.readiness import _payment_provider
+    from app.integrations.mapping import active_environment
+
+    with session_scope() as s:
+        verdict = _payment_provider(s)
+
+        per_op = s.execute(text("""
+            SELECT action_type,
+                   COUNT(*)                                          AS attempted,
+                   COUNT(*) FILTER (WHERE verification_state = 'SUCCESS') AS succeeded,
+                   COUNT(*) FILTER (WHERE verification_state = 'FAILED')  AS failed,
+                   COUNT(*) FILTER (WHERE verification_state IN ('UNKNOWN','PARTIAL')
+                                       OR verification_state IS NULL)     AS unknown,
+                   percentile_disc(0.5) WITHIN GROUP (ORDER BY provider_latency_ms)
+                       FILTER (WHERE provider_latency_ms IS NOT NULL)     AS p50,
+                   percentile_disc(0.95) WITHIN GROUP (ORDER BY provider_latency_ms)
+                       FILTER (WHERE provider_latency_ms IS NOT NULL)     AS p95
+              FROM agent_actions
+             WHERE merchant_id = :m AND created_at >= now() - make_interval(days => :d)
+             GROUP BY action_type ORDER BY action_type
+        """), {"m": principal.merchant_id, "d": days}).mappings().all()
+
+        history = s.execute(text("""
+            SELECT date_trunc('day', created_at)::date AS day,
+                   COUNT(*)                                          AS attempted,
+                   COUNT(*) FILTER (WHERE verification_state = 'SUCCESS') AS succeeded,
+                   COUNT(*) FILTER (WHERE verification_state = 'FAILED')  AS failed,
+                   COUNT(*) FILTER (WHERE verification_state IN ('UNKNOWN','PARTIAL')
+                                       OR verification_state IS NULL)     AS unknown
+              FROM agent_actions
+             WHERE merchant_id = :m AND created_at >= now() - make_interval(days => :d)
+             GROUP BY 1 ORDER BY 1
+        """), {"m": principal.merchant_id, "d": days}).mappings().all()
+
+        # The provider talking to us. A provider can be healthy outbound and
+        # silent inbound, and that asymmetry is invisible from actions alone.
+        hooks = s.execute(text("""
+            SELECT COUNT(*) AS received,
+                   COUNT(*) FILTER (WHERE NOT signature_valid) AS rejected
+              FROM webhook_events
+             WHERE received_at >= now() - make_interval(days => :d)
+        """), {"d": days}).mappings().one()
+
+    return {
+        "status": verdict["status"], "detail": verdict["detail"],
+        "mode": get_settings().resolved_razorpay_mode,
+        "environment": active_environment(),
+        "execution_is_real": bool(verdict.get("execution_is_real", False)),
+        "webhooks_received": int(hooks["received"]),
+        "webhooks_rejected": int(hooks["rejected"]),
+        "operations": [{"action_type": r["action_type"],
+                        "attempted": int(r["attempted"]),
+                        "succeeded": int(r["succeeded"]),
+                        "failed": int(r["failed"]),
+                        "unknown": int(r["unknown"]),
+                        "p50_latency_ms": int(r["p50"]) if r["p50"] is not None else None,
+                        "p95_latency_ms": int(r["p95"]) if r["p95"] is not None else None}
+                       for r in per_op],
+        "history": [{"day": r["day"].isoformat(), "attempted": int(r["attempted"]),
+                     "succeeded": int(r["succeeded"]), "failed": int(r["failed"]),
+                     "unknown": int(r["unknown"])} for r in history],
+    }
+
+
+@app.get("/audit", response_model=schemas.AuditPage,
+         response_model_exclude_unset=True)
+def search_audit(event_type: str | None = None, actor: str | None = None,
+                 since: str | None = None, until: str | None = None,
+                 before_id: int | None = None, limit: int = Query(50, le=200),
+                 principal: Principal = Depends(current_principal)):
+    """Search the trail — §28.
+
+    The trail was visible wherever it was relevant: a task, an incident, the
+    live timeline. What was missing is the auditor's question, which is not
+    about one object -- "everything this person did", "every approval last
+    quarter", "what happened in that window".
+
+    ## Merchant-scoped in SQL, never afterwards
+
+    Row-level security covers `audit_logs`, and the WHERE clause says so too.
+    A filter applied in Python after the fact is a filter that can be forgotten,
+    and forgetting it leaks another merchant's activity by its shape even when
+    the payloads are redacted.
+
+    ## Keyset pagination, not OFFSET
+
+    `before_id` walks backwards through an append-only table. OFFSET over a
+    table receiving writes shows a row twice or skips one when something lands
+    mid-scroll -- which in an audit context is not a paging artefact, it is a
+    reader concluding an event is missing.
+
+    `matched` is the count of the FILTER, not of the page. Deriving a total from
+    a LIMITed query is a defect this repository has written three times.
+    """
+    # Parsed here rather than handed to Postgres as a string. An unparseable
+    # value reached the driver and came back as a 500 -- and a filter somebody
+    # mistyped is a bad request, not a broken server. Found because a bare
+    # `+00:00` in a query string decodes to a space.
+    def _when(raw: str | None, field: str):
+        if raw is None:
+            return None
+        try:
+            return datetime.fromisoformat(raw.strip())
+        except ValueError as exc:
+            raise HTTPException(400, {
+                "error": f"`{field}` is not an ISO-8601 timestamp: {raw!r}. "
+                         f"Remember to URL-encode a `+` in an offset.",
+                "code": "invalid_timestamp"}) from exc
+
+    since_at, until_at = _when(since, "since"), _when(until, "until")
+
+    clauses = ["merchant_id = :m"]
+    params: dict = {"m": principal.merchant_id, "n": limit}
+    if event_type:
+        clauses.append("event_type = :et")
+        params["et"] = event_type
+    if actor:
+        clauses.append("user_id = :actor")
+        params["actor"] = actor
+    if since_at:
+        clauses.append("created_at >= :since")
+        params["since"] = since_at
+    if until_at:
+        clauses.append("created_at <= :until")
+        params["until"] = until_at
+
+    where = " AND ".join(clauses)
+    page_where = where + (" AND id < :before" if before_id else "")
+    if before_id:
+        params["before"] = before_id
+
+    # S608: every fragment is a literal above; all caller values are bound.
+    with session_scope() as s:
+        rows = s.execute(text(
+            f"SELECT id, event_type, created_at, merchant_id, user_id, task_id, "  # noqa: S608
+            f"       incident_id, correlation_id, payload "
+            f"FROM audit_logs WHERE {page_where} ORDER BY id DESC LIMIT :n"),
+            params).mappings().all()
+        matched = s.execute(text(
+            f"SELECT COUNT(*) FROM audit_logs WHERE {where}"),  # noqa: S608
+            {k: v for k, v in params.items() if k != "before"}).scalar_one()
+        # Built from what is there. A hardcoded list of event types goes stale
+        # the first time a new one is recorded, and stale in the direction that
+        # hides events rather than inventing them.
+        kinds = s.execute(text(
+            "SELECT DISTINCT event_type FROM audit_logs WHERE merchant_id = :m "
+            "ORDER BY event_type"), {"m": principal.merchant_id}).scalars().all()
+
+    entries = [{"id": r["id"], "event_type": r["event_type"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "merchant_id": r["merchant_id"], "user_id": r["user_id"],
+                "task_id": r["task_id"], "incident_id": r["incident_id"],
+                "correlation_id": r["correlation_id"], "payload": r["payload"]}
+               for r in rows]
+    # Null when the page did not fill: there is nothing after it.
+    cursor = entries[-1]["id"] if len(entries) == limit else None
+    return {"entries": entries, "matched": int(matched),
+            "next_cursor": cursor, "event_types": list(kinds)}
+
+
+@app.get("/policy", response_model=schemas.PolicyView,
+         response_model_exclude_unset=True)
+def get_policy(principal: Principal = Depends(current_principal)):
+    """What policy decides for this merchant, and which parts it may change.
+
+    §41. The policy engine has always been readable only by reading the engine.
+    Its decisions appear on six screens -- an operator sees WHY a refund was
+    held -- but nothing said what the rules were before one fired.
+
+    Every control is listed, including the ones a merchant cannot change. A
+    policy page showing only the editable part invites the reader to believe
+    that is all of policy, which is the opposite of what it is for.
+    """
+    s = get_settings()
+    with session_scope() as sess:
+        cfg = sess.execute(
+            text("SELECT policy_config FROM merchants WHERE id = :m"),
+            {"m": principal.merchant_id}).scalar() or {}
+
+    override = cfg.get("refund_limit_minor")
+    controls = [
+        {"key": "refund_limit_minor", "label": "Refund limit",
+         "effective": int(override if override is not None
+                          else s.refund_amount_limit_minor),
+         "default": int(s.refund_amount_limit_minor),
+         "overridden": override is not None, "editable": True,
+         "why": "The largest single refund this merchant may issue. Above it "
+                "the engine denies with `amount_limit_exceeded` rather than "
+                "asking for approval -- a limit is a limit, not a prompt."},
+        # In the data and read by nothing. Every merchant carries this key --
+        # the seeder writes it -- and no code path consults it. Surfaced rather
+        # than omitted precisely because omitting it is how it stayed invisible:
+        # somebody setting it would believe small refunds auto-approve, and
+        # nothing would happen. Named here until it is either implemented or
+        # removed from the data.
+        {"key": "auto_approve_below_minor", "label": "Auto-approve below",
+         "effective": int(cfg.get("auto_approve_below_minor", 0)),
+         "default": 0, "overridden": "auto_approve_below_minor" in cfg,
+         "editable": False,
+         "why": "NOT IMPLEMENTED. This key is stored on every merchant and read "
+                "by no code path -- setting it changes nothing. It is listed so "
+                "that is visible rather than assumed."},
+        # Not editable, and listed for exactly that reason.
+        {"key": "approval_ttl_seconds", "label": "Approval expires after",
+         "effective": int(s.approval_ttl_seconds),
+         "default": int(s.approval_ttl_seconds),
+         "overridden": False, "editable": False,
+         "why": "Platform-wide. An approval that outlives the situation it was "
+                "granted for is a signature on a decision nobody is still "
+                "making (§21)."},
+        {"key": "dual_approval", "label": "Two signatures on high risk",
+         "effective": True, "default": True, "overridden": False,
+         "editable": False,
+         "why": "Not configurable on purpose. A control a merchant can switch "
+                "off under pressure is one that is off when it matters (§25)."},
+        {"key": "computed_risk", "label": "Risk is computed, never declared",
+         "effective": True, "default": True, "overridden": False,
+         "editable": False,
+         "why": "Risk comes from the registry, the arguments and the database. "
+                "A caller-supplied risk level is a caller grading their own "
+                "homework (§24)."},
+    ]
+    return {"merchant_id": principal.merchant_id, "controls": controls}
+
+
+@app.put("/policy", response_model=schemas.PolicyChange)
+def set_policy(body: schemas.SetPolicyRequest,
+               principal: Principal = Depends(current_principal)):
+    """Change the one control that is per-merchant — §41.
+
+    Owner only, and recorded. Raising a refund limit raises the amount this
+    system will move without a human saying so a second time, which is exactly
+    the kind of change that should be attributable afterwards.
+
+    `null` clears the override rather than setting zero. Zero is a real limit
+    that refuses every refund, and a UI that produced it by accident when
+    somebody meant "back to default" would be a quiet outage.
+    """
+    _owner_only(principal, "Changing policy")
+
+    new = body.refund_limit_minor
+    if new is not None and new < 0:
+        raise HTTPException(400, {"error": "A refund limit cannot be negative.",
+                                  "code": "invalid_limit"})
+
+    with session_scope() as s:
+        cfg = dict(s.execute(
+            text("SELECT policy_config FROM merchants WHERE id = :m"),
+            {"m": principal.merchant_id}).scalar() or {})
+        before = cfg.get("refund_limit_minor")
+
+        if new is None:
+            cfg.pop("refund_limit_minor", None)
+        else:
+            cfg["refund_limit_minor"] = int(new)
+
+        changed = before != (None if new is None else int(new))
+        if changed:
+            s.execute(text("UPDATE merchants SET policy_config = :c WHERE id = :m"),
+                      {"c": json.dumps(cfg), "m": principal.merchant_id})
+            record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                      user_id=principal.user_id),
+                   "policy_changed",
+                   {"key": "refund_limit_minor", "before": before, "after": new,
+                    "by": principal.user_id})
+
+    return {"merchant_id": principal.merchant_id, "key": "refund_limit_minor",
+            "before": before, "after": new, "changed": changed}
 
 
 @app.get("/merchants", response_model=schemas.MerchantList,

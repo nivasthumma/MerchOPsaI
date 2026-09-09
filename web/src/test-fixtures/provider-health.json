@@ -1,0 +1,11 @@
+{
+  "status": "healthy",
+  "detail": "Mock adapter. mock, environment test",
+  "mode": "mock",
+  "environment": "test",
+  "execution_is_real": false,
+  "webhooks_received": 0,
+  "webhooks_rejected": 0,
+  "operations": [],
+  "history": []
+}

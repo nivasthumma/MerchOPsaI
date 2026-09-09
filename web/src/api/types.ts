@@ -880,3 +880,78 @@ export interface MerchantView {
 }
 
 export interface MerchantList { merchants: MerchantView[] }
+
+// ------------------------------------------- policy · audit · provider (§41/§28/§26)
+
+export interface PolicyControl {
+  key: string;
+  label: string;
+  effective: number | string | boolean;
+  default: number | string | boolean;
+  overridden: boolean;
+  /** False for the controls that are not per-merchant. Listed anyway — a policy
+   *  page showing only the editable third implies that is all of policy. */
+  editable: boolean;
+  why: string;
+}
+
+export interface PolicyView { merchant_id: string; controls: PolicyControl[] }
+
+export interface PolicyChange {
+  merchant_id: string;
+  key: string;
+  before?: number | null;
+  after?: number | null;
+  changed: boolean;
+}
+
+export interface AuditEntry {
+  id: number;
+  event_type: string;
+  created_at: string;
+  merchant_id?: string | null;
+  user_id?: string | null;
+  task_id?: string | null;
+  incident_id?: string | null;
+  correlation_id?: string | null;
+  payload?: unknown;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  /** What the filter matched, not what this page holds. */
+  matched: number;
+  next_cursor?: number | null;
+  event_types: string[];
+}
+
+export interface ProviderOperation {
+  action_type: string;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  /** Neither. Never folded into failure. */
+  unknown: number;
+  p50_latency_ms?: number | null;
+  p95_latency_ms?: number | null;
+}
+
+export interface ProviderDay {
+  day: string;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  unknown: number;
+}
+
+export interface ProviderHealth {
+  status: string;
+  detail: string;
+  mode: string;
+  environment: string;
+  execution_is_real: boolean;
+  webhooks_received: number;
+  webhooks_rejected: number;
+  operations: ProviderOperation[];
+  history: ProviderDay[];
+}

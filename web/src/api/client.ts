@@ -12,7 +12,8 @@ import type {
   Dashboard,
   IncidentDetail,
   AccessReview, EscalatedAction, Health, IncidentList, IncidentQuery,
-  MerchantList, MerchantView,
+  AuditPage, MerchantList, MerchantView, PolicyChange, PolicyView,
+  ProviderHealth,
   RoleChange, RoleList, ScimTokenCreated, ScimTokenList, SsoConfig,
   UserChange, UserCreated, UserList,
   LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
@@ -513,6 +514,32 @@ export const api = {
   createMerchant: (name: string, currency = "INR") =>
     request<MerchantView>("/merchants", {
       method: "POST", body: JSON.stringify({ name, currency }) }),
+
+  /** What policy decides here, including the parts nobody may change. */
+  policy: () => request<PolicyView>("/policy"),
+
+  /** `null` clears the override. Zero is a real limit that refuses everything. */
+  setRefundLimit: (refundLimitMinor: number | null) =>
+    request<PolicyChange>("/policy", {
+      method: "PUT", body: JSON.stringify({ refund_limit_minor: refundLimitMinor }) }),
+
+  /** The auditor's question, which is not about one object. */
+  audit: (q: { eventType?: string; actor?: string; since?: string;
+               beforeId?: number; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (q.eventType) p.set("event_type", q.eventType);
+    if (q.actor) p.set("actor", q.actor);
+    // `URLSearchParams` encodes the `+` in an offset, which a hand-built query
+    // string does not — unencoded it decodes to a space and the server refuses.
+    if (q.since) p.set("since", q.since);
+    if (q.beforeId) p.set("before_id", String(q.beforeId));
+    p.set("limit", String(q.limit ?? 50));
+    return request<AuditPage>(`/audit?${p}`);
+  },
+
+  /** How the provider has behaved, not only whether it answers now. */
+  providerHealth: (days = 14) =>
+    request<ProviderHealth>(`/provider-health?days=${days}`),
 
   roles: () => request<RoleList>("/roles"),
 

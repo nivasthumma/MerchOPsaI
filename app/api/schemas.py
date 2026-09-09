@@ -1417,6 +1417,103 @@ class InstanceReadiness(Contract):
     checks: dict
 
 
+# ------------------------------------------------- provider health (§26)
+class ProviderOperation(Contract):
+    """One kind of call, and how it has actually gone."""
+    action_type: str
+    attempted: int
+    succeeded: int
+    failed: int
+    #: Neither. The number this system refuses to fold into either column.
+    unknown: int
+    p50_latency_ms: int | None = None
+    p95_latency_ms: int | None = None
+
+
+class ProviderDay(Contract):
+    day: str
+    attempted: int
+    succeeded: int
+    failed: int
+    unknown: int
+
+
+class ProviderHealth(Contract):
+    #: The current verdict, from the same check `/readiness` reports.
+    status: str
+    detail: str
+    mode: str
+    environment: str
+    execution_is_real: bool
+    #: Webhook deliveries, which is the provider talking to us rather than the
+    #: reverse — a provider can be healthy outbound and silent inbound.
+    webhooks_received: int
+    webhooks_rejected: int
+    operations: list[ProviderOperation]
+    history: list[ProviderDay]
+
+
+# ------------------------------------------------------ audit search (§28)
+class AuditEntry(Contract):
+    id: int
+    event_type: str
+    created_at: str
+    merchant_id: str | None = None
+    user_id: str | None = None
+    task_id: str | None = None
+    incident_id: str | None = None
+    correlation_id: str | None = None
+    payload: dict | list | str | None = None
+
+
+class AuditPage(Contract):
+    entries: list[AuditEntry]
+    #: What the filter matched, not what this page holds. A count taken from
+    #: the page is the same defect this repository has written three times.
+    matched: int
+    #: Pass back as `before_id` for the next page. Null when there is no more.
+    next_cursor: int | None = None
+    #: Distinct event types present, so the filter can be built from what is
+    #: there rather than from a list somebody maintains.
+    event_types: list[str] = []
+
+
+# ------------------------------------------------------ policy admin (§41)
+class PolicyControl(Contract):
+    """One thing policy decides, and whether a merchant may change it."""
+    key: str
+    label: str
+    #: What applies to this merchant right now.
+    effective: int | str | bool
+    #: The platform default, so an override is visible AS an override.
+    default: int | str | bool
+    #: True when this merchant has set its own value.
+    overridden: bool
+    #: False for the controls that are not per-merchant. Listed anyway, because
+    #: a policy screen showing only the editable third of policy invites the
+    #: reader to think that is all of it.
+    editable: bool
+    why: str
+
+
+class PolicyView(Contract):
+    merchant_id: str
+    controls: list[PolicyControl]
+
+
+class SetPolicyRequest(Contract):
+    #: Paise. None clears the override and returns the merchant to the default.
+    refund_limit_minor: int | None = None
+
+
+class PolicyChange(Contract):
+    merchant_id: str
+    key: str
+    before: int | None = None
+    after: int | None = None
+    changed: bool
+
+
 # ------------------------------------------------------ onboarding (§45)
 class CreateMerchantRequest(Contract):
     name: str

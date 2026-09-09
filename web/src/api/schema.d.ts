@@ -792,6 +792,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/merchants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Merchants
+         * @description Every merchant in this tenant — §45.
+         *
+         *     A tenant owns one or more merchants (§11), and until now nothing said which:
+         *     the only way to learn that a second one existed was to already know its id.
+         */
+        get: operations["list_merchants_merchants_get"];
+        put?: never;
+        /**
+         * Create Merchant
+         * @description Add a merchant to THIS tenant — §45.
+         *
+         *     ## Why a tenant cannot be created here
+         *
+         *     This is half of onboarding, and deliberately the only half an API can do.
+         *
+         *     Creating a *tenant* means minting the first owner of a tenant that has no
+         *     owner yet, and there is no authority in this system that can authorise
+         *     that: the highest role is `owner`, and it is scoped to a merchant inside a
+         *     tenant. An endpoint that created tenants would either need a platform
+         *     superuser -- a role this system does not have and should not grow casually
+         *     -- or would let any owner create tenants they then control, which is not
+         *     onboarding, it is escalation.
+         *
+         *     So a new customer is stood up by `scripts/onboard_tenant.py`, run by
+         *     whoever operates the platform, and it writes an audit row saying so.
+         *     Adding a *merchant* to a tenant that already has an owner is a different
+         *     act with an authority that already exists, and that is this.
+         *
+         *     The tenant comes from the principal, never from the body. A merchant id in
+         *     a request naming another tenant is the one thing this endpoint must not
+         *     honour.
+         */
+        post: operations["create_merchant_merchants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metrics": {
         parameters: {
             query?: never;
@@ -2357,6 +2405,18 @@ export interface components {
             /** Span Count */
             span_count: number;
         };
+        /** CreateMerchantRequest */
+        CreateMerchantRequest: {
+            /**
+             * Currency
+             * @default INR
+             */
+            currency: string;
+            /** Merchant Id */
+            merchant_id?: string | null;
+            /** Name */
+            name: string;
+        };
         /** CreateRoleRequest */
         CreateRoleRequest: {
             /** Description */
@@ -3061,6 +3121,11 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** MerchantList */
+        MerchantList: {
+            /** Merchants */
+            merchants: components["schemas"]["MerchantView"][];
+        };
         /**
          * MerchantStateView
          * @description MerchantOps v2 §14's MerchantState.
@@ -3105,6 +3170,17 @@ export interface components {
             recovery: {
                 [key: string]: unknown;
             };
+        };
+        /** MerchantView */
+        MerchantView: {
+            /** Currency */
+            currency: string;
+            /** Merchant Id */
+            merchant_id: string;
+            /** Name */
+            name: string;
+            /** Tenant Id */
+            tenant_id: string;
         };
         /** MessageView */
         MessageView: {
@@ -5216,6 +5292,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_merchants_merchants_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MerchantList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_merchant_merchants_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMerchantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MerchantView"];
                 };
             };
             /** @description Validation Error */

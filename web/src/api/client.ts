@@ -12,6 +12,7 @@ import type {
   Dashboard,
   IncidentDetail,
   AccessReview, EscalatedAction, Health, IncidentList, IncidentQuery,
+  MerchantList, MerchantView,
   RoleChange, RoleList, ScimTokenCreated, ScimTokenList, SsoConfig,
   UserChange, UserCreated, UserList,
   LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
@@ -502,6 +503,16 @@ export const api = {
   signOutUser: (userId: string) =>
     request<{ revoked: number }>(
       `/users/${encodeURIComponent(userId)}/sign-out`, { method: "POST" }),
+
+  /** Every merchant in this tenant (§11: a tenant owns one or more). */
+  merchants: () => request<MerchantList>("/merchants"),
+
+  /** Adds one to THIS tenant. A new tenant is `scripts/onboard_tenant.py` —
+   *  it mints the first owner of a tenant nobody administers yet, which no
+   *  principal here can authorise. */
+  createMerchant: (name: string, currency = "INR") =>
+    request<MerchantView>("/merchants", {
+      method: "POST", body: JSON.stringify({ name, currency }) }),
 
   roles: () => request<RoleList>("/roles"),
 

@@ -19,8 +19,14 @@ from sqlalchemy import text
 
 from app import privacy
 from app.crypto import (
-    DEV_KEY, EncryptionError, InsecureConfiguration, blind_index, decrypt,
-    encrypt, is_encrypted, require_configured_key,
+    DEV_KEY,
+    EncryptionError,
+    InsecureConfiguration,
+    blind_index,
+    decrypt,
+    encrypt,
+    is_encrypted,
+    require_configured_key,
 )
 from app.models import Base
 
@@ -31,8 +37,10 @@ from app.models import Base
 def test_the_stored_value_is_ciphertext_not_plaintext(db):
     """Read past the ORM. This is the assertion the whole change exists for."""
     for table, column in privacy.encrypted_fields():
+        # S608: table and column come from `app.privacy.MAP`, which is a
+        # literal in this repository. Nothing here came from a request.
         rows = db.execute(
-            text(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")
+            text(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")  # noqa: S608
         ).scalars().all()
         # An empty table would let this pass by having nothing to check, which
         # is the failure mode `test_the_drift_guard_is_not_vacuous` exists for
@@ -265,9 +273,9 @@ def test_the_migration_encrypts_rows_that_were_written_before_it(monkeypatch):
     works and says nothing about the rows a real database already has -- which
     is the only reason the migration exists.
     """
-    from alembic import command
     from sqlalchemy import create_engine
 
+    from alembic import command
     from tests.integration.test_migrations import _alembic_config, _fresh_database
 
     url = _fresh_database("merchantops_privacytest")

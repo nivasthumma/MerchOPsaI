@@ -21,6 +21,7 @@ vi.mock("../api/client", async (importOriginal) => {
     api: {
       users: vi.fn(), roles: vi.fn(), createUser: vi.fn(),
       updateUser: vi.fn(), signOutUser: vi.fn(),
+      merchants: vi.fn(), createMerchant: vi.fn(),
     },
   };
 });
@@ -31,12 +32,18 @@ const { api, ApiError } = await import("../api/client");
 const mocked = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
 const USERS = usersFixture as unknown as UserList;
+/** Constructed: `/merchants` is new, and the seeded tenant holds two. */
+const MERCHANTS = [
+  { merchant_id: "MERCH_A", tenant_id: "TEN_KETTLE", name: "Kettle & Co", currency: "INR" },
+  { merchant_id: "MERCH_C", tenant_id: "TEN_KETTLE", name: "Kettle Wholesale", currency: "INR" },
+];
 const ROLES = rolesFixture as unknown as RoleList;
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocked.users.mockResolvedValue(USERS);
   mocked.roles.mockResolvedValue(ROLES);
+  mocked.merchants.mockResolvedValue({ merchants: MERCHANTS });
 });
 
 const show = async () => {
@@ -158,5 +165,39 @@ describe("people", () => {
 
     expect(await screen.findByText(/requires the/)).toBeInTheDocument();
     expect(screen.queryByText("Error")).toBeNull();
+  });
+});
+
+
+// §45. A tenant owns one or more merchants, and until this screen the only way
+// to learn a second one existed was to already know its id.
+describe("merchants", () => {
+  it("lists the tenant's merchants", async () => {
+    await show();
+    expect(screen.getByText("Kettle Wholesale")).toBeInTheDocument();
+  });
+
+  it("adds one without asking which tenant it belongs to", async () => {
+    await show();
+    mocked.createMerchant.mockResolvedValue({
+      merchant_id: "MERCH_NEW", tenant_id: "TEN_KETTLE",
+      name: "Kettle Espresso", currency: "INR",
+    });
+
+    await userEvent.type(screen.getByLabelText("Merchant name"), "Kettle Espresso");
+    await userEvent.click(screen.getByRole("button", { name: "Add merchant" }));
+
+    // The tenant is the caller's session, never a field. A form that offered
+    // one would be offering to put a merchant in somebody else's tenant.
+    expect(mocked.createMerchant).toHaveBeenCalledWith("Kettle Espresso");
+    expect(screen.queryByLabelText(/tenant/i)).toBeNull();
+  });
+
+  it("says where creating a whole customer actually happens", async () => {
+    await show();
+    // Somebody looking for "add a customer" needs to know it is not missing.
+    expect(screen.getByText(/onboard_tenant\.py/)).toBeInTheDocument();
+    expect(screen.getByText(/no role in this\s+system can authorise that/))
+      .toBeInTheDocument();
   });
 });

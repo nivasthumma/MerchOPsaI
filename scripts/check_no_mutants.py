@@ -30,9 +30,9 @@ is excluded for that reason.
 """
 from __future__ import annotations
 
-import subprocess
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 

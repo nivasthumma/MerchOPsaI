@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
-import type { RoleList, UserCreated, UserSummary } from "../api/types";
+import type { MerchantView, RoleList, UserCreated, UserSummary } from "../api/types";
 import {
   Busy, CopyId, Empty, ErrorBanner, SectionHead, Skeleton, StatStrip,
 } from "../components/Bits";
@@ -34,6 +34,8 @@ import { useToast } from "../components/Toast";
 export default function People() {
   const [users, setUsers] = useState<UserSummary[] | null>(null);
   const [roles, setRoles] = useState<RoleList | null>(null);
+  const [merchants, setMerchants] = useState<MerchantView[] | null>(null);
+  const [merchantName, setMerchantName] = useState("");
   const [error, setError] = useState<ApiError | null>(null);
   const [refusal, setRefusal] = useState<ApiError | null>(null);
   const [created, setCreated] = useState<UserCreated | null>(null);
@@ -44,9 +46,11 @@ export default function People() {
 
   async function load() {
     try {
-      const [u, r] = await Promise.all([api.users(true), api.roles()]);
+      const [u, r, m] = await Promise.all([
+        api.users(true), api.roles(), api.merchants()]);
       setUsers(u.users);
       setRoles(r);
+      setMerchants(m.merchants);
       setError(null);
     } catch (e) {
       setError(e as ApiError);
@@ -87,7 +91,7 @@ export default function People() {
     );
   }
   if (error) return <div className="card"><ErrorBanner error={error} /></div>;
-  if (!users || !roles) {
+  if (!users || !roles || !merchants) {
     return <div className="card"><SectionHead title="People" /><Skeleton rows={4} /></div>;
   }
 
@@ -110,6 +114,63 @@ export default function People() {
           // server will refuse to demote or disable the remaining owner.
           ["Owners", owners.length],
         ]} />
+      </div>
+
+      <div className="card">
+        <SectionHead title="Merchants" count={merchants.length} />
+        <p className="sub">
+          A tenant owns one or more merchants (§11). Adding one here puts it in
+          your own tenant — the tenant is taken from your session, never from
+          the request.
+        </p>
+        {/* Stated plainly rather than left to be discovered. Somebody looking
+            for "add a customer" needs to know it is not missing, it is
+            somewhere else and for a reason. */}
+        <p className="sub">
+          A new <em>customer</em> — a whole tenant with its own first owner — is
+          created by an operator running{" "}
+          <span className="mono">scripts/onboard_tenant.py</span>. It mints the
+          first owner of a tenant nobody administers yet, and no role in this
+          system can authorise that.
+        </p>
+        <form
+          className="row-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!merchantName.trim()) return;
+            void act("merchant", async () => {
+              await api.createMerchant(merchantName.trim());
+              setMerchantName("");
+            }, "Merchant created");
+          }}
+        >
+          <label>
+            <span>Merchant name</span>
+            <input
+              value={merchantName}
+              required
+              placeholder="Kettle Espresso"
+              onChange={(e) => setMerchantName(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="primary" disabled={busy === "merchant"}>
+            {busy === "merchant" ? <Busy>creating</Busy> : "Add merchant"}
+          </button>
+        </form>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Merchant</th><th>Name</th><th>Currency</th></tr></thead>
+            <tbody>
+              {merchants.map((m) => (
+                <tr key={m.merchant_id}>
+                  <td><CopyId value={m.merchant_id} label="merchant id" /></td>
+                  <td>{m.name}</td>
+                  <td className="mono">{m.currency}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card">

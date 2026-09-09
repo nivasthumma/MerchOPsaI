@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from app import shared_state
 from app.agent.activity import build as agent_activity
@@ -1077,6 +1078,95 @@ def set_permissions(role_name: str, body: schemas.SetPermissionsRequest,
                 "revoked": change["revoked"], "by": principal.user_id})
         return {"name": change["name"], "permissions": change["permissions"],
                 "granted": change["granted"], "revoked": change["revoked"]}
+
+
+@app.get("/merchants", response_model=schemas.MerchantList,
+         response_model_exclude_unset=True)
+def list_merchants(principal: Principal = Depends(current_principal)):
+    """Every merchant in this tenant — §45.
+
+    A tenant owns one or more merchants (§11), and until now nothing said which:
+    the only way to learn that a second one existed was to already know its id.
+    """
+    with session_scope() as s:
+        rows = s.execute(text(
+            "SELECT id, tenant_id, name, currency FROM merchants "
+            "WHERE tenant_id = :t ORDER BY id"), {"t": principal.tenant_id}).mappings().all()
+    return {"merchants": [{"merchant_id": r["id"], "tenant_id": r["tenant_id"],
+                           "name": r["name"], "currency": r["currency"]} for r in rows]}
+
+
+@app.post("/merchants", response_model=schemas.MerchantView, status_code=201)
+def create_merchant(body: schemas.CreateMerchantRequest, response: Response,
+                    principal: Principal = Depends(current_principal)):
+    """Add a merchant to THIS tenant — §45.
+
+    ## Why a tenant cannot be created here
+
+    This is half of onboarding, and deliberately the only half an API can do.
+
+    Creating a *tenant* means minting the first owner of a tenant that has no
+    owner yet, and there is no authority in this system that can authorise
+    that: the highest role is `owner`, and it is scoped to a merchant inside a
+    tenant. An endpoint that created tenants would either need a platform
+    superuser -- a role this system does not have and should not grow casually
+    -- or would let any owner create tenants they then control, which is not
+    onboarding, it is escalation.
+
+    So a new customer is stood up by `scripts/onboard_tenant.py`, run by
+    whoever operates the platform, and it writes an audit row saying so.
+    Adding a *merchant* to a tenant that already has an owner is a different
+    act with an authority that already exists, and that is this.
+
+    The tenant comes from the principal, never from the body. A merchant id in
+    a request naming another tenant is the one thing this endpoint must not
+    honour.
+    """
+    _owner_only(principal, "Creating merchants")
+
+    merchant_id = (body.merchant_id or "").strip() or f"MERCH_{uuid.uuid4().hex[:10].upper()}"
+    with session_scope() as s:
+        # The uniqueness check is the CONSTRAINT, not a SELECT beforehand.
+        #
+        # A pre-flight `SELECT ... WHERE id = :i` looks obvious and is blind
+        # here: row-level security scopes the read to this caller's tenant, so a
+        # merchant id already held by ANOTHER tenant is invisible to it. The
+        # check passes, the insert hits the primary key, and a well-formed
+        # request becomes a 500.
+        #
+        # Catching the violation is also the only version without a race, and it
+        # keeps the answer free of an oracle: the database says "taken", never
+        # whose it is. Saying that would let an owner enumerate another tenant's
+        # merchant ids one guess at a time.
+        try:
+            s.execute(text(
+                "INSERT INTO merchants (id, tenant_id, name, currency, "
+                "                       policy_config, created_at) "
+                "VALUES (:i, :t, :n, :c, '{}', now())"),
+                {"i": merchant_id, "t": principal.tenant_id,
+                 "n": body.name.strip(), "c": body.currency})
+            s.flush()
+        except IntegrityError as exc:
+            raise HTTPException(409, {"error": f"A merchant with id {merchant_id} "
+                                               f"already exists.",
+                                      "code": "merchant_exists"}) from exc
+
+        # The tenant's roles already exist -- it has an owner, so it has roles.
+        # Called anyway because it is idempotent and because a tenant whose
+        # roles were somehow lost would otherwise produce a merchant nobody can
+        # be given a role on.
+        from app.authz import ensure_default_roles
+        ensure_default_roles(s, principal.tenant_id)
+
+        record(s, SimpleNamespace(id=None, merchant_id=principal.merchant_id,
+                                  user_id=principal.user_id),
+               "merchant_created",
+               {"merchant_id": merchant_id, "tenant_id": principal.tenant_id,
+                "name": body.name, "by": principal.user_id})
+
+    response.status_code = 201
+    return {"merchant_id": merchant_id, "tenant_id": principal.tenant_id,
+            "name": body.name.strip(), "currency": body.currency}
 
 
 @app.get("/access-review", response_model=schemas.AccessReview,

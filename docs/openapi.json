@@ -1649,6 +1649,36 @@
         "title": "CorrelationTrace",
         "type": "object"
       },
+      "CreateMerchantRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "merchant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CreateMerchantRequest",
+        "type": "object"
+      },
       "CreateRoleRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3538,6 +3568,23 @@
         "title": "Me",
         "type": "object"
       },
+      "MerchantList": {
+        "additionalProperties": false,
+        "properties": {
+          "merchants": {
+            "items": {
+              "$ref": "#/components/schemas/MerchantView"
+            },
+            "title": "Merchants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "merchants"
+        ],
+        "title": "MerchantList",
+        "type": "object"
+      },
       "MerchantStateView": {
         "additionalProperties": false,
         "description": "MerchantOps v2 \u00a714's MerchantState.\n\nBranches are `dict` rather than modelled field by field. Their contents are\nassembled from modules that own their own shapes \u2014 the ledger, the metrics\nregistry, the dashboard \u2014 and mirroring those here would create a second\ndefinition that drifts from the first. That is the same reasoning the module\ndocstring gives for typing audit payloads as `dict`.\n\nA branch that could not be measured carries `measured: false` and a reason\nrather than a zero.",
@@ -3597,6 +3644,35 @@
           "operational_health"
         ],
         "title": "MerchantStateView",
+        "type": "object"
+      },
+      "MerchantView": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchant_id",
+          "tenant_id",
+          "name",
+          "currency"
+        ],
+        "title": "MerchantView",
         "type": "object"
       },
       "MessageView": {
@@ -8790,6 +8866,108 @@
           }
         },
         "summary": "Whoami"
+      }
+    },
+    "/merchants": {
+      "get": {
+        "description": "Every merchant in this tenant \u2014 \u00a745.\n\nA tenant owns one or more merchants (\u00a711), and until now nothing said which:\nthe only way to learn that a second one existed was to already know its id.",
+        "operationId": "list_merchants_merchants_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Merchants"
+      },
+      "post": {
+        "description": "Add a merchant to THIS tenant \u2014 \u00a745.\n\n## Why a tenant cannot be created here\n\nThis is half of onboarding, and deliberately the only half an API can do.\n\nCreating a *tenant* means minting the first owner of a tenant that has no\nowner yet, and there is no authority in this system that can authorise\nthat: the highest role is `owner`, and it is scoped to a merchant inside a\ntenant. An endpoint that created tenants would either need a platform\nsuperuser -- a role this system does not have and should not grow casually\n-- or would let any owner create tenants they then control, which is not\nonboarding, it is escalation.\n\nSo a new customer is stood up by `scripts/onboard_tenant.py`, run by\nwhoever operates the platform, and it writes an audit row saying so.\nAdding a *merchant* to a tenant that already has an owner is a different\nact with an authority that already exists, and that is this.\n\nThe tenant comes from the principal, never from the body. A merchant id in\na request naming another tenant is the one thing this endpoint must not\nhonour.",
+        "operationId": "create_merchant_merchants_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMerchantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Merchant"
       }
     },
     "/metrics": {

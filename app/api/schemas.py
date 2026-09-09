@@ -1417,6 +1417,25 @@ class InstanceReadiness(Contract):
     checks: dict
 
 
+# ------------------------------------------------------ onboarding (§45)
+class CreateMerchantRequest(Contract):
+    name: str
+    #: Optional. Generated when absent, so the common case is one field.
+    merchant_id: str | None = None
+    currency: str = "INR"
+
+
+class MerchantView(Contract):
+    merchant_id: str
+    tenant_id: str
+    name: str
+    currency: str
+
+
+class MerchantList(Contract):
+    merchants: list[MerchantView]
+
+
 # ------------------------------------------------------ access review
 class RoleView(Contract):
     name: str

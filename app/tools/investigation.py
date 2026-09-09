@@ -11,7 +11,6 @@ from datetime import timedelta
 from sqlalchemy import text
 
 from app.crypto import decrypt
-
 from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
 
 # The dataset's fixed anchor. Real deployments would use now(); the fixed

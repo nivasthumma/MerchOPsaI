@@ -88,10 +88,10 @@ def restored(tmp_path_factory):
     exist because a migration created them. Dumping a `create_all` schema would
     prove neither.
     """
-    from alembic import command
     from sqlalchemy.orm import Session
 
     import scripts.seed_data as seeder
+    from alembic import command
     from tests.integration.test_migrations import _alembic_config, _fresh_database
 
     source = _fresh_database("merchantops_drtest_src")
@@ -112,7 +112,9 @@ def restored(tmp_path_factory):
             "VALUES ('restore_drill', '{}', 'MERCH_A', now())"))
 
     with src_engine.connect() as c:
-        before = {t: c.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar_one()
+        # S608: `COUNTED` is a tuple of literals in this module. Nothing here
+        # came from a request.
+        before = {t: c.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar_one()  # noqa: S608
                   for t in COUNTED}
     src_engine.dispose()
     assert sum(before.values()) > 0, "the source database is empty; this proves nothing"
@@ -164,7 +166,7 @@ def test_the_audit_log_survives_and_is_still_append_only(restored):
     # Present is not the same as enforced. Prove it by trying.
     for statement in ("UPDATE audit_logs SET action = 'tampered'",
                       "DELETE FROM audit_logs"):
-        with pytest.raises(Exception) as e:  # noqa: B017 - the driver's own error
+        with pytest.raises(Exception) as e:
             with engine.begin() as c:
                 c.execute(text(statement))
         assert "append-only" in str(e.value).lower() or "audit" in str(e.value).lower()
@@ -176,7 +178,7 @@ def test_the_schema_revision_comes_back(restored):
     nobody can start the application against."""
     from alembic.script import ScriptDirectory
 
-    from tests.integration.test_migrations import ROOT, _alembic_config
+    from tests.integration.test_migrations import _alembic_config
 
     with engine.connect() as c:
         restored_rev = c.execute(
@@ -247,7 +249,7 @@ def test_every_row_survives_the_dump(restored):
     """
     engine, before = restored
     with engine.connect() as c:
-        after = {t: c.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar_one()
+        after = {t: c.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar_one()  # noqa: S608
                  for t in COUNTED}
     assert after == before, (
         f"the restore is not the database that was dumped: {before} -> {after}. "

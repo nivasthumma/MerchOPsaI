@@ -871,3 +871,12 @@ export interface ScimTokenList { tokens: ScimTokenSummary[] }
 
 /** As with `UserCreated`: shown once, never again. */
 export interface ScimTokenCreated { id: string; token: string; name: string }
+
+export interface MerchantView {
+  merchant_id: string;
+  tenant_id: string;
+  name: string;
+  currency: string;
+}
+
+export interface MerchantList { merchants: MerchantView[] }

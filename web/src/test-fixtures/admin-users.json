@@ -1,0 +1,38 @@
+{
+  "users": [
+    {
+      "user_id": "USR_A_ANALYST",
+      "email": "analyst@kettle.example",
+      "role": "analyst",
+      "status": "ACTIVE",
+      "permissions": [
+        "read:metrics",
+        "read:orders"
+      ]
+    },
+    {
+      "user_id": "USR_A_APPROVER",
+      "email": "approver@kettle.example",
+      "role": "approver",
+      "status": "ACTIVE",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ]
+    },
+    {
+      "user_id": "USR_A_OWNER",
+      "email": "owner@kettle.example",
+      "role": "owner",
+      "status": "ACTIVE",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ]
+    }
+  ]
+}

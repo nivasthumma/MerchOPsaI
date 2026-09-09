@@ -121,6 +121,16 @@ test("the access review is accessible in both themes", async ({ page }) => {
   await inBothThemes(page, "/access-review", /Who holds what/);
 });
 
+test("the administration screens are accessible in both themes", async ({ page }) => {
+  // These put text on tinted grounds in two places -- the permission rows that
+  // grant `action:` and the panel holding a credential shown once -- which is
+  // the pairing the severity chips and then the landing page both got wrong.
+  test.slow();
+  await inBothThemes(page, "/people", /Who can sign in/);
+  await inBothThemes(page, "/roles", /What granting a role/);
+  await inBothThemes(page, "/identity", /Where accounts come from|Single sign-on/);
+});
+
 test("a failure state stays readable", async ({ page }) => {
   // The one worth having most. A palette change that leaves an error banner
   // unreadable is discovered, otherwise, by somebody trying to read it during

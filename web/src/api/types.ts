@@ -794,3 +794,80 @@ export interface AccessReview {
   roles: AccessReviewRole[];
   users: AccessReviewEntry[];
 }
+
+// ------------------------------------------------------ administration (§43)
+
+export interface UserSummary {
+  user_id: string;
+  email: string;
+  role: string;
+  /** ACTIVE | DISABLED. */
+  status: string;
+  permissions: string[];
+}
+
+export interface UserList { users: UserSummary[] }
+
+/** The one response carrying a credential. The token is returned once, at
+ *  creation, and is not retrievable afterwards — the screen has to say so. */
+export interface UserCreated {
+  user_id: string;
+  email: string;
+  role: string;
+  token: string;
+}
+
+export interface UserChange {
+  user_id: string;
+  role?: string | null;
+  status?: string | null;
+  changed?: boolean | null;
+}
+
+export interface PermissionView { name: string; description: string }
+
+export interface RoleSummary {
+  name: string;
+  description: string;
+  permissions: string[];
+  /** Active holders. A role held by nobody is a role to question. */
+  held_by: number;
+}
+
+export interface RoleList {
+  roles: RoleSummary[];
+  /** Derived from the tool registry, so it grows when a tool does. */
+  catalogue: PermissionView[];
+}
+
+export interface RoleChange {
+  name: string;
+  permissions: string[];
+  granted: string[];
+  revoked: string[];
+}
+
+export interface SsoConfig {
+  configured: boolean;
+  issuer?: string | null;
+  client_id?: string | null;
+  email_domains: string[];
+  default_role?: string | null;
+  default_merchant_id?: string | null;
+  enabled?: boolean | null;
+}
+
+export interface ScimTokenSummary {
+  id: string;
+  name: string;
+  default_merchant_id: string;
+  default_role: string;
+  created_at: string;
+  last_used_at?: string | null;
+  revoked: boolean;
+}
+
+export interface ScimTokenList { tokens: ScimTokenSummary[] }
+
+/** As with `UserCreated`: shown once, never again. */
+export interface ScimTokenCreated { id: string; token: string; name: string }

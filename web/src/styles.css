@@ -666,6 +666,68 @@ td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
   background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
 }
 
+/* ---------------------------------------------------------- administration */
+/* A credential the server will never show again. It deliberately does NOT look
+   like the panels around it: everything else on these pages can be re-read by
+   reloading, and a panel styled like the rest invites the habit that works
+   everywhere else — glance, move on, come back later. Coming back later means
+   reissuing. So it holds the money colour, which on these screens is reserved
+   for "this is irreversible". */
+.once {
+  border: 1px solid var(--warn-border); background: var(--warn-soft);
+  border-radius: var(--r); padding: 16px 18px; margin: 14px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.once-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.once-head strong { color: var(--warn-ink); font-size: 14.5px; }
+.once-why { color: var(--warn-ink); font-size: 13.5px; line-height: 1.55; margin: 0;
+            max-width: 68ch; }
+.once-value {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--warn-border);
+  border-radius: var(--r-sm); padding: 10px 12px;
+}
+/* The value wraps rather than scrolling: a token clipped at the edge of a box
+   is one somebody copies half of. */
+.once-value code { flex: 1; min-width: 12rem; font-size: 12.5px; line-height: 1.5;
+                   word-break: break-all; color: var(--text); }
+.once-dismiss { align-self: flex-start; font-size: 13px; padding: 5px 11px; }
+
+/* A create form that reads as one line of intent rather than a stack of fields. */
+.row-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+            margin: 12px 0 4px; }
+.row-form label { display: flex; flex-direction: column; gap: 5px; }
+.row-form label > span { font-size: 12px; color: var(--text-dim); }
+.row-form input, .row-form select { min-width: 13rem; }
+
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.row-actions button { padding: 5px 11px; font-size: 13px; box-shadow: none; }
+
+/* One permission per row, its description beside it. A grid of bare names asks
+   the reader to already know what `action:recover` grants. */
+.perm-grid { list-style: none; margin: 12px 0 0; padding: 0;
+             display: flex; flex-direction: column; gap: 2px; }
+.perm-row { display: grid; grid-template-columns: minmax(12rem, max-content) 1fr;
+            gap: 8px 16px; align-items: baseline; padding: 7px 10px;
+            border-radius: var(--r-sm); }
+.perm-row:nth-child(odd) { background: var(--surface-2); }
+.perm-row label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.perm-row input:disabled + code { opacity: 0.75; }
+.perm-row .muted { font-size: 13px; line-height: 1.45; }
+/* The ones that move money carry the tint on the whole row, not just the chip:
+   the decision being made is about the row. */
+.perm-row.act { background: var(--warn-soft); }
+.perm-row.act:nth-child(odd) { background: var(--warn-soft); }
+/* `--text-dim` is calibrated against the page ground, and on this tint it is
+   4.26:1 where 13px normal needs 4.5. The same pairing failed on the landing
+   page and `--text-dim-on-tint` exists for exactly it: 6.32:1 here. */
+.perm-row.act .muted { color: var(--text-dim-on-tint); }
+
+@media (max-width: 720px) {
+  .perm-row { grid-template-columns: 1fr; gap: 3px; }
+  .row-form label, .row-form input, .row-form select { width: 100%; min-width: 0; }
+}
+
 /* ---------------------------------------------------------- access review */
 /* Permissions read as a SET — several short tokens scanned together — so they
    wrap as chips rather than running as a comma sentence the eye has to parse.

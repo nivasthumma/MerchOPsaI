@@ -71,6 +71,26 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "  const total = d.counts[k];",
         "  const total = rows.length;  // MUTANT",
     ),
+    # --- administration (§43) ----------------------------------------------
+    (
+        # The last-owner guard, removed from the UI. The server still refuses,
+        # so nothing breaks visibly -- an owner just gets a 409 where the
+        # control should have told them beforehand, and the screen teaches
+        # people that its disabled states are advisory.
+        "people: offer to demote the last remaining owner",
+        "web/src/routes/People.tsx",
+        "  const lastOwner = isActive && u.role === \"owner\" && owners.length === 1;",
+        "  const lastOwner = false;  // MUTANT",
+    ),
+    (
+        # A credential shown once, dismissed silently. The panel still appears;
+        # it just stops saying that this is the only time the value exists.
+        "admin: stop saying a credential cannot be shown again",
+        "web/src/components/ShownOnce.tsx",
+        "        This is the only time {what} is readable. The database keeps a digest,",
+        "        Here is {what}.{\" \"}",
+    ),
+
     # --- who can move money (§66) ------------------------------------------
     (
         # The access review's whole claim. If this reads false, every reviewer

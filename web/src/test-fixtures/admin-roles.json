@@ -1,0 +1,53 @@
+{
+  "roles": [
+    {
+      "name": "analyst",
+      "description": "Read-only. Can investigate; cannot act",
+      "permissions": [
+        "read:metrics",
+        "read:orders"
+      ],
+      "held_by": 1
+    },
+    {
+      "name": "approver",
+      "description": "Can investigate and approve actions, including refunds",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ],
+      "held_by": 1
+    },
+    {
+      "name": "owner",
+      "description": "Full authority over this merchant, including moving money",
+      "permissions": [
+        "action:recover",
+        "action:refund",
+        "read:metrics",
+        "read:orders"
+      ],
+      "held_by": 1
+    }
+  ],
+  "catalogue": [
+    {
+      "name": "action:recover",
+      "description": "Required by `generate_payment_link` and tools like it"
+    },
+    {
+      "name": "action:refund",
+      "description": "Required by `request_refund` and tools like it"
+    },
+    {
+      "name": "read:metrics",
+      "description": "Read revenue, failure and recovery figures"
+    },
+    {
+      "name": "read:orders",
+      "description": "Read orders, payments, refunds and customers"
+    }
+  ]
+}

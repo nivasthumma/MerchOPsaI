@@ -12,6 +12,8 @@ import type {
   Dashboard,
   IncidentDetail,
   AccessReview, EscalatedAction, Health, IncidentList, IncidentQuery,
+  RoleChange, RoleList, ScimTokenCreated, ScimTokenList, SsoConfig,
+  UserChange, UserCreated, UserList,
   LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
   ReconcileReport, Readiness, ReplayResult, Scenario, ScenarioResult,
   SearchResults, Task, TaskEvidence, TraceEvent, VerificationDetail,
@@ -474,6 +476,53 @@ export const api = {
    *  read-only token would want, so the refusal is deliberate and the screen
    *  explains it rather than reporting a fault. */
   accessReview: () => request<AccessReview>("/access-review"),
+
+  // ---------------------------------------------------- administration (§43)
+  //
+  // Owner-only, server-side, and the screens explain the refusal rather than
+  // reporting it as a fault: being refused is the control working.
+  //
+  // The SCIM v2 surface (`/scim/v2/...`) is deliberately absent from this
+  // client. That is the protocol a customer's identity provider speaks; it is
+  // not an administration API, and wrapping it here would invite somebody to
+  // drive provisioning from a browser instead of from the IdP that owns it.
+  users: (includeDisabled = true) =>
+    request<UserList>(`/users?include_disabled=${includeDisabled}`),
+
+  /** Returns the new account's token ONCE. It is not retrievable afterwards. */
+  createUser: (email: string, role: string) =>
+    request<UserCreated>("/users", {
+      method: "POST", body: JSON.stringify({ email, role }) }),
+
+  updateUser: (userId: string, change: { role?: string; status?: string }) =>
+    request<UserChange>(`/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH", body: JSON.stringify(change) }),
+
+  /** Revoke every live session for one account, without disabling it. */
+  signOutUser: (userId: string) =>
+    request<{ revoked: number }>(
+      `/users/${encodeURIComponent(userId)}/sign-out`, { method: "POST" }),
+
+  roles: () => request<RoleList>("/roles"),
+
+  setRolePermissions: (role: string, permissions: string[]) =>
+    request<RoleChange>(`/roles/${encodeURIComponent(role)}/permissions`, {
+      method: "PUT", body: JSON.stringify({ permissions }) }),
+
+  sso: () => request<SsoConfig>("/sso"),
+
+  scimTokens: () => request<ScimTokenList>("/scim/tokens"),
+
+  /** Returns the provisioning token ONCE, as `createUser` does. */
+  createScimToken: (name: string, defaultRole: string, defaultMerchantId: string) =>
+    request<ScimTokenCreated>("/scim/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name, default_role: defaultRole,
+                             default_merchant_id: defaultMerchantId }) }),
+
+  revokeScimToken: (id: string) =>
+    request<{ id: string; revoked: boolean }>(
+      `/scim/tokens/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   scenarios: () => request<Scenario[]>("/scenarios", {}, { auth: false }),
 

@@ -5,6 +5,9 @@ import App from "./App";
 import { AppErrorBoundary } from "./components/ErrorBoundary";
 import AccessReview from "./routes/AccessReview";
 import Actions from "./routes/Actions";
+import Identity from "./routes/Identity";
+import People from "./routes/People";
+import Roles from "./routes/Roles";
 import CommandCenter from "./routes/CommandCenter";
 import Dashboard from "./routes/Dashboard";
 import IncidentDetail from "./routes/IncidentDetail";
@@ -46,6 +49,10 @@ const router = createBrowserRouter([
       // §66. Owner-only server-side; the route is not gated here because
       // the screen explains the refusal better than a 404 would.
       { path: "access-review", element: <AccessReview /> },
+      // §43. Owner-only server-side; each screen explains the refusal.
+      { path: "people", element: <People /> },
+      { path: "roles", element: <Roles /> },
+      { path: "identity", element: <Identity /> },
       { path: "settings", element: <Settings /> },
       // Signed out this renders the sign-in page and signed in it
       // redirects home, both handled in `App`. It needs to exist here

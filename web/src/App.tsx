@@ -196,8 +196,16 @@ function MainNav() {
       // the route survived the merge and a reachable-only-by-URL screen is
       // one nobody finds.
       ["/timeline", "Timeline"],
-      ["/access-review", "Access"],
       ["/scenarios", "Evaluation"],
+    ]],
+    // §43. Administration is its own job: an owner adding a colleague is not
+    // doing the same work as an operator reading a queue, and the screens that
+    // grant access belong together rather than scattered through Trust.
+    ["Administration", [
+      ["/people", "People"],
+      ["/roles", "Roles"],
+      ["/identity", "Identity"],
+      ["/access-review", "Access review"],
     ]],
   ];
 
@@ -637,8 +645,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>110 of them critical</em></div>
           <div><b>141<i>/141</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>1483</b><span>Automated tests</span>
-            <em>1142 backend · 341 frontend</em></div>
+          <div><b>1512</b><span>Automated tests</span>
+            <em>1142 backend · 370 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -658,9 +666,9 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  1142 python tests · 341 vitest · 187 scenarios · 141 mutants"}
+              {"measured:  1142 python tests · 370 vitest · 187 scenarios · 141 mutants"}
             </span>
-            <span className="ln">{"browser:   15 Playwright tests defined"}</span>
+            <span className="ln">{"browser:   16 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>
           </code></pre>
         </figure>

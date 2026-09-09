@@ -6,7 +6,7 @@
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Tests](https://img.shields.io/badge/tests-1188%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
-[![Mutations](https://img.shields.io/badge/mutations-136%20defined%20%C2%B7%20not%20measured-lightgrey.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-141%2F141%20%C2%B7%2022%2F22%20web-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 1188 tests · 187/187 scenarios · 141 mutants defined |
+| [📊 Measured results](#-measured-results) | 1188 tests · 187/187 scenarios · 141/141 mutations caught |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -151,25 +151,40 @@ median task latency 49 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-141 mutants defined         not yet measured on this tree
+141/141 mutations caught    complete run, 2026-09-09, 3h40m, tree cdcbbff
+  └─ 60 graded red by a named scenario · 81 by unit tests alone
 ```
+
+*Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
+complete run takes hours: 141 mutants against 187 scenarios and 1188 tests, 3h40m
+measured. That figure is the CI budget's problem rather than a boast — GitHub's
+hosted-runner ceiling is 360 minutes and this job already declares it, so twenty
+minutes is all the headroom there is. The next handful of mutants needs the
+corpus sharded across jobs, not trimmed to fit.*
+
+*The split matters more than the total. **81 of 141 are caught by unit tests
+alone** — no named scenario distinguishes them — and that is the honest shape of
+the suite rather than a flaw to hide: the tooling controls, the read-side
+aggregates and the configuration guards are not things a merchant journey can
+drive. Both halves of that split are gated against the run's own artifact, so
+neither can be carried forward from a run that no longer describes this tree.*
 
 **That figure was measured entirely in Python.** `make mutants-web` asks the
 same question of the Vitest suite:
 
 ```
-15/15 frontend mutations caught      complete run, 2026-09-08, 3m12s
-  └─ 13/15 on the first run — the two survivors are described below
+22/22 frontend mutations caught      complete run, 2026-09-09, tree cdcbbff
 ```
 
-It found two gaps immediately. **A failed step drawn with the done glyph**
+When that harness was introduced it found two gaps immediately, and both have
+assertions now. **A failed step drawn with the done glyph**
 passed all 311 tests: `data-state` was pinned and the screen-reader text was
 pinned, and the mark itself — the only thing most readers actually look at —
 was free to say anything. A failed financial step with a green tick is the
 single worst thing that list can do. **Shortening "Execution is live against
 Razorpay test mode" to "Execution is live"** also passed: the test asserted the
 notice body and never the summary line, so the front door could announce that
-real money can move without saying where. Both have assertions now.
+real money can move without saying where.
 
 The suite was worth asking because it had never been asked, and because the
 frontend had reason to be doubted before any of this ran. Three tests found by
@@ -188,15 +203,6 @@ two scores are published separately rather than added together, and why
 day: it exists because a mutation that removes the human approval gate reached
 a pushed commit, and there is no reason the frontend version of that is less
 likely.
-
-*Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes hours. **No complete run has happened since
-`feat/incident-spine` merged into `integration/trunk`.** The two branches' last
-complete runs measured different trees against mutant sets that no longer exist
-— 88/88 on the spine and 113 defined on the trunk — and the merged set is 136.
-Neither number describes what is here now, so neither is published. CI runs the
-full set nightly and on every pull request; that is where the figure for this
-tree will come from.*
 
 **§22's five browser journeys run.** `make e2e` stands the whole stack up
 against its own database — seed, API, the built bundle behind `vite preview`,
@@ -804,40 +810,36 @@ are different claims.
 
 ### Coverage limits
 
-19. **The per-mutant breakdown is stale.** The figures in this item and the next
-    were measured on `feat/incident-spine`'s 78-mutant set. Two merges have widened it
-    since: ADR-0041 brought `feat/merchantops-v2`'s mutants in alongside them, making
-    113, and merging `feat/incident-spine` into `integration/trunk` took the union to
-    136. No complete run has happened against either. The shape of the finding is unchanged — some
-    mutants are reachable only by unit tests, and a few are detected as a crash rather
-    than a graded failure — but every number below describes the previous set. The
-    nightly CI run is what will replace them.
+19. **81 of 141 mutants are caught by unit tests alone.** Measured on this tree
+    (2026-09-09, `cdcbbff`), not carried forward: 60 are graded red by a named
+    scenario and 81 by the test suite without one. Both halves are gated against
+    the run's own artifact, so a split from a run that no longer describes this
+    code cannot survive here.
 
-    *As measured on the 78-mutant set:* **Thirteen are caught by unit tests only** — no scenario
-    distinguishes them: idempotency-key derivation, the duplicate-action SAVEPOINT,
-    the key-name branch of audit redaction, the incident lifecycle's legality check, and
-    grading a bulk action as if it stood alone, and six of the seven tooling controls.
-    The tooling ones are structural: the deterministic planner does not compose customer
-    contact on its own, so no scenario can drive most of those paths, and giving it that
-    freedom would be the wrong fix. Each is reachable in principle but sits behind a guard that fires first in
-    every path a scenario can drive — for the lifecycle mutant, because every
-    transition a scenario can drive is already a legal one. Two more (registry lookup,
-    argument validation) are detected as a *crash* rather than a graded failure — the
-    suite dies on `spec is None` instead of reporting SEC-24 red.
-    Counted honestly: **40 of 69 produce a graded scenario failure**, 4 are detected as a
-    crash rather than a graded result, and the rest by unit tests alone — the metrics and
-    taxonomy ones are read-side aggregates the scenario suite has no way to drive. See
-    [`docs/evaluation.md`](docs/evaluation.md) for the per-mutant breakdown.
-20. **The mutant run takes over five hours.** Measured, not estimated: at 126 mutants
-    against 187 scenarios and 919 tests it was roughly 135 seconds each. The merged
-    tree is 136 mutants against 187 scenarios and 1086 tests, so the figure is a
-    floor rather than a measurement until the nightly run reports one. It does not run on
-    every push (ADR-0041) — pull requests, the trunk, and nightly — and
-    `scripts/mutation_test.py <substring>` runs a subset during development.
+    That shape is honest rather than a defect to hide. The tooling controls, the
+    read-side aggregates and the configuration guards are not things a merchant
+    journey can drive — the deterministic planner does not compose customer
+    contact on its own, and giving it that freedom to make a scenario reach the
+    path would be the wrong fix. What it does mean is that for those 81, the
+    unit suite is the only thing standing between a broken control and a green
+    build.
+20. **The mutant run takes 3h40m, and CI has twenty minutes of headroom.**
+    Measured on 2026-09-09: 141 mutants against 187 scenarios and 1188 tests.
+    Every earlier figure in this file was an estimate and both were wrong — one
+    projection said five hours by scaling an older per-mutant cost, and the
+    harness's own mid-run ETA said three and a quarter.
 
-    The CI job's `timeout-minutes` was **50**, which meant it could not have passed: it
-    would have been cancelled a third of the way through and reported as a failure of
-    the code rather than of the budget. Now 360.
+    GitHub's ceiling for a hosted runner is 360 minutes and this job already
+    declares it. 220 minutes measured on a developer machine against a ceiling
+    of 360 on a slower one is not comfortable: the next handful of mutants
+    pushes it over, and the failure mode is a cancelled job reported as a
+    failure of the code rather than of the budget. Sharding the corpus across
+    jobs is scheduled work, not contingency. Trimming mutants to fit would be
+    optimising away the number the job exists to produce.
+
+    It does not run on every push (ADR-0041) — pull requests, the trunk, and
+    nightly — and `scripts/mutation_test.py <substring>` runs a subset during
+    development.
 
     One source of the growth was waste rather than coverage. The scenario runner
     rebuilt the schema for every scenario — drop, create, re-apply the audit triggers

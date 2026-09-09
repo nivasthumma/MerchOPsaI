@@ -304,14 +304,15 @@ def main() -> int:
               "the `make eval` comment"),
         Claim("README.md", r"data/\s+(\d+) scenarios", scen,
               "the tree listing's scenario count"),
-        # The corpus is published as DEFINED, not as caught. Merging
-        # feat/incident-spine into integration/trunk took the union to 136 and
-        # no complete run has measured that tree, so there is no honest
-        # "N/N caught" sentence to gate. The count still is gated: publishing a
-        # corpus size that does not match `MUTATIONS` is the error this catches,
-        # and the score returns to the README when a run produces one.
-        Claim("README.md", r"(\d+) mutants defined", mut,
-              "the mutant count in the measured-results block"),
+        # The DENOMINATOR of the published score, against `MUTATIONS`. For a
+        # day this gated `(\d+) mutants defined` instead, because the
+        # spine/trunk merge left a corpus nothing had measured and there was no
+        # honest "N/N caught" sentence to check. The run of 2026-09-09 produced
+        # one, so this goes back to gating the total it is out of -- the
+        # numerator is gated separately, below, and only when a COMPLETE run
+        # exists to check it against.
+        Claim("README.md", r"\d+/(\d+) mutations caught", mut,
+              "the mutant total in the measured-results block"),
         Claim("README.md", r"scenarios \+ (\d+)-mutation validation", mut,
               "the capability table's mutant count"),
         Claim("README.md", r"gap-closure plan, (\d+) ADRs", adr_count(),

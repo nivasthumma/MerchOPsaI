@@ -1254,9 +1254,31 @@ def main() -> int:
     # test suite) and takes well over half an hour, which is too slow to sit in
     # the middle of a change. `mutation_test.py detection lifecycle` runs only
     # the mutants whose label matches. CI still runs all of them.
-    selectors = [a for a in sys.argv[1:] if not a.startswith("-")]
+    # The shard is parsed first so its VALUE can be excluded from the
+    # selectors. `--shard 1/4` puts a bare `1/4` in argv, which does not start
+    # with `-` and was therefore read as a label to match -- every shard then
+    # selected nothing and exited "no mutants", which is a filtered run
+    # reporting as a configuration error rather than grading anything.
+    shard = _shard_arg()
+    selectors = [a for a in _selector_args() if not a.startswith("-")]
     mutations = [m for m in MUTATIONS
                  if not selectors or any(s.lower() in m[0].lower() for s in selectors)]
+
+    # `--shard N/M` splits the corpus across parallel jobs. The complete run is
+    # 3h40m against a 360-minute ceiling on a hosted runner, which is twenty
+    # minutes of headroom measured on a faster machine than CI has -- so this
+    # exists before the corpus grows past it rather than after.
+    #
+    # ROUND-ROBIN, not contiguous blocks. Mutants for one file sit together in
+    # `MUTATIONS` and cost roughly the same to grade, so contiguous shards would
+    # hand one job every slow mutant in a file and another every cheap one. Every
+    # Mth entry mixes them.
+    if shard:
+        index, total = shard
+        mutations = shard_of(mutations, index, total)
+        if not mutations:
+            print(f"Shard {index}/{total} has no mutants. Use fewer shards.")
+            return 1
     if not mutations:
         print(f"No mutation label matches {selectors}.")
         return 1
@@ -1414,7 +1436,7 @@ def main() -> int:
 
     print()
     caught_n = sum(1 for r in rows if r[1] == "CAUGHT")
-    _write_report(rows, caught_n, mutations)
+    _write_report(rows, caught_n, mutations, shard)
 
     # The evaluation report on disk now describes the LAST MUTANT's run -- a
     # deliberately broken tree. `run_suite` already deletes it before each
@@ -1450,7 +1472,51 @@ def main() -> int:
     return 0
 
 
-def _write_report(rows, caught_n: int, mutations) -> None:
+
+
+def _selector_args() -> list[str]:
+    """argv without the shard flag and, when written apart, its value."""
+    out, skip = [], False
+    for arg in sys.argv[1:]:
+        if skip:
+            skip = False
+            continue
+        if arg == "--shard":
+            skip = True          # the value follows as its own argument
+            continue
+        if arg.startswith("--shard="):
+            continue
+        out.append(arg)
+    return out
+
+
+def shard_of(mutations: list, index: int, total: int) -> list:
+    """The Nth of M shards of the corpus.
+
+    Its own function so the tests can exercise the real selection rather than a
+    reimplementation of it -- a partition test that recomputes the formula it is
+    checking passes whatever the harness does.
+    """
+    return [m for i, m in enumerate(mutations) if i % total == index - 1]
+
+
+def _shard_arg() -> tuple[int, int] | None:
+    """`--shard N/M`, validated. Returns None when the whole corpus is wanted."""
+    for arg in sys.argv[1:]:
+        if not arg.startswith("--shard"):
+            continue
+        raw = arg.split("=", 1)[1] if "=" in arg else sys.argv[sys.argv.index(arg) + 1]
+        try:
+            index, total = (int(x) for x in raw.split("/"))
+        except (ValueError, IndexError):
+            raise SystemExit(f"--shard wants N/M, got {raw!r}") from None
+        if not 1 <= index <= total:
+            raise SystemExit(f"--shard {raw}: N must be between 1 and M")
+        return index, total
+    return None
+
+
+def _write_report(rows, caught_n: int, mutations, shard=None) -> None:
     """Record the run so a published number can be checked against it.
 
     `complete` is the field that matters. A filtered run measures a subset and
@@ -1467,7 +1533,12 @@ def _write_report(rows, caught_n: int, mutations) -> None:
         "generated_at": datetime.now(UTC).isoformat(),
         "tree": MEASURED_TREE,
         "tree_clean": MEASURED_CLEAN,
-        "complete": len(mutations) == len(MUTATIONS),
+        # A shard is never complete on its own. `scripts/merge_mutation_reports.py`
+        # sets this true only when the shards together cover every mutant
+        # exactly once, on one tree -- earned rather than asserted.
+        "complete": shard is None and len(mutations) == len(MUTATIONS),
+        "shard": None if shard is None else {"index": shard[0], "total": shard[1]},
+        "labels": [m[0] for m in mutations],
         "defined": len(MUTATIONS),
         "run": len(mutations),
         "caught": caught_n,

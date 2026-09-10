@@ -176,7 +176,7 @@ neither can be carried forward from a run that no longer describes this tree.*
 same question of the Vitest suite:
 
 ```
-24/24 frontend mutations caught      complete run, 2026-09-09, tree cdcbbff
+24/24 frontend mutations caught      complete run, 2026-09-10, tree c006ec2
 ```
 
 When that harness was introduced it found two gaps immediately, and both have

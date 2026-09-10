@@ -117,6 +117,13 @@
             "title": "Executing",
             "type": "array"
           },
+          "failed": {
+            "items": {
+              "$ref": "#/components/schemas/ActionRow"
+            },
+            "title": "Failed",
+            "type": "array"
+          },
           "generated_at": {
             "title": "Generated At",
             "type": "string"
@@ -165,6 +172,7 @@
           "unknown",
           "escalated",
           "recently_completed",
+          "failed",
           "counts",
           "shown",
           "limit",
@@ -189,6 +197,10 @@
             "title": "Executing",
             "type": "integer"
           },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
           "recently_completed": {
             "title": "Recently Completed",
             "type": "integer"
@@ -203,7 +215,8 @@
           "executing",
           "unknown",
           "escalated",
-          "recently_completed"
+          "recently_completed",
+          "failed"
         ],
         "title": "ActionCenterCounts",
         "type": "object"
@@ -1005,6 +1018,45 @@
         "title": "AgentBudget",
         "type": "object"
       },
+      "AgentPosture": {
+        "additionalProperties": false,
+        "description": "Which reasoning is configured, and how recent runs were actually\nproduced. `runs_by_mode` is counted from the tasks, not inferred from\nconfiguration: a model can be configured and still be falling back.",
+        "properties": {
+          "fallback_enabled": {
+            "title": "Fallback Enabled",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "runs_by_mode": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Runs By Mode",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider",
+          "fallback_enabled",
+          "runs_by_mode"
+        ],
+        "title": "AgentPosture",
+        "type": "object"
+      },
       "ApprovalQueue": {
         "additionalProperties": false,
         "properties": {
@@ -1135,6 +1187,39 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "policy_decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Decision"
+          },
+          "policy_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Rule"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
           },
           "required_signatures": {
             "title": "Required Signatures",
@@ -1674,6 +1759,9 @@
             "title": "Activity",
             "type": "array"
           },
+          "agent": {
+            "$ref": "#/components/schemas/AgentPosture"
+          },
           "attention": {
             "$ref": "#/components/schemas/AttentionCounts"
           },
@@ -1706,6 +1794,9 @@
             "title": "Merchant Id",
             "type": "string"
           },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderPosture"
+          },
           "revenue": {
             "$ref": "#/components/schemas/RevenueHealth"
           }
@@ -1718,7 +1809,9 @@
           "attention",
           "by_incident",
           "by_method",
-          "activity"
+          "activity",
+          "agent",
+          "provider"
         ],
         "title": "CommandCenter",
         "type": "object"
@@ -2324,6 +2417,11 @@
           },
           "key": {
             "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "default": "OBSERVED",
+            "title": "Kind",
             "type": "string"
           },
           "source": {
@@ -3306,8 +3404,18 @@
             "title": "Recoverable Minor",
             "type": "integer"
           },
+          "recovered_captured_minor": {
+            "default": 0,
+            "title": "Recovered Captured Minor",
+            "type": "integer"
+          },
           "recovered_minor": {
             "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "recovered_refunded_minor": {
+            "default": 0,
+            "title": "Recovered Refunded Minor",
             "type": "integer"
           },
           "unknown_minor": {
@@ -5000,6 +5108,52 @@
         "title": "ProviderOperation",
         "type": "object"
       },
+      "ProviderPosture": {
+        "additionalProperties": false,
+        "description": "Which provider universe actions go to, and whether its deliveries are\nbeing processed. `adapter_mode` is `mock` unless real credentials exist --\na mocked provider is never described as real (CONTRACT \u00a77).",
+        "properties": {
+          "adapter_mode": {
+            "title": "Adapter Mode",
+            "type": "string"
+          },
+          "last_webhook_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Webhook At"
+          },
+          "live": {
+            "title": "Live",
+            "type": "boolean"
+          },
+          "webhook_signature_verification": {
+            "title": "Webhook Signature Verification",
+            "type": "boolean"
+          },
+          "webhooks_dead_lettered": {
+            "title": "Webhooks Dead Lettered",
+            "type": "integer"
+          },
+          "webhooks_pending": {
+            "title": "Webhooks Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "adapter_mode",
+          "live",
+          "webhook_signature_verification",
+          "webhooks_pending",
+          "webhooks_dead_lettered"
+        ],
+        "title": "ProviderPosture",
+        "type": "object"
+      },
       "ProviderRequest": {
         "properties": {
           "provider": {
@@ -5410,8 +5564,18 @@
             "title": "Recoverable Minor",
             "type": "integer"
           },
+          "recovered_captured_minor": {
+            "default": 0,
+            "title": "Recovered Captured Minor",
+            "type": "integer"
+          },
           "recovered_minor": {
             "title": "Recovered Minor",
+            "type": "integer"
+          },
+          "recovered_refunded_minor": {
+            "default": 0,
+            "title": "Recovered Refunded Minor",
             "type": "integer"
           },
           "unknown_minor": {
@@ -5575,6 +5739,17 @@
           "agent": {
             "title": "Agent",
             "type": "string"
+          },
+          "configuration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration"
           },
           "model": {
             "anyOf": [
@@ -6432,6 +6607,17 @@
             "title": "Agent Version",
             "type": "string"
           },
+          "ai_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Mode"
+          },
           "approvals": {
             "items": {
               "$ref": "#/components/schemas/ApprovalView"
@@ -6970,6 +7156,28 @@
       "TraceEvent": {
         "additionalProperties": false,
         "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "actor_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Type"
+          },
           "at": {
             "title": "At",
             "type": "string"
@@ -7482,6 +7690,31 @@
           "received_at"
         ],
         "title": "WebhookEventView",
+        "type": "object"
+      },
+      "WebhookProcessReport": {
+        "additionalProperties": false,
+        "description": "One pass of asynchronous webhook processing (app/webhooks/processing.py).",
+        "properties": {
+          "dead_lettered": {
+            "title": "Dead Lettered",
+            "type": "integer"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "processed",
+          "failed",
+          "dead_lettered"
+        ],
+        "title": "WebhookProcessReport",
         "type": "object"
       }
     }
@@ -11853,6 +12086,62 @@
         "summary": "Reverify Task"
       }
     },
+    "/tasks/{task_id}/revoke": {
+      "post": {
+        "description": "Withdraw a pending approval before it can execute.\n\nFor an approval that needs two signatures this is how the first signer takes\ntheirs back. Afterwards nothing can complete it: there is no pending\napproval left to sign, and a REVOKED decision is never valid for execution.",
+        "operationId": "revoke_task_tasks__task_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Task"
+      }
+    },
     "/tasks/{task_id}/trace": {
       "get": {
         "operationId": "get_trace_tasks__task_id__trace_get",
@@ -12269,6 +12558,63 @@
           }
         },
         "summary": "List Webhook Events"
+      }
+    },
+    "/webhooks/process": {
+      "post": {
+        "description": "Process acknowledged provider deliveries -- the worker's `webhooks` job.\n\nThe endpoint that receives a delivery only validates, stores, deduplicates\nand acknowledges it; verification against the provider happens here or in\nthe worker (ADR-0053). Exposed as a route for the same reason as\n`/events/drain`: a deployment with no worker -- Vercel -- needs a scheduled\ninvocation to do it, or acknowledged deliveries would wait forever.\n\nRuns under the caller's scope, so it processes that merchant's deliveries\nand no one else's. Safe to call concurrently: each delivery is claimed\n`FOR UPDATE SKIP LOCKED` and the claim is committed before any provider read.",
+        "operationId": "process_webhooks_webhooks_process_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookProcessReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Process Webhooks"
       }
     },
     "/webhooks/razorpay": {

@@ -158,8 +158,20 @@ _FROM_VERIFICATION = {
 }
 
 
+def _paid_share(cand: RecoveryCandidate, link) -> int:
+    """What the provider reports paid on a link, in the candidate's attributed
+    unit and never more than it. An unreadable link keeps the last share that
+    was established: paid money does not become unpaid because a read failed."""
+    if link is None:
+        return cand.actual_recovery_minor or 0
+    if link.amount_minor <= 0:
+        return 0
+    paid = max(0, min(link.amount_paid_minor, link.amount_minor))
+    return cand.attributed_amount_minor * paid // link.amount_minor
+
+
 def _settle_one(session, cand: RecoveryCandidate, action: AgentAction,
-                adapter) -> tuple[CandidateStatus, int]:
+                link) -> tuple[CandidateStatus, int]:
     """What one verified action means for its candidate — MerchantOps §49.
 
     A verified SUCCESS does not mean the same thing for every intervention, and
@@ -179,23 +191,30 @@ def _settle_one(session, cand: RecoveryCandidate, action: AgentAction,
     state = action.verification_state
     if state is None:
         return cand.status, cand.actual_recovery_minor
+
+    if action.action_type == "payment_link":
+        # Money paid against a link is a fact about the LINK, and it holds
+        # whatever the latest verification said about the link's usability. A
+        # link that was part-paid and then expired used to settle to
+        # (FAILED, 0), erasing money the customer had actually paid.
+        paid_share = _paid_share(cand, link)
+        # `link` is the provider's current read of it, fetched by `settle_plan`
+        # before anything was written; None when it could not be read.
+        if link is not None and link.status == "paid":
+            return CandidateStatus.RECOVERED, cand.attributed_amount_minor
+        if state is VerificationState.SUCCESS:
+            # Sent and usable, perhaps part-paid. Not failed: the customer may
+            # still pay, so the candidate stays ATTEMPTED.
+            return CandidateStatus.ATTEMPTED, paid_share
+        # Expired, cancelled or unreadable: settled as verification says, and
+        # what was paid stays paid.
+        return _FROM_VERIFICATION.get(state, CandidateStatus.UNKNOWN), paid_share
+
     if state is not VerificationState.SUCCESS:
         return _FROM_VERIFICATION.get(state, CandidateStatus.UNKNOWN), 0
 
     if action.action_type == "refund":
         return CandidateStatus.RECOVERED, action.amount_minor
-
-    if action.action_type == "payment_link":
-        link = None
-        if action.external_reference:
-            try:
-                link = adapter.get_payment_link(action.external_reference)
-            except Exception:
-                link = None
-        if link is not None and link.status == "paid":
-            return CandidateStatus.RECOVERED, cand.attributed_amount_minor
-        # Sent and outstanding. Not failed — the customer may still pay.
-        return CandidateStatus.ATTEMPTED, 0
 
     # A message was delivered. Nothing has been recovered by delivering it.
     return CandidateStatus.ATTEMPTED, 0
@@ -209,22 +228,47 @@ def settle_plan(session, plan: RecoveryPlan, adapter=None) -> dict:
     expected and actual apart, and an UNKNOWN action has not been shown to have
     moved anything.
     """
+    from app.db import checkpoint
     from app.integrations.razorpay.adapter import get_adapter
 
     adapter = adapter or get_adapter(session)
     counts = {s.value: 0 for s in CandidateStatus}
     recovered = 0
 
+    # Read, then call out, then write -- in that order (app/boundaries.py).
+    # This loop used to write each candidate and then ask the provider about
+    # the next one's link, holding every row it had settled so far locked
+    # across a network call.
+    pairs = []
     for cand in session.query(RecoveryCandidate).filter(
             RecoveryCandidate.plan_id == plan.id).all():
+        action = None
         if cand.task_id:
             action = (session.query(AgentAction)
                       .filter(AgentAction.task_id == cand.task_id)
                       .order_by(AgentAction.created_at.desc()).first())
-            if action is not None:
-                action.recovery_candidate_id = cand.id
-                cand.status, cand.actual_recovery_minor = _settle_one(
-                    session, cand, action, adapter)
+        pairs.append((cand, action))
+
+    # Every link with a reference, whatever its verification says: a link
+    # that has since expired may still carry money that was paid on it.
+    to_read = [a for _, a in pairs
+               if a is not None and a.action_type == "payment_link"
+               and a.verification_state is not None
+               and a.external_reference]
+    links: dict[str, object] = {}
+    if to_read:
+        checkpoint(session)
+        for action in to_read:
+            try:
+                links[action.id] = adapter.get_payment_link(action.external_reference)
+            except Exception:
+                links[action.id] = None
+
+    for cand, action in pairs:
+        if action is not None:
+            action.recovery_candidate_id = cand.id
+            cand.status, cand.actual_recovery_minor = _settle_one(
+                session, cand, action, links.get(action.id))
         counts[cand.status.value] += 1
         recovered += cand.actual_recovery_minor
 
@@ -234,6 +278,12 @@ def settle_plan(session, plan: RecoveryPlan, adapter=None) -> dict:
                                       CandidateStatus.ATTEMPTED])).count()
     if outstanding == 0 and plan.status in (PlanStatus.DRAFT, PlanStatus.ACTIVE):
         plan.status = PlanStatus.COMPLETED
+        from app.events.bus import publish
+        publish(session, "recovery.completed", merchant_id=plan.merchant_id,
+                incident_id=plan.incident_id, entity_id=plan.id,
+                payload={"plan_id": plan.id, "by_status": counts,
+                         "actual_recovery_minor": recovered,
+                         "expected_recovery_minor": plan.expected_recovery_minor})
     session.flush()
 
     return {"plan_id": plan.id, "status": plan.status.value,

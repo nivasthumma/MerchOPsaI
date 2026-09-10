@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/tests-1201%20passed-brightgreen.svg)](#-measured-results)
+[![Tests](https://img.shields.io/badge/tests-1320%20passed-brightgreen.svg)](#-measured-results)
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
-[![Mutations caught](https://img.shields.io/badge/mutations%20caught-141%2F141%20%C2%B7%2022%2F22%20web-brightgreen.svg)](#-measured-results)
+[![Mutations caught](https://img.shields.io/badge/mutations%20caught-150%2F150%20%C2%B7%2024%2F24%20web-brightgreen.svg)](#-measured-results)
 
 An AI agent that investigates merchant payment and revenue problems, recommends a
 corrective action, and — only with human approval — executes it through a controlled
@@ -37,7 +37,7 @@ directly is the second entry point, not the only one.
 |---|---|
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
-| [📊 Measured results](#-measured-results) | 1201 tests · 187/187 scenarios · 141/141 mutations caught |
+| [📊 Measured results](#-measured-results) | 1320 tests · 187/187 scenarios · 150/150 mutations caught |
 | [▶️ Demo](#-demo) | Seven steps, end to end, in five minutes |
 
 **How it works** — the machinery the project exists to demonstrate:
@@ -70,34 +70,36 @@ and what is architecture.
 | Area | Built and running | Designed, not built |
 |---|---|---|
 | Detection | Deterministic sweep over payment history **and the provider event store**: success-rate degradation, duplicate capture, provider failure bursts. Idempotent, merchant-scoped | Internal event sourcing |
-| Webhooks | Signed ingestion, event dedup, durable event store. A webhook triggers an independent read — it never writes state | Async queue; replay of stored events |
+| Webhooks | Validate → persist raw (malformed bodies too) → dedup (a reused id with a different body is a reported conflict) → ACK → the worker's `webhooks` job processes it under the owning merchant's scope, leased, bounded, dead-lettered after 5 attempts (ADR-0053). A webhook triggers an independent read — it never writes state | Replay of stored events |
 | Incidents | Full §13 lifecycle, evidence, computed revenue-at-risk, incident-rooted trace, reconciliation mismatches | — |
 | Recovery | Deterministic planner: eligibility, attributed expected recovery, per-campaign budgets, stopping rules. Refunds and payment links execute; bulk campaigns escalate rather than run | RETRY and SUBSCRIPTION_RETRY; campaign-level approval |
 | Agent | One bounded agent, **15 typed tools** (§18 complete) | Specialised multi-agent orchestration |
-| Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources | Model routing, cost-aware selection |
+| Reasoning | Provider abstraction: Anthropic (`claude-opus-5`, adaptive thinking, prompt caching) **or** a deterministic planner. Credential detection covers all four SDK sources. Every run records how it was produced — `AI_SUCCESS`, `AI_FAILED_FALLBACK`, `AI_UNAVAILABLE_FALLBACK` or `DETERMINISTIC_ONLY` — and a fallback is shown as one, never as a model result (ADR-0053) | Model routing, cost-aware selection |
 | Policy | Deterministic engine: RBAC, merchant isolation, computed risk, amount limits, duplicate guard | Per-merchant configurable policy, approval chains |
 | Roles &amp; permissions | Tables, tenant-owned (ADR-0047): a catalogue derived from the tool registry, roles per tenant, `GET /access-review`. Revoking from a role revokes for everyone holding it | Multi-role users, grant history |
 | People | Joiners, movers and leavers over the API (ADR-0048): create, change role, offboard, define roles. Offboarding is a status the token check honours immediately; the last owner cannot be removed. Tenants are provisioned by an audited script, never over HTTP | Invitations, SSO, SCIM, multi-merchant admin |
 | Isolation | Two walls: the application's own checks, **and** PostgreSQL row-level security bound to the authenticated principal (ADR-0046). 26 forced policies; a query that forgets its `WHERE` returns nothing | Fail-closed for background code; per-tenant database roles |
 | Shared state | Rate limit and provider override shared across replicas via Redis, sliding window applied atomically on Redis's own clock; falls back per-process and reports which is live (ADR-0044) | Distributed locks, session storage |
-| Approval | Server-side, expiring, re-checked at execution. **Dual approval** for CRITICAL risk, enforced by a UNIQUE constraint | N-of-M chains, delegation |
+| Approval | Server-side, expiring, re-checked at execution. **Dual approval** for CRITICAL risk, enforced by a UNIQUE constraint. Records the policy snapshot it was requested under and refuses a payload changed since; revocable; a replay's approval never executes (ADR-0053) | N-of-M chains, delegation |
 | Tokens | Expire, rotate through an overlap window, revocable individually or wholesale; refresh is single-use with replay detection (ADR-0049) | MFA, per-device sessions, httpOnly cookies |
 | SSO | OIDC authorization code flow with PKCE, one provider per tenant routed by email domain, JIT provisioning onto existing roles, one-time handoff so no credential travels in a URL (ADR-0050) | SAML, IdP-initiated sign-in, back-channel logout |
 | Provisioning | SCIM 2.0 Users (ADR-0051): create, read, replace, patch, delete and filter, with discovery. Deactivating at the IdP disables the account and revokes its tokens. Tokens stored as SHA-256, shown once | SCIM Groups, group-to-role mapping, bulk |
-| Execution | Razorpay Test Mode adapter **or** deterministic mock (see below) | Production integration |
+| Execution | Razorpay Test Mode adapter **or** deterministic mock (see below). The live adapter sends `X-Refund-Idempotency`, reads every ambiguous answer (5xx, 409, unreadable 2xx) as UNKNOWN rather than FAILED, and can reconcile a lost response by our own key — contract-tested against recorded response shapes, **not yet executed against Test Mode** (no credentials here) | Production integration |
 | Verification | Independent read-back with SUCCESS/FAILED/PARTIAL/UNKNOWN | — |
-| UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue | Always-on worker (needs a queue) |
-| Audit | Append-only **enforced by PostgreSQL**, secrets redacted, correlation-id traces (§58) | Distributed tracing |
+| UNKNOWN | First-class, **resolvable**; reconciliation sweep + escalation queue. Never re-issued: the sweep only reads | — |
+| Audit | Append-only **enforced by PostgreSQL**, secrets redacted, correlation-id traces (§58). Every row says who acted, by kind: HUMAN · AGENT · WORKER · WEBHOOK · SYSTEM | Distributed tracing |
+| Transactions | **No provider call while a transaction holding writes is open** — checked on every provider call, and enforced (raising) across the whole test suite and the scenario evaluation. A mid-request commit no longer sheds the row-level-security scope (ADR-0053) | The event drain still sends notifications while holding its claimed rows (reported, not yet fixed) |
+| Idempotency | Unified `idempotency_records`: same key + same request → the original outcome; same key + different request → refused before anything is sent. Kept beside the provider's own key, not instead of it | Client `Idempotency-Key` header on mutating routes |
 | Observability | Structured JSON logs, runtime metrics, request + query timing (ADR-0031) | OpenTelemetry |
 | Schema | Alembic migrations; the audit-immutability triggers are a migration (ADR-0030) | Zero-downtime rollouts |
 | API contract | Response models on every route; OpenAPI exported and checked; frontend types generated and asserted at compile time (ADR-0032) | Versioned API |
 | Replay | PLAYBACK + RE_REASON against frozen tools | Cross-version replay |
-| Evaluation | 187 scenarios + 141-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
+| Evaluation | 187 scenarios + 150-mutation validation, gated in CI; §42 promotion gate | Larger benchmark |
 | Data | Seeded synthetic dataset, 2 merchants; durable provider-event store | Streaming / generated datasets |
 | UI | Streamlit **and** a React SPA (`web/`): §49 recovery ledger, §50 dashboard, §51 incident page | Next.js, SSR |
 | Notifications | Operator notifications on approval requested / expiring / expired, HIGH+ incidents, escalated actions, UNKNOWN verifications. Channels: log (always), email, Slack, signed outbound webhook. Recipients derived from the permissions the action requires (ADR-0042) | Quiet hours, per-user preferences, digests, escalation chains |
 | Infra | Docker image (79 MB, non-root, hash-pinned) + compose: api · worker · postgres · redis, migrations as a one-shot. `/ready` splits from `/health` (ADR-0043) | Horizontal scale, TLS, a registry |
-| Cadence | `app/worker.py`: heartbeat 15s · tasks 2s · drain 5s · notify 60s · reconcile 300s · detect 300s. One job at a time, a failure never stops the others and never spins, SIGTERM finishes the current job | Distributed scheduling, per-tenant cadence |
+| Cadence | `app/worker.py`: heartbeat 15s · tasks 2s · drain 5s · webhooks 5s · notify 60s · reconcile 300s · detect 300s. One job at a time, a failure never stops the others and never spins, SIGTERM finishes the current job | Distributed scheduling, per-tenant cadence |
 | Task execution | Inline, or accepted with 202 and run by a worker (ADR-0045). Claimed with SKIP LOCKED, authority re-read at run time, abandoned runs failed rather than replayed, queue depth and worker liveness on `/health` | Priority, per-tenant fairness, cancellation |
 
 Nothing in the right column is claimed as implemented.
@@ -151,18 +153,19 @@ median task latency 49 ms · mean grounding rate 1.0
 deliberately breaks each core control and re-runs the suite:
 
 ```
-141/141 mutations caught    complete run, 2026-09-09, 3h40m, tree cdcbbff
-  └─ 60 graded red by a named scenario · 81 by unit tests alone
+150/150 mutations caught    complete run, 2026-09-10, 1h33m as 3 shards, tree 2f1d036 + ADR-0053
+  └─ 60 graded red by a named scenario · 90 by unit tests alone
 ```
 
 *Each mutant re-runs the whole scenario suite **and** the whole test suite, so a
-complete run takes hours: 141 mutants against 187 scenarios and 1188 tests, 3h40m
-measured. That figure is the CI budget's problem rather than a boast — GitHub's
+complete run takes hours: 141 mutants against 187 scenarios and 1188 tests took
+3h40m on one runner (2026-09-09); the 150 of ADR-0053 took 1h33m as three
+parallel shards, each in its own clone with its own databases (2026-09-10). That figure is the CI budget's problem rather than a boast — GitHub's
 hosted-runner ceiling is 360 minutes and this job already declares it, so twenty
 minutes is all the headroom there is. The next handful of mutants needs the
 corpus sharded across jobs, not trimmed to fit.*
 
-*The split matters more than the total. **81 of 141 are caught by unit tests
+*The split matters more than the total. **90 of 150 are caught by unit tests
 alone** — no named scenario distinguishes them — and that is the honest shape of
 the suite rather than a flaw to hide: the tooling controls, the read-side
 aggregates and the configuration guards are not things a merchant journey can
@@ -465,7 +468,7 @@ make migrate                             # schema + the controls over it (ADR-00
 make openapi                             # export the API contract consumers read
 make seed                                # deterministic dataset
 make demo-state                          # give the console something to show
-make test                                # 1201 tests
+make test                                # 1320 tests
 make eval                                # 187 scenarios, measured
 make mutants                             # prove the suite catches regressions
 make harden                              # verify audit immutability on a live database
@@ -558,7 +561,7 @@ make token USER_ID=USR_A_OWNER    # paste the token into the app
 ```
 
 ```bash
-make web-test                     # 400 Vitest tests
+make web-test                     # 427 Vitest tests
 make web-lint                     # eslint — rules-of-hooks, exhaustive-deps
 make web-audit                    # npm audit, high and above
 ```
@@ -710,7 +713,11 @@ are different claims.
 
 1. **Payment execution is mocked in this build.** No Razorpay credentials were
    available; `make spike` returned verdict `mock`. Supply credentials and the same
-   code path executes real Test Mode refunds.
+   code path executes real Test Mode refunds. What *is* established is the adapter's
+   side of the contract: `tests/unit/test_razorpay_contract.py` drives it through
+   recorded response shapes — the refund idempotency header (it used to send the
+   wrong one), the 40-character payment-link reference (it used to send 64), and
+   every ambiguous answer read as UNKNOWN. None of that has met Razorpay itself.
 2. **Reasoning is a deterministic planner.** No Anthropic credential is present in
    any form the SDK accepts. Published metrics therefore measure the control plane,
    not agent intelligence. A consequence worth stating plainly: **the Anthropic
@@ -808,11 +815,33 @@ are different claims.
    `--once` exists so a platform scheduler can drive the same jobs where one is
    available.
 
+### Open after ADR-0053
+
+What the architecture remediation deliberately left, each with its reason:
+
+- **Razorpay Test Mode has not executed from here.** The adapter's side of the
+  contract is tested; the provider's is not (limitation 1).
+- **The event drain still sends notifications while holding its claimed rows.**
+  Network channels now run the transaction-boundary guard, so in production this
+  is reported as a warning rather than silent. The fix is a claim-then-commit drain.
+- **The agent runtime is not yet decomposed** into session, executor, budget and
+  persistence parts. The remediation added behaviour to it (fallback, replay
+  refusal, commits) and deliberately did not also move code in the same change.
+- **The audit log route and the incident timeline do not yet serve `actor_type`**;
+  the task trace does, and every audit row stores it.
+- **A queued task's originating correlation id is not carried to the worker**; the
+  worker's run joins the worker's own trace.
+- **No intelligence evaluation against a real model** — no model credential here.
+  The published evaluation measures the control plane only (limitation 2).
+
 ### Coverage limits
 
-19. **81 of 141 mutants are caught by unit tests alone.** Measured on this tree
-    (2026-09-09, `cdcbbff`), not carried forward: 60 are graded red by a named
-    scenario and 81 by the test suite without one. Both halves are gated against
+19. **90 of 150 mutants are caught by unit tests alone.** Measured on this tree
+    (2026-09-10, `2f1d036` plus the ADR-0053 change), not carried forward: 60 are
+    graded red by a named scenario and 90 by the test suite without one. All
+    nine mutants ADR-0053 added are among the 90 -- the controls they break
+    (provider headers, the transaction boundary, replay, idempotency) are not
+    things a merchant journey reaches. Both halves are gated against
     the run's own artifact, so a split from a run that no longer describes this
     code cannot survive here.
 
@@ -822,7 +851,7 @@ are different claims.
     contact on its own, and giving it that freedom to make a scenario reach the
     path would be the wrong fix. What it does mean is that for those 81, the
     unit suite is the only thing standing between a broken control and a green
-    build.
+    build — which is why the ADR-0053 controls each got a dedicated test.
 20. **The mutant run takes 3h40m, and CI has twenty minutes of headroom.**
     Measured on 2026-09-09: 141 mutants against 187 scenarios and 1188 tests.
     Every earlier figure in this file was an estimate and both were wrong — one
@@ -997,14 +1026,14 @@ app/
   audit/        the append-only trail, traces, payment lifecycle (§7)
 alembic/        schema migrations + the audit-immutability control
 ui/             Streamlit app
-web/            React SPA — Vite + TypeScript (ADR-0015), 400 tests
+web/            React SPA — Vite + TypeScript (ADR-0015), 427 tests
 data/           187 scenarios + the last evaluation and mutation reports
 scripts/        migrate, seed, spike, scenarios, demo, browser e2e, the
                 mutation harness, and the gates: counts, mutants, locks
-tests/          unit · security · integration  (1201 tests)
+tests/          unit · security · integration  (1320 tests)
 docs/           MerchantOps.md (governing spec), CONTRACT.md (superseded),
                 architecture (+ assumptions), threat model, evaluation,
-                gap-closure plan, 56 ADRs
+                gap-closure plan, 57 ADRs
 ```
 
 ## 📄 License / disclaimer

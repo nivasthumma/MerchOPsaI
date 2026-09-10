@@ -51,6 +51,24 @@ export function Money({ minor }: { minor: number | null | undefined }) {
   );
 }
 
+/** `recovered_minor`, split by what the money was: captured against a paid
+ *  recovery payment link (revenue the merchant got back), or returned to a
+ *  customer by a verified refund. Both figures are the server's. Nothing here
+ *  adds, subtracts or reconciles them — a sum this client computed would be a
+ *  financial figure nobody can audit. */
+export function RecoveredSplit({ captured, refunded }:
+                               { captured: number | undefined;
+                                 refunded: number | undefined }) {
+  return (
+    <p className="sub" style={{ marginBottom: 0 }}>
+      Of recovered: <strong><Money minor={captured} /></strong> captured against
+      recovery payment links (recovered revenue) ·{" "}
+      <strong><Money minor={refunded} /></strong> returned to customers by
+      verified refunds.
+    </p>
+  );
+}
+
 /** What each effect means for whether anything happened — plan P1-13.
  *
  *  The plan asks that a provider failure "explicitly state that no unsafe retry
@@ -93,6 +111,28 @@ export function ErrorBanner({ error }: { error: unknown }) {
       {e.code ? <code> {e.code}</code> : null} — {e.message ?? String(error)}
       {consequence ? <div className="banner-consequence">{consequence}</div> : null}
     </div>
+  );
+}
+
+const ACTOR_LABEL: Record<string, string> = {
+  HUMAN: "Human", AGENT: "Agent", WORKER: "Worker", WEBHOOK: "Webhook", SYSTEM: "System",
+};
+
+/** Who caused an event, as a small tag beside it.
+ *
+ *  Renders nothing for a row with no recorded actor type. Older rows have
+ *  none, and labelling them "system" would attribute to the system things a
+ *  person may have done. The specific actor is shown, not only its kind: an
+ *  auditor's question is "which person", and "Human" alone does not answer it. */
+export function ActorTag({ type, actor }:
+                         { type?: string | null; actor?: string | null }) {
+  if (!type) return null;
+  return (
+    <span className="pill neutral" title={actor ? `${type}: ${actor}` : type}>
+      <span className="sr-only">Caused by </span>
+      {ACTOR_LABEL[type] ?? type}
+      {actor ? <span className="mono"> · {actor}</span> : null}
+    </span>
   );
 }
 

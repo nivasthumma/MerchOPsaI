@@ -94,6 +94,9 @@ def test_verification_success_reads_the_payment(db):
     adapter = get_adapter(db)
     before = adapter.get_payment("pay_MOCKTEST00000002").amount_refunded_minor
     ref = adapter.create_refund("pay_MOCKTEST00000002", 499900, "k-unit-1")
+    # Committed before verification reads the provider, exactly as the action
+    # path does (app/boundaries.py): no provider call with writes held open.
+    db.commit()
     vr = verify_refund(adapter, external_payment_id="pay_MOCKTEST00000002",
                        expected_refund_minor=499900, refunded_before_minor=before,
                        external_reference=ref.id)
@@ -131,7 +134,9 @@ def test_timeout_is_never_silently_success(db):
 def test_provider_replay_returns_same_refund(db):
     adapter = get_adapter(db)
     a = adapter.create_refund("pay_MOCKTEST00000003", 149900, "k-unit-3")
+    db.commit()          # each provider call starts from a committed state
     b = adapter.create_refund("pay_MOCKTEST00000003", 149900, "k-unit-3")
+    db.commit()
     assert a.id == b.id
     p = adapter.get_payment("pay_MOCKTEST00000003")
     assert p.amount_refunded_minor == 149900, "replay double-refunded"

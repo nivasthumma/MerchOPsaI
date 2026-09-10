@@ -32,6 +32,21 @@ class ProviderTimeout(Exception):
         self.submitted = submitted
 
 
+class ProviderAmbiguous(ProviderTimeout):
+    """The request reached the provider and the response does not say what
+    happened: a 5xx, a 409 while the same idempotency key is still in flight, a
+    2xx body we cannot read, a duplicate-reference refusal.
+
+    A subclass of ProviderTimeout on purpose. Every caller already routes a
+    timeout to UNKNOWN and reconciliation, and that is the only honest reading
+    of these too -- reporting FAILED would invite a retry of an operation that
+    may already have moved money.
+    """
+    def __init__(self, msg: str, *, status_code: int | None = None):
+        super().__init__(msg, submitted=True)
+        self.status_code = status_code
+
+
 class ProviderError(Exception):
     def __init__(self, msg: str, *, code: str = "EXTERNAL_API_ERROR"):
         super().__init__(msg)

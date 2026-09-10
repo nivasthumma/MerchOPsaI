@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 
+from app.agent.provenance import policy_input_hash
 from app.audit.trace import record
 from app.incidents.lifecycle import advance as move_incident
 from app.integrations.razorpay.adapter import get_adapter
@@ -25,6 +26,7 @@ from app.models import (
 )
 from app.models import IncidentStatus as _S
 from app.policy.engine import (
+    POLICY_VERSION,
     Decision,
     PolicyContext,
     approval_is_valid,
@@ -68,9 +70,19 @@ class ApprovalError(Exception):
 
 
 def _pending_approval(session, task_id: str) -> Approval | None:
+    """The pending approval, LOCKED for the rest of this transaction.
+
+    Approve, reject and revoke all decide from this row, and without the lock
+    they could each read PENDING and each act: an approver flushes APPROVED
+    and calls the provider after its checkpoint, while a concurrent revoke that
+    read PENDING overwrites the decision -- the record says REVOKED, "no
+    external call was made", and a refund went out. With `FOR UPDATE` the
+    second caller waits, re-reads the row once the first commits, finds it no
+    longer PENDING, and is told there is nothing to decide.
+    """
     return session.query(Approval).filter(
         Approval.task_id == task_id, Approval.decision == "PENDING"
-    ).order_by(Approval.created_at.desc()).first()
+    ).order_by(Approval.created_at.desc()).with_for_update().first()
 
 
 def _sign(session, approval: Approval, user_id: str, decision: str) -> bool:
@@ -124,6 +136,47 @@ def reject(session, task_id: str, principal, reason: str = "") -> AgentTask:
     return task
 
 
+def revoke(session, task_id: str, principal, reason: str = "") -> AgentTask:
+    """Withdraw a pending approval that has begun collecting signatures.
+
+    An approval that needs two people can sit with one signature on it. The
+    person who signed can take it back, and so can anyone who could have
+    rejected it. Afterwards there is no pending approval, so nothing can
+    complete it: `approve_and_execute` finds none, and `approval_is_valid`
+    refuses any decision but APPROVED.
+    """
+    task = session.get(AgentTask, task_id)
+    ap = _pending_approval(session, task_id)
+    if task is None or ap is None:
+        raise ApprovalError("No pending approval for this task.", "APPROVAL_REJECTED")
+    if ap.merchant_id != principal.merchant_id:
+        raise ApprovalError("Approver belongs to a different merchant.", "AUTHORIZATION_DENIED")
+    # Withdrawing an authorisation is itself an authorisation decision: only
+    # someone who could have approved this action may take one back.
+    from app.tools.registry import REGISTRY
+    spec = REGISTRY.get(ap.action_type)
+    needed = set(spec.required_permissions) if spec else set()
+    if not needed <= set(principal.permissions):
+        record(session, task, "approval_denied",
+               {"approval_id": ap.id, "reason": "revoke_without_permission",
+                "by": principal.user_id})
+        raise ApprovalError(
+            f"Revoking this approval needs {', '.join(sorted(needed - set(principal.permissions)))}.",
+            "AUTHORIZATION_DENIED")
+    ap.decision = "REVOKED"
+    ap.decided_by = principal.user_id
+    ap.decided_at = datetime.now(UTC)
+    task.status = TaskStatus.REJECTED
+    task.failure_code = "APPROVAL_REJECTED"
+    task.final_answer = (f"Approval {ap.id} was revoked by {principal.user_id} before it "
+                         f"could execute. No external call was made.")
+    session.flush()
+    record(session, task, "approval_revoked",
+           {"approval_id": ap.id, "by": principal.user_id, "reason": reason,
+            "signatures_withdrawn": [s.user_id for s in _approved_signatures(session, ap.id)]})
+    return task
+
+
 def approve_and_execute(session, task_id: str, principal,
                         injector: FaultInjector | None = None) -> dict:
     """CONTRACT §21 -> §23. Approval alone does not execute; every gate is
@@ -131,6 +184,17 @@ def approve_and_execute(session, task_id: str, principal,
     task = session.get(AgentTask, task_id)
     if task is None:
         raise ApprovalError("Unknown task.", "TOOL_INVALID_ARGUMENT")
+
+    # --- 0. a replay never executes ----------------------------------------
+    # A RE_REASON replay halts at the approval gate like any run, so it leaves
+    # an approval behind. Approving THAT would re-issue a historical financial
+    # action against the live provider -- the one side effect replay must never
+    # have (CONTRACT §28). Refused here, at the only door to execution.
+    if task.is_replay:
+        record(session, task, "approval_denied", {"reason": "replay_task"})
+        raise ApprovalError("This task is a replay. A replay never executes an "
+                            "action; approve the original task instead.",
+                            "AUTHORIZATION_DENIED")
 
     ap = _pending_approval(session, task_id)
     if ap is None:
@@ -195,6 +259,21 @@ def approve_and_execute(session, task_id: str, principal,
 
     payload = ap.action_payload or {}
 
+    # --- 2b. the approved request is the request being executed ----------
+    # The snapshot pins what the human saw. A payload that no longer hashes to
+    # it is a different request, and nobody approved that one.
+    if ap.policy_input_hash is not None and ap.policy_input_hash != policy_input_hash(
+            action_type=ap.action_type, arguments=payload,
+            merchant_id=ap.merchant_id, risk_level=ap.risk_level):
+        task.status = TaskStatus.DENIED
+        task.failure_code = "POLICY_DENIED"
+        task.final_answer = ("Execution refused: the action no longer matches what "
+                             "was approved. No external call was made.")
+        session.flush()
+        record(session, task, "approval_denied",
+               {"approval_id": ap.id, "reason": "payload_changed_since_approval"})
+        raise ApprovalError(task.final_answer, "POLICY_DENIED")
+
     # --- 3. re-run policy at execution time ------------------------------
     # The approver's permissions are re-derived from the session, never taken
     # from the request body.
@@ -205,9 +284,15 @@ def approve_and_execute(session, task_id: str, principal,
         tool_name=ap.action_type, risk_level=ap.risk_level, arguments=payload,
     )
     pol = evaluate(session, ctx)
+    # Both policies on the record: the one the human approved under, and the
+    # one execution is permitted by. They differ after a policy change, and the
+    # trail should show that rather than leave it to be inferred.
     record(session, task, "policy_recheck",
            {"approval_id": ap.id, "decision": pol.decision.value, "rule": pol.rule,
-            "duration_ms": pol.duration_ms})
+            "duration_ms": pol.duration_ms,
+            "approved_under_policy": ap.policy_version,
+            "approved_decision": ap.policy_decision,
+            "executing_under_policy": POLICY_VERSION})
     if pol.decision is Decision.DENY:
         task.status = TaskStatus.DENIED
         task.failure_code = "POLICY_DENIED"

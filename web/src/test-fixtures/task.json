@@ -27,7 +27,11 @@
       },
       "risk_level": "HIGH",
       "expires_at": "2026-08-25T21:58:54.059154+10:00",
-      "decided_by": "USR_A_OWNER"
+      "decided_by": "USR_A_OWNER",
+      "required_signatures": 1,
+      "signed_by": [
+        "USR_A_OWNER"
+      ]
     }
   ],
   "actions": [

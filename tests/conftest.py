@@ -13,6 +13,12 @@ TEST_DATABASE_URL to point CI somewhere else.
 from __future__ import annotations
 
 import os
+
+# The transaction-boundary invariant (app/boundaries.py) is enforced, not
+# merely logged, for the whole suite: any provider call made while a write
+# transaction is open fails the test that made it.
+os.environ.setdefault("TRANSACTION_BOUNDARY_MODE", "strict")
+
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit

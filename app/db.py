@@ -5,10 +5,11 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
+import app.boundaries  # noqa: F401 -- registers the write-tracking session events
 from app.config import get_settings
 
 _engine = None
@@ -81,21 +82,33 @@ def checkpoint(session: Session) -> None:
     session.commit()
 
 
+@event.listens_for(Session, "after_begin")
+def _bind_scope_to_transaction(session, transaction, connection) -> None:
+    """Push the bound principal onto EVERY transaction a session begins.
+
+    The scope is `SET LOCAL` (it dies with the transaction, which is what keeps
+    a pooled connection from carrying one merchant's scope into another's
+    request). It used to be applied once, when `session_scope` opened. Any
+    `checkpoint()` commits mid-request and the session continues in a new
+    transaction -- which then had NO scope, and an empty scope is unrestricted
+    (app/tenancy.py). So every query after the action claim's checkpoint, and
+    every write the verification path makes, ran outside row-level security.
+    Hooked on begin, a commit can no longer shed the boundary.
+    """
+    from app.tenancy import apply as apply_scope
+
+    apply_scope(connection)
+
+
 @contextmanager
 def session_scope() -> Iterator[Session]:
     s = get_session_factory()()
     try:
-        # The authenticated principal, pushed onto this transaction so that
-        # row-level security can filter every table against it (ADR-0046).
-        # Applied here rather than at each of forty-eight routes, because a
-        # control every route has to remember is one that most of them will not.
-        #
-        # `SET LOCAL`, so it dies with the transaction: on a pooled connection a
-        # session-lifetime setting would outlive the request that made it and
-        # apply to whichever request got that connection next.
-        from app.tenancy import apply as apply_scope
-
-        apply_scope(s.connection())
+        # The authenticated principal is pushed onto each transaction by
+        # `_bind_scope_to_transaction` above (ADR-0046): applied at every
+        # begin rather than at each of forty-eight routes, because a control
+        # every route has to remember is one that most of them will not.
+        s.connection()
         yield s
         s.commit()
     except Exception:

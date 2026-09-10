@@ -41,7 +41,32 @@ export interface Approval {
   risk_level: string;
   expires_at: string;
   decided_by: string | null;
+  /** Who has signed so far, against how many the policy demands. A CRITICAL
+   *  action needs two people, so a PENDING approval can already carry one
+   *  signature — and that half-signed state is the one a revoke exists for. */
+  required_signatures: number;
+  signed_by: string[];
+  /** The policy that asked for this approval. Optional, not merely nullable:
+   *  rows written before the policy was pinned on the approval have none, and
+   *  inventing the current version for them would misdate the decision. */
+  policy_version?: string | null;
+  policy_decision?: string | null;
+  policy_rule?: string | null;
 }
+
+/** How a run was actually produced — recorded by the server as it happened.
+ *
+ *  The two FALLBACK modes mean the deterministic planner produced some or all
+ *  of the run while a model was configured. That output is arithmetic and
+ *  rules, not judgement, and this client must never let it read as a model
+ *  result. Open to `string` so a mode added server-side renders as itself
+ *  rather than being forced into one of these. */
+export type AiMode =
+  | "AI_SUCCESS"
+  | "AI_FAILED_FALLBACK"
+  | "AI_UNAVAILABLE_FALLBACK"
+  | "DETERMINISTIC_ONLY"
+  | string;
 
 /** `agent_actions.verification_detail` is a JSON column (`Mapped[dict | None]`),
  *  not a string. It carries the verdict, the sentence explaining it, and the
@@ -93,6 +118,9 @@ export interface RunVersions {
   tool_registry: string | null;
   policy: string | null;
   workflow: string | null;
+  /** A hash of the settings that bound what a run may do (`cfg-…`). Derived
+   *  server-side, so it cannot go stale; absent on runs recorded before it. */
+  configuration?: string | null;
 }
 
 /** One step of the agent's operational progress — plan P0-08.
@@ -148,6 +176,9 @@ export interface Task {
   model_requires_human: boolean;
   versions: RunVersions;
   failure: FailureClass | null;
+  /** Null or absent for runs recorded before the mode was. Unknown is the
+   *  honest reading of those: nothing on the row says which produced it. */
+  ai_mode?: AiMode | null;
 }
 
 /** MerchantOps §66 — the conversation the model actually saw. */
@@ -161,11 +192,22 @@ export interface AgentMessage {
   at: string;
 }
 
+/** Who caused an event. A person, the agent loop, a background worker, a
+ *  provider webhook, or the system itself — open to `string` for the same
+ *  reason as `AiMode`. */
+export type ActorType = "HUMAN" | "AGENT" | "WORKER" | "WEBHOOK" | "SYSTEM" | string;
+
 export interface TraceEvent {
   id: number;
   at: string;
   event: string;
   payload: Record<string, unknown>;
+  /** Null on rows written before actors were recorded. Absent is not
+   *  "system": an unattributed row is rendered without a tag, not guessed. */
+  actor_type?: ActorType | null;
+  /** The specific actor: a user id, `agent:TASK_…`, a worker id, a webhook
+   *  event id. */
+  actor?: string | null;
 }
 
 export interface Principal {
@@ -380,6 +422,7 @@ export interface ActionCenterCounts {
   unknown: number;
   escalated: number;
   recently_completed: number;
+  failed: number;
 }
 
 export interface ActionCenter {
@@ -389,7 +432,12 @@ export interface ActionCenter {
   executing: ActionRow[];
   unknown: ActionRow[];
   escalated: ActionRow[];
+  /** Verified SUCCESS only. It used to hold both settled outcomes, which put
+   *  "the money moved" and "it did not take effect" under one heading. */
   recently_completed: ActionRow[];
+  /** Verified at the provider as not having taken effect. Settled, not
+   *  outstanding — nothing here is waiting on reconciliation. */
+  failed: ActionRow[];
   /** TRUE totals, counted in SQL — not the length of the page. The two
    *  disagreed once, and the smaller number was on the screen an operator
    *  acts from. */
@@ -412,6 +460,31 @@ export interface FunnelStage {
   amount_minor: number;
 }
 
+/** Which reasoning is configured, and how this merchant's runs were really
+ *  produced. `runs_by_mode` is counted from the tasks, not inferred from the
+ *  configuration: a model can be configured and still be falling back. Runs
+ *  recorded before the mode was arrive keyed `UNRECORDED`. */
+export interface AgentPosture {
+  provider: string;
+  model?: string | null;
+  fallback_enabled: boolean;
+  runs_by_mode: Record<string, number>;
+}
+
+/** Where actions go, and whether provider deliveries are being processed.
+ *
+ *  `live` is true only for `live_test_mode` — the provider's TEST environment
+ *  with test credentials. It does not mean real money, and nothing on screen
+ *  may word it as if it did (CONTRACT §7). */
+export interface ProviderPosture {
+  adapter_mode: "mock" | "live_test_mode" | string;
+  live: boolean;
+  webhook_signature_verification: boolean;
+  webhooks_pending: number;
+  webhooks_dead_lettered: number;
+  last_webhook_at?: string | null;
+}
+
 export interface CommandCenter {
   generated_at: string;
   merchant_id: string;
@@ -419,7 +492,13 @@ export interface CommandCenter {
     at_risk_minor: number; recoverable_minor: number; attempted_minor: number;
     recovered_minor: number; failed_minor: number; unknown_minor: number;
     outstanding_minor: number; invariants_broken: string[];
+    /** The two halves of `recovered_minor`, split server-side: money captured
+     *  against a paid recovery payment link (recovered revenue), and verified
+     *  refunds (money returned to customers). Displayed, never re-added here. */
+    recovered_captured_minor: number; recovered_refunded_minor: number;
   };
+  agent: AgentPosture;
+  provider: ProviderPosture;
   funnel: FunnelStage[];
   attention: {
     approvals_pending: number; approvals_expired: number;
@@ -614,6 +693,9 @@ export interface RecoveryLedger {
   recoverable_minor: number;
   attempted_minor: number;
   recovered_minor: number;
+  /** `recovered_minor` split by what the money was — see `CommandCenter`. */
+  recovered_captured_minor: number;
+  recovered_refunded_minor: number;
   failed_minor: number;
   unknown_minor: number;
   outstanding_minor: number;

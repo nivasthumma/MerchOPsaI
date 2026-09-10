@@ -133,12 +133,14 @@
   "unknown": [],
   "escalated": [],
   "recently_completed": [],
+  "failed": [],
   "counts": {
     "awaiting_approval": 1,
     "executing": 0,
     "unknown": 0,
     "escalated": 0,
-    "recently_completed": 0
+    "recently_completed": 0,
+    "failed": 0
   },
   "reconciliation_policy": {
     "max_attempts": 5,
@@ -149,14 +151,16 @@
     "executing",
     "unknown",
     "escalated",
-    "recently_completed"
+    "recently_completed",
+    "failed"
   ],
   "shown": {
     "awaiting_approval": 1,
     "executing": 0,
     "unknown": 0,
     "escalated": 0,
-    "recently_completed": 0
+    "recently_completed": 0,
+    "failed": 0
   },
   "limit": 50
 }

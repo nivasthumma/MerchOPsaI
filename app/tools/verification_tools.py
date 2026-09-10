@@ -19,7 +19,7 @@ from sqlalchemy import text
 from app.integrations.mapping import MERCHANT_ISOLATION, UNKNOWN_PAYMENT
 from app.integrations.mapping import resolve as resolve_mapping
 from app.models import AgentAction, WebhookEvent
-from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
+from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec, verification_kind
 
 SPEC_PAYMENT_STATUS = ToolSpec(
     name="get_payment_status",
@@ -95,7 +95,8 @@ def get_payment_status(session, merchant_id: str, payment_id: str, *, adapter=No
             Evidence(key="provider_status", value=ext.status, source="razorpay"),
             Evidence(key="provider_amount_refunded",
                      value=f"INR {ext.amount_refunded_minor / 100:,.2f}", source="razorpay"),
-            Evidence(key="internal_and_provider_agree", value=agrees, source="verification"),
+            Evidence(key="internal_and_provider_agree", value=agrees, source="verification",
+                     kind="DERIVED"),
         ])
 
 
@@ -195,6 +196,8 @@ def reconcile_transaction(session, merchant_id: str, action_id: str, *, adapter=
         success=True, data=data, external_reference=action.external_reference,
         risk_level="LOW",
         evidence=[
-            Evidence(key="verification_state", value=vr.state.value, source="verification"),
-            Evidence(key="reconciliation", value=data["reason"], source="verification"),
+            Evidence(key="verification_state", value=vr.state.value, source="verification",
+                     kind=verification_kind(vr.state.value)),
+            Evidence(key="reconciliation", value=data["reason"], source="verification",
+                     kind=verification_kind(vr.state.value)),
         ])

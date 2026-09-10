@@ -93,6 +93,10 @@ def record_attempt(session, action: AgentAction, state: VerificationState | None
     else:
         action.next_verify_at = now + timedelta(
             seconds=backoff_seconds(action.verify_attempts))
+    # The idempotency record follows what verification established, from the
+    # one place every verification path meets (app/idempotency.py).
+    from app.idempotency import sync_from_action
+    sync_from_action(session, action)
     session.flush()
 
 

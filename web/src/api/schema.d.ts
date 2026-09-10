@@ -1828,6 +1828,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/{task_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Task
+         * @description Withdraw a pending approval before it can execute.
+         *
+         *     For an approval that needs two signatures this is how the first signer takes
+         *     theirs back. Afterwards nothing can complete it: there is no pending
+         *     approval left to sign, and a REVOKED decision is never valid for execution.
+         */
+        post: operations["revoke_task_tasks__task_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tasks/{task_id}/trace": {
         parameters: {
             query?: never;
@@ -1967,6 +1991,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhooks/process": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Process Webhooks
+         * @description Process acknowledged provider deliveries -- the worker's `webhooks` job.
+         *
+         *     The endpoint that receives a delivery only validates, stores, deduplicates
+         *     and acknowledges it; verification against the provider happens here or in
+         *     the worker (ADR-0053). Exposed as a route for the same reason as
+         *     `/events/drain`: a deployment with no worker -- Vercel -- needs a scheduled
+         *     invocation to do it, or acknowledged deliveries would wait forever.
+         *
+         *     Runs under the caller's scope, so it processes that merchant's deliveries
+         *     and no one else's. Safe to call concurrently: each delivery is claimed
+         *     `FOR UPDATE SKIP LOCKED` and the claim is committed before any provider read.
+         */
+        post: operations["process_webhooks_webhooks_process_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhooks/razorpay": {
         parameters: {
             query?: never;
@@ -2040,6 +2094,8 @@ export interface components {
             escalated: components["schemas"]["ActionRow"][];
             /** Executing */
             executing: components["schemas"]["ActionRow"][];
+            /** Failed */
+            failed: components["schemas"]["ActionRow"][];
             /** Generated At */
             generated_at: string;
             /** Limit */
@@ -2063,6 +2119,8 @@ export interface components {
             escalated: number;
             /** Executing */
             executing: number;
+            /** Failed */
+            failed: number;
             /** Recently Completed */
             recently_completed: number;
             /** Unknown */
@@ -2281,6 +2339,24 @@ export interface components {
             /** Platform Timeout Seconds */
             platform_timeout_seconds?: number | null;
         };
+        /**
+         * AgentPosture
+         * @description Which reasoning is configured, and how recent runs were actually
+         *     produced. `runs_by_mode` is counted from the tasks, not inferred from
+         *     configuration: a model can be configured and still be falling back.
+         */
+        AgentPosture: {
+            /** Fallback Enabled */
+            fallback_enabled: boolean;
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider: string;
+            /** Runs By Mode */
+            runs_by_mode: {
+                [key: string]: number;
+            };
+        };
         /** ApprovalQueue */
         ApprovalQueue: {
             /** Approvals */
@@ -2334,6 +2410,12 @@ export interface components {
             expires_at: string;
             /** Id */
             id: string;
+            /** Policy Decision */
+            policy_decision?: string | null;
+            /** Policy Rule */
+            policy_rule?: string | null;
+            /** Policy Version */
+            policy_version?: string | null;
             /** Required Signatures */
             required_signatures: number;
             /** Risk Level */
@@ -2515,6 +2597,7 @@ export interface components {
         CommandCenter: {
             /** Activity */
             activity: components["schemas"]["ActivityEvent"][];
+            agent: components["schemas"]["AgentPosture"];
             attention: components["schemas"]["AttentionCounts"];
             /** By Incident */
             by_incident: components["schemas"]["IncidentExposure"][];
@@ -2526,6 +2609,7 @@ export interface components {
             generated_at: string;
             /** Merchant Id */
             merchant_id: string;
+            provider: components["schemas"]["ProviderPosture"];
             revenue: components["schemas"]["RevenueHealth"];
         };
         /**
@@ -2772,6 +2856,11 @@ export interface components {
             id?: string | null;
             /** Key */
             key: string;
+            /**
+             * Kind
+             * @default OBSERVED
+             */
+            kind: string;
             /** Source */
             source: string;
             /**
@@ -3158,8 +3247,18 @@ export interface components {
             outstanding_minor: number;
             /** Recoverable Minor */
             recoverable_minor: number;
+            /**
+             * Recovered Captured Minor
+             * @default 0
+             */
+            recovered_captured_minor: number;
             /** Recovered Minor */
             recovered_minor: number;
+            /**
+             * Recovered Refunded Minor
+             * @default 0
+             */
+            recovered_refunded_minor: number;
             /** Unknown Minor */
             unknown_minor: number;
         };
@@ -3753,6 +3852,26 @@ export interface components {
             /** Unknown */
             unknown: number;
         };
+        /**
+         * ProviderPosture
+         * @description Which provider universe actions go to, and whether its deliveries are
+         *     being processed. `adapter_mode` is `mock` unless real credentials exist --
+         *     a mocked provider is never described as real (CONTRACT §7).
+         */
+        ProviderPosture: {
+            /** Adapter Mode */
+            adapter_mode: string;
+            /** Last Webhook At */
+            last_webhook_at?: string | null;
+            /** Live */
+            live: boolean;
+            /** Webhook Signature Verification */
+            webhook_signature_verification: boolean;
+            /** Webhooks Dead Lettered */
+            webhooks_dead_lettered: number;
+            /** Webhooks Pending */
+            webhooks_pending: number;
+        };
         /** ProviderRequest */
         ProviderRequest: {
             /** Provider */
@@ -3887,8 +4006,18 @@ export interface components {
             outstanding_minor: number;
             /** Recoverable Minor */
             recoverable_minor: number;
+            /**
+             * Recovered Captured Minor
+             * @default 0
+             */
+            recovered_captured_minor: number;
             /** Recovered Minor */
             recovered_minor: number;
+            /**
+             * Recovered Refunded Minor
+             * @default 0
+             */
+            recovered_refunded_minor: number;
             /** Unknown Minor */
             unknown_minor: number;
         };
@@ -3943,6 +4072,8 @@ export interface components {
         RunVersions: {
             /** Agent */
             agent: string;
+            /** Configuration */
+            configuration?: string | null;
             /** Model */
             model: string | null;
             /** Model Provider */
@@ -4235,6 +4366,8 @@ export interface components {
             agent_confidence: number | null;
             /** Agent Version */
             agent_version: string;
+            /** Ai Mode */
+            ai_mode?: string | null;
             /** Approvals */
             approvals: components["schemas"]["ApprovalView"][];
             /** Awaiting Signatures */
@@ -4390,6 +4523,10 @@ export interface components {
         };
         /** TraceEvent */
         TraceEvent: {
+            /** Actor */
+            actor?: string | null;
+            /** Actor Type */
+            actor_type?: string | null;
             /** At */
             at: string;
             /** Canonical Event */
@@ -4550,6 +4687,18 @@ export interface components {
             signature_valid: boolean;
             /** Status */
             status: string;
+        };
+        /**
+         * WebhookProcessReport
+         * @description One pass of asynchronous webhook processing (app/webhooks/processing.py).
+         */
+        WebhookProcessReport: {
+            /** Dead Lettered */
+            dead_lettered: number;
+            /** Failed */
+            failed: number;
+            /** Processed */
+            processed: number;
         };
     };
     responses: never;
@@ -7110,6 +7259,39 @@ export interface operations {
             };
         };
     };
+    revoke_task_tasks__task_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_trace_tasks__task_id__trace_get: {
         parameters: {
             query?: never;
@@ -7335,6 +7517,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookEventList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    process_webhooks_webhooks_process_post: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookProcessReport"];
                 };
             };
             /** @description Validation Error */

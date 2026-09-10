@@ -118,6 +118,8 @@ class EvidenceRow(Contract):
     value: Any = None
     source: str
     untrusted: bool = False
+    # OBSERVED | DERIVED | INFERRED | RECOMMENDED | EXECUTED | VERIFIED
+    kind: str = "OBSERVED"
     id: str | None = None
 
 
@@ -186,6 +188,8 @@ class RunVersions(Contract):
     tool_registry: str | None
     policy: str | None
     workflow: str | None
+    # A hash of the settings that governed the run (app/agent/provenance.py).
+    configuration: str | None = None
 
 
 class FindingView(Contract):
@@ -227,6 +231,11 @@ class ApprovalView(Contract):
     decided_by: str | None
     required_signatures: int
     signed_by: list[str]
+    # The policy snapshot the approval was requested under. Null on approvals
+    # created before snapshots were recorded -- never back-filled with a guess.
+    policy_version: str | None = None
+    policy_decision: str | None = None
+    policy_rule: str | None = None
 
 
 class VerificationDetail(Contract):
@@ -277,6 +286,9 @@ class TaskView(Contract):
     llm_turns: int | None
     duration_ms: int | None
     versions: RunVersions
+    # AI_SUCCESS | AI_FAILED_FALLBACK | AI_UNAVAILABLE_FALLBACK | DETERMINISTIC_ONLY
+    # (app/agent/provenance.py). Null for runs recorded before it existed.
+    ai_mode: str | None = None
     agent_version: str
     model_version: str | None
     prompt_version: str | None
@@ -302,6 +314,9 @@ class TraceEvent(Contract):
     correlation_id: str | None = None
     task_id: str | None = None
     incident_id: str | None = None
+    # HUMAN | AGENT | WORKER | WEBHOOK | SYSTEM, and which one (app/context.py).
+    actor_type: str | None = None
+    actor: str | None = None
     # The payload's shape belongs to the event, not to this module.
     payload: dict
 
@@ -498,6 +513,7 @@ class ActionCenterCounts(Contract):
     unknown: int
     escalated: int
     recently_completed: int
+    failed: int
 
 
 class ReconciliationPolicy(Contract):
@@ -513,6 +529,7 @@ class ActionCenter(Contract):
     unknown: list[ActionRow]
     escalated: list[ActionRow]
     recently_completed: list[ActionRow]
+    failed: list[ActionRow]
     # TRUE totals, counted in SQL — not the length of the page. The two
     # disagreed once, and the smaller number was on the screen an operator
     # acts from.
@@ -535,6 +552,33 @@ class RevenueHealth(Contract):
     unknown_minor: int
     outstanding_minor: int
     invariants_broken: list[str]
+    # `recovered_minor`, by what the money was. Only a payment the provider
+    # reports as captured against a recovery link is recovered REVENUE; a
+    # verified refund is money returned to a customer to correct a charge.
+    recovered_captured_minor: int = 0
+    recovered_refunded_minor: int = 0
+
+
+class AgentPosture(Contract):
+    """Which reasoning is configured, and how recent runs were actually
+    produced. `runs_by_mode` is counted from the tasks, not inferred from
+    configuration: a model can be configured and still be falling back."""
+    provider: str
+    model: str | None = None
+    fallback_enabled: bool
+    runs_by_mode: dict[str, int]
+
+
+class ProviderPosture(Contract):
+    """Which provider universe actions go to, and whether its deliveries are
+    being processed. `adapter_mode` is `mock` unless real credentials exist --
+    a mocked provider is never described as real (CONTRACT §7)."""
+    adapter_mode: str
+    live: bool
+    webhook_signature_verification: bool
+    webhooks_pending: int
+    webhooks_dead_lettered: int
+    last_webhook_at: str | None = None
 
 
 class FunnelStage(Contract):
@@ -576,6 +620,8 @@ class CommandCenter(Contract):
     by_incident: list[IncidentExposure]
     by_method: list[MethodExposure]
     activity: list[ActivityEvent]
+    agent: AgentPosture
+    provider: ProviderPosture
 
 
 # --- Global search (P1-06) -------------------------------------------------
@@ -959,6 +1005,13 @@ class LiveEventList(Contract):
     pending: int
 
 
+class WebhookProcessReport(Contract):
+    """One pass of asynchronous webhook processing (app/webhooks/processing.py)."""
+    processed: int
+    failed: int
+    dead_lettered: int
+
+
 class DrainReport(Contract):
     claimed: int
     published: int
@@ -1246,6 +1299,10 @@ class LedgerView(Contract):
     failed_minor: int
     unknown_minor: int
     outstanding_minor: int
+    # `recovered_minor` by what the money was: captured against a recovery
+    # link (revenue) or a verified refund (money returned). See the ledger.
+    recovered_captured_minor: int = 0
+    recovered_refunded_minor: int = 0
     by_incident: list[IncidentExposure]
     by_method: list[MethodExposure]
     invariants_broken: list[str]

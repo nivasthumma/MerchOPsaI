@@ -61,7 +61,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import text
 
-from app import authz, tenancy
+from app import authz, context
 from app.audit.trace import correlation_scope
 from app.config import get_settings
 from app.db import session_scope
@@ -173,7 +173,19 @@ def job_tasks() -> dict:
                 # place where a leaked binding would matter most -- the context
                 # manager sheds it, so the sweeps that follow still see
                 # everything.
-                with tenancy.scoped(principal.tenant_id, principal.merchant_id):
+                # The explicit execution context (app/context.py): who the
+                # work is for, with what permissions, for which task. `bound`
+                # also narrows the database to the merchant -- pushing the scope
+                # onto the transaction `claim` already opened, which carried
+                # the empty, unrestricted one -- and transactions begun after a
+                # checkpoint pick it up from the begin hook in app.db.
+                ctx = context.ExecutionContext(
+                    context.ActorType.WORKER, actor=WORKER_ID,
+                    tenant_id=principal.tenant_id, merchant_id=principal.merchant_id,
+                    permissions=tuple(principal.permissions),
+                    correlation_id=context.current().correlation_id,
+                    task_id=task.id, incident_id=task.incident_id)
+                with context.bound(ctx, s):
                     AgentRuntime(s, principal).run(task.request, existing_task=task)
                 ran += 1
             except AgentRuntimeError:
@@ -218,6 +230,21 @@ def job_retention() -> dict:
         return prune(s)
 
 
+def job_webhooks() -> dict:
+    """Process acknowledged provider deliveries (app/webhooks/processing.py).
+
+    The endpoint only validates, persists, deduplicates and acknowledges. This
+    is where a delivery becomes a provider read, a verification and possibly a
+    reconciliation incident -- off the request path, bounded per pass, and
+    dead-lettered after a bounded number of attempts.
+    """
+    from app.webhooks.processing import process_pending
+
+    with session_scope() as s:
+        report = process_pending(s, limit=100)
+    return {k: v for k, v in report.items() if k != "results"}
+
+
 def job_heartbeat() -> dict:
     """Say this worker is alive, so its absence is visible.
 
@@ -258,6 +285,9 @@ def build_jobs() -> list[Job]:
         Job("heartbeat", s.worker_heartbeat_interval_seconds, job_heartbeat),
         Job("tasks", s.worker_tasks_interval_seconds, job_tasks),
         Job("drain", s.worker_drain_interval_seconds, job_drain),
+        # An acknowledged delivery is a provider read somebody may be waiting
+        # on, so its cadence is seconds, like the drain's.
+        Job("webhooks", s.worker_webhooks_interval_seconds, job_webhooks),
         Job("notify", s.worker_notify_interval_seconds, job_notify),
         Job("reconcile", s.worker_reconcile_interval_seconds, job_reconcile),
         Job("detect", s.worker_detect_interval_seconds, job_detect),
@@ -294,7 +324,12 @@ def run_job(job: Job) -> None:
     started = time.monotonic()
     # Its own correlation id, so everything one sweep wrote can be found
     # together -- the same property a request gets from the middleware.
-    with correlation_scope(f"COR_{uuid.uuid4().hex[:12].upper()}"):
+    correlation = f"COR_{uuid.uuid4().hex[:12].upper()}"
+    # Every job acts as WORKER on every audit row it writes (app/context.py).
+    # A job that runs one merchant's work narrows itself further (job_tasks).
+    worker = context.ExecutionContext(context.ActorType.WORKER, actor=WORKER_ID,
+                                      correlation_id=correlation)
+    with correlation_scope(correlation), context.acting(worker):
         try:
             result = job.run()
         except Exception as exc:

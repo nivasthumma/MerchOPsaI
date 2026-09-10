@@ -22,9 +22,16 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
+from app import context as exec_context
 from app.agent.output import check_grounding, to_findings
 from app.agent.output import parse as parse_output
 from app.agent.prompts.investigator_v1 import PROMPT_VERSION, SYSTEM_PROMPT
+from app.agent.provenance import (
+    AIMode,
+    configuration_version,
+    initial_mode,
+    policy_input_hash,
+)
 from app.audit.trace import (
     correlation_scope,
     current_correlation_id,
@@ -32,10 +39,13 @@ from app.audit.trace import (
     redact,
 )
 from app.config import get_settings
+from app.db import checkpoint
 from app.failures import describe
 from app.integrations.razorpay.adapter import get_adapter
 from app.integrations.razorpay.faults import FaultInjector
 from app.llm import LLMProvider, get_provider
+from app.llm.base import ModelUnavailable
+from app.llm.deterministic import DeterministicProvider
 from app.models import (
     AgentMessage,
     AgentTask,
@@ -45,6 +55,7 @@ from app.models import (
 )
 from app.observability.logs import get_logger
 from app.policy.engine import POLICY_VERSION, Decision, PolicyContext, evaluate
+from app.tools.registry import _NEEDS_ADAPTER as NEEDS_ADAPTER
 from app.tools.registry import (
     REGISTRY,
     execute_read_tool,
@@ -174,7 +185,23 @@ class AgentRuntime:
         # that have no incident, and it has no business knowing which. The
         # caller that owns an incident is the caller that may move one.
         self.on_phase = on_phase
-        self.provider = provider or get_provider()
+        # A model that cannot even be constructed is unavailable, not a crash:
+        # the run proceeds on the planner and the task says so.
+        self._unavailable_reason: str | None = None
+        if provider is None:
+            try:
+                provider = get_provider()
+            except Exception as exc:
+                if not get_settings().llm_fallback_enabled:
+                    raise
+                self._unavailable_reason = f"{type(exc).__name__}: {exc}"
+                provider = DeterministicProvider()
+        self.provider = provider
+        self.ai_mode = (AIMode.AI_UNAVAILABLE_FALLBACK if self._unavailable_reason
+                        else initial_mode(provider.name))
+        # Turns the configured model actually produced. Decides which fallback
+        # a failure is: before any, the model was never available to this run.
+        self._model_turns = 0
         self.injector = injector or FaultInjector.disabled()
         self.settings = get_settings()
         # CONTRACT §28 RE-REASON: tool results are served from the recorded
@@ -239,7 +266,10 @@ class AgentRuntime:
                                             "provider": self.provider.name,
                                             "model": self.provider.model})
             try:
-                return self._run(request, **kwargs)
+                # Every audit row the run writes says AGENT (app/context.py),
+                # inside whoever started it -- same scope, same trace.
+                with exec_context.as_agent(None):
+                    return self._run(request, **kwargs)
             except Exception as exc:
                 raise self._crash(exc) from exc
 
@@ -307,6 +337,8 @@ class AgentRuntime:
             tool_registry_version=registry_version(),
             policy_version=POLICY_VERSION,
             workflow_version=s.workflow_version,
+            configuration_version=configuration_version(s),
+            ai_mode=self.ai_mode.value,
         )
 
         if existing_task is not None:
@@ -338,13 +370,20 @@ class AgentRuntime:
         # Visible to `run`'s except clause from here on. Before this line there
         # is no task to attach a failure to; after it, every failure has one.
         self._task = task
+        exec_context.update(actor=f"agent:{task.id}", task_id=task.id,
+                            incident_id=task.incident_id)
         # §47/§58. One id ties every event of this run — and of the incident
         # that dispatched it — into a single trace.
         # Always supplied by `run`, which resolves inheritance and scoping.
         self._correlation_id = correlation_id or current_correlation_id() or ""
         record(self.session, task, "task_created",
                {"request": request, "provider": self.provider.name,
-                "model": self.provider.model, "replay": is_replay})
+                "model": self.provider.model, "replay": is_replay,
+                "ai_mode": self.ai_mode.value})
+        if self._unavailable_reason is not None:
+            record(self.session, task, "llm_fallback",
+                   {"mode": self.ai_mode.value, "turn": 0,
+                    "reason": redact(self._unavailable_reason)})
 
         tools = [spec.to_anthropic_tool() for spec in REGISTRY.values()]
         messages: list[dict] = []
@@ -367,12 +406,24 @@ class AgentRuntime:
                 return self._abort(task, "tool call limit", started)
 
             task.llm_turn_count = turn_no + 1
+            # No model call with a write transaction open (app/boundaries.py).
+            # Everything written so far -- the task, its messages, its tool
+            # calls, the audit rows -- is history that already happened, so it
+            # is committed rather than held, with its locks, for as long as the
+            # model takes to answer. It also means a run killed mid-turn leaves
+            # its trace behind instead of rolling it back.
+            checkpoint(self.session)
             # The turn gets what is left, so the budget bounds the run rather
-            # than only the gaps between calls. Checking between turns alone let
-            # one hung request run for as long as the transport allowed, holding
-            # this request's transaction open behind it.
-            turn = self.provider.turn(system=SYSTEM_PROMPT, messages=messages, tools=tools,
-                                      timeout=deadline - elapsed)
+            # than only the gaps between calls.
+            try:
+                turn = self.provider.turn(system=SYSTEM_PROMPT, messages=messages,
+                                          tools=tools, timeout=deadline - elapsed)
+                self._model_turns += 1
+            except ModelUnavailable as exc:
+                if not s.llm_fallback_enabled or self.provider.name == "deterministic":
+                    raise
+                turn = self._fall_back(task, exc, turn_no + 1, messages, tools,
+                                       deadline - elapsed)
             record(self.session, task, "llm_turn",
                    {"turn": turn_no + 1, "stop_reason": turn.stop_reason,
                     "requested_tools": [t.name for t in turn.tool_requests],
@@ -460,6 +511,31 @@ class AgentRuntime:
                                          "tool_calls": seq, "llm_turns": task.llm_turn_count,
                                          "duration_ms": task.duration_ms})
         return RunOutcome(task, task.status, answer, approval, task.findings)
+
+    # ------------------------------------------------------------------
+    def _fall_back(self, task: AgentTask, exc: Exception, turn_no: int,
+                   messages: list[dict], tools: list[dict], timeout: float):
+        """The model failed. Finish on the planner, and say so.
+
+        Which fallback it is depends on whether the model produced anything: a
+        failure on the first turn is a model this run never had, not one that
+        failed partway. Recorded before the planner's turn, on the task and in
+        the trail, so nothing downstream can present what follows as the
+        model's work.
+        """
+        self.ai_mode = (AIMode.AI_FAILED_FALLBACK if self._model_turns
+                        else AIMode.AI_UNAVAILABLE_FALLBACK)
+        record(self.session, task, "llm_fallback",
+               {"mode": self.ai_mode.value, "turn": turn_no,
+                "from_provider": self.provider.name, "from_model": self.provider.model,
+                "reason": redact(f"{type(exc).__name__}: {exc}")})
+        log.warning("llm_fallback", extra={"task_id": task.id,
+                                           "from_provider": self.provider.name})
+        self.provider = DeterministicProvider()
+        task.ai_mode = self.ai_mode.value
+        self.session.flush()
+        return self.provider.turn(system=SYSTEM_PROMPT, messages=messages, tools=tools,
+                                  timeout=timeout)
 
     # ------------------------------------------------------------------
     def _say(self, task: AgentTask, messages: list[dict], turn_no: int,
@@ -636,9 +712,31 @@ class AgentRuntime:
             return tc, {"rendered": json.dumps(structured), "structured": structured}, True, approval
 
         # ---- execute (LOW risk / ALLOW) --------------------------------
+        frozen = self._frozen_for(seq, req.name)
+        if req.name in NEEDS_ADAPTER and frozen is None:
+            if self.frozen_tools is not None:
+                # A replay reads only what was recorded. A provider read with no
+                # recorded result would be a live external call from a replay,
+                # which CONTRACT §28 forbids however harmless the read looks.
+                tc.success = False
+                tc.error_code = "TOOL_UNAVAILABLE"
+                tc.output = {"error": "No recorded result for this provider read; "
+                                      "a replay never calls the provider."}
+                tc.duration_ms = int((time.monotonic() - t0) * 1000)
+                self.session.add(tc)
+                self.session.flush()
+                record(self.session, task, "tool_rejected",
+                       {"tool": req.name, "reason": "replay_provider_read"})
+                structured = {"success": False, "error_code": "TOOL_UNAVAILABLE",
+                              "data": tc.output}
+                return tc, {"rendered": json.dumps(structured),
+                            "structured": structured}, False, None
+            # The provider is about to be asked. What the run has written so
+            # far is committed first (app/boundaries.py).
+            checkpoint(self.session)
         result = execute_read_tool(
             self.session, req.name, self.principal.merchant_id, req.arguments,
-            frozen=self._frozen_for(seq, req.name),
+            frozen=frozen,
             # Some §18 verification tools answer questions about PROVIDER state,
             # so they need the adapter. It is passed here rather than built
             # inside the tool, so the fault injector reaches them too.
@@ -678,6 +776,15 @@ class AgentRuntime:
             # reduce what an in-flight action needs.
             required_signatures=pol.required_signatures,
             expires_at=datetime.now(UTC) + timedelta(seconds=s.approval_ttl_seconds),
+            # The policy snapshot the human is shown and approves against.
+            # Execution re-evaluates current policy anyway; this records which
+            # one was in force, and pins the exact request that was approved.
+            policy_version=POLICY_VERSION,
+            policy_input_hash=policy_input_hash(
+                action_type=req.name, arguments=req.arguments,
+                merchant_id=self.principal.merchant_id, risk_level=pol.risk_level),
+            policy_decision=pol.decision.value,
+            policy_rule=pol.rule,
         )
         self.session.add(ap)
         self.session.flush()
@@ -686,7 +793,8 @@ class AgentRuntime:
                 "risk_level": pol.risk_level,
                 "required_signatures": ap.required_signatures,
                 "risk": pol.risk.as_dict() if pol.risk else None,
-                "expires_at": ap.expires_at.isoformat()})
+                "expires_at": ap.expires_at.isoformat(),
+                "policy_version": ap.policy_version})
         return ap
 
     def _collect_evidence(self, task: AgentTask) -> list:
@@ -715,7 +823,11 @@ class AgentRuntime:
                     continue
                 findings.append({
                     "claim": f"{ev['key']} = {ev['value']}",
-                    "kind": "OBSERVED", "evidence_refs": [r["id"]],
+                    # The evidence says what it is (tools/contracts.py
+                    # EvidenceKind): a computed figure is DERIVED, a provider
+                    # reference EXECUTED, a settled read-back VERIFIED. Rows
+                    # recorded before kinds existed read as OBSERVED.
+                    "kind": ev.get("kind") or "OBSERVED", "evidence_refs": [r["id"]],
                     "metric": ev["key"], "value": ev["value"],
                 })
         if answer:

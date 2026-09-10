@@ -7,7 +7,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ActivityStep } from "../api/types";
-import { AgentActivity } from "./AgentActivity";
+import { AgentActivity, AiModeBadge, FallbackNotice } from "./AgentActivity";
 
 const STEPS: ActivityStep[] = [
   { key: "started", label: "Investigation started", state: "done",
@@ -89,5 +89,32 @@ describe("agent activity", () => {
     render(<AgentActivity steps={[]} />);
     expect(screen.getByText(/stays empty until something does/)).toBeInTheDocument();
     expect(screen.queryByRole("list")).toBeNull();
+  });
+});
+
+describe("how the run was produced", () => {
+  it("shows the fallback notice for the two fallback modes and no other", () => {
+    for (const mode of ["AI_FAILED_FALLBACK", "AI_UNAVAILABLE_FALLBACK"]) {
+      const { unmount } = render(<FallbackNotice mode={mode} />);
+      expect(screen.getByRole("note")).toHaveTextContent(/This is not a model result/);
+      unmount();
+    }
+    for (const mode of ["AI_SUCCESS", "DETERMINISTIC_ONLY", null, undefined]) {
+      const { container, unmount } = render(<FallbackNotice mode={mode} />);
+      expect(container).toBeEmptyDOMElement();
+      unmount();
+    }
+  });
+
+  it("carries the mode in words, not only in colour", () => {
+    render(<AiModeBadge mode="DETERMINISTIC_ONLY" />);
+    expect(screen.getByText("Deterministic planner (no model configured)"))
+      .toBeInTheDocument();
+    expect(screen.getByText(/How this run was produced/)).toHaveClass("sr-only");
+  });
+
+  it("renders a mode it does not recognise as received rather than guessing", () => {
+    render(<AiModeBadge mode="SOMETHING_NEW" />);
+    expect(screen.getByText("SOMETHING NEW")).toBeInTheDocument();
   });
 });

@@ -174,7 +174,14 @@ def _deliver(db, event: str, entity_id: str, event_id: str):
             "payload": {"payment_link": {"entity": {"id": entity_id}}}}
     raw = json.dumps(body).encode()
     sig = hmac.new(SECRET.encode(), raw, hashlib.sha256).hexdigest()
-    return ingest(db, raw, sig, event_id)
+    # Validated, stored, acknowledged -- then processed by the worker's half.
+    ack = ingest(db, raw, sig, event_id)
+    assert ack.status is WebhookStatus.RECEIVED, ack
+    from app.webhooks.processing import process_pending
+    for r in process_pending(db)["results"]:
+        if r.event_id == event_id:
+            return r
+    raise AssertionError(f"{event_id} was not processed")
 
 
 def test_a_paid_link_is_recorded_as_recovered_when_the_provider_says_so(

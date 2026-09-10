@@ -20,6 +20,26 @@ class RiskClass(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
+#: What a piece of evidence IS (ADR-0053), so a reader can tell a measurement
+#: from a calculation from a conclusion from an act:
+#:
+#:   OBSERVED     read from a record or a provider as it stands
+#:   DERIVED      computed deterministically from observed values
+#:   INFERRED     a conclusion drawn from evidence (a model's, or ours)
+#:   RECOMMENDED  what the system proposes doing
+#:   EXECUTED     what the system did -- a provider reference it was issued
+#:   VERIFIED     a settled outcome established by independent read-back
+EvidenceKind = Literal["OBSERVED", "DERIVED", "INFERRED", "RECOMMENDED",
+                       "EXECUTED", "VERIFIED"]
+
+
+def verification_kind(state: str | None) -> EvidenceKind:
+    """VERIFIED only for a settled outcome. An UNKNOWN or PARTIAL read is an
+    observation that nothing was established; calling it verified would be the
+    overstatement the whole verification design exists to prevent."""
+    return "VERIFIED" if state in ("SUCCESS", "FAILED") else "OBSERVED"
+
+
 class Evidence(BaseModel):
     """A single piece of evidence returned by a tool.
 
@@ -31,6 +51,7 @@ class Evidence(BaseModel):
     value: Any
     source: str                                  # table/tool the value came from
     untrusted: bool = False
+    kind: EvidenceKind = "OBSERVED"
 
     @field_validator("value")
     @classmethod
@@ -59,7 +80,12 @@ class ToolResult(BaseModel):
         return d
 
 
-FindingKind = Literal["OBSERVED", "INFERRED", "RECOMMENDED"]
+FindingKind = Literal["OBSERVED", "DERIVED", "INFERRED", "RECOMMENDED",
+                      "EXECUTED", "VERIFIED"]
+
+#: Kinds that state a fact about a record, a calculation or an act, and must
+#: therefore cite the tool call that produced it.
+CITED_KINDS = frozenset({"OBSERVED", "DERIVED", "EXECUTED", "VERIFIED"})
 
 
 class Finding(BaseModel):
@@ -85,7 +111,7 @@ class Finding(BaseModel):
         not required to cite directly, but an OBSERVED claim with no resolvable
         citation is an ungrounded claim (CONTRACT §14 grounding_rate).
         """
-        if self.kind != "OBSERVED":
+        if self.kind not in CITED_KINDS:
             return True
         return any(ref in valid_tool_call_ids for ref in self.evidence_refs)
 

@@ -296,11 +296,11 @@ MUTATIONS = [
         "reconciliation: stop looking at claims nobody finished",
         "app/verification/reconciler.py",
         "                        and_(AgentAction.verification_state.is_(None),\n"
-        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.status.in_(ABANDONABLE),\n"
         "                             AgentAction.updated_at <= abandoned_cutoff),",
         "                        and_(False,  # MUTANT\n"
         "                             AgentAction.verification_state.is_(None),\n"
-        "                             AgentAction.status == ActionStatus.PENDING,\n"
+        "                             AgentAction.status.in_(ABANDONABLE),\n"
         "                             AgentAction.updated_at <= abandoned_cutoff),",
     ),
     # ---------------------------------------------------------- ADR-0031
@@ -1109,6 +1109,71 @@ MUTATIONS = [
         "app/detection/rules.py",
         "    if prev_n == 0 and prev_v == 0:\n        # No baseline",
         "    if False:  # MUTANT\n        # No baseline",
+    ),
+    # --- ADR-0053: the architecture remediation -------------------------------
+    # Each control the remediation added gets a mutant, for the reason the
+    # rest of this list exists: a control nothing would notice losing is a
+    # control in name only.
+    (
+        # The header Razorpay's refund API reads. Sending the payment one means
+        # no provider-side idempotency on a refund at all.
+        "provider: send refunds with the payment idempotency header",
+        "app/integrations/razorpay/adapter.py",
+        'REFUND_IDEMPOTENCY_HEADER = "X-Refund-Idempotency"',
+        'REFUND_IDEMPOTENCY_HEADER = "X-Payment-Idempotency"  # MUTANT',
+    ),
+    (
+        # A 5xx after the request reached Razorpay says nothing about whether it
+        # was applied. Reading it as a definite failure invites a retry.
+        "provider: read a 5xx as a definite failure",
+        "app/integrations/razorpay/adapter.py",
+        "        if resp.status_code >= 500 or resp.status_code == 409:",
+        "        if resp.status_code == 409:  # MUTANT",
+    ),
+    (
+        "boundaries: let a provider call run with writes held open",
+        "app/boundaries.py",
+        '    if mode == "off" or not open_write(session):',
+        "    if True:  # MUTANT",
+    ),
+    (
+        # The scope is SET LOCAL. Without the begin hook, a mid-request commit
+        # sheds it and the rest of the request runs outside row-level security.
+        "tenancy: stop re-applying the scope on each transaction",
+        "app/db.py",
+        "    apply_scope(connection)\n",
+        "    pass  # MUTANT\n",
+    ),
+    (
+        "approval: execute a replay's approval",
+        "app/agent/approval.py",
+        "    if task.is_replay:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "approval: execute a payload changed after approval",
+        "app/agent/approval.py",
+        "    if ap.policy_input_hash is not None and ap.policy_input_hash != policy_input_hash(",
+        "    if False and ap.policy_input_hash != policy_input_hash(  # MUTANT",
+    ),
+    (
+        "idempotency: accept a changed request under a reused key",
+        "app/idempotency.py",
+        "    if existing.request_hash != digest:",
+        "    if False:  # MUTANT",
+    ),
+    (
+        "replay: let a replay read the provider live",
+        "app/agent/runtime.py",
+        "            if self.frozen_tools is not None:",
+        "            if False:  # MUTANT",
+    ),
+    (
+        # A run the planner finished, recorded as the model's.
+        "runtime: record a fallback run as a model result",
+        "app/agent/runtime.py",
+        "        self.ai_mode = (AIMode.AI_FAILED_FALLBACK if self._model_turns",
+        "        self.ai_mode = (AIMode.AI_SUCCESS if self._model_turns  # MUTANT",
     ),
 ]
 

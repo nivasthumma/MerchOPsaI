@@ -230,6 +230,16 @@ def _deliver_webhook(session, sc: Scenario, task) -> dict:
     finally:
         settings.razorpay_webhook_secret = saved
 
+    # The endpoint acknowledges; the worker processes (ADR-0053). Grade what
+    # processing found, exactly as the provider's retry would eventually see
+    # it. Deliveries that were not accepted for processing -- a duplicate, an
+    # invalid signature, an unsubscribed type -- keep their ingest result.
+    from app.models import WebhookStatus
+    from app.webhooks.processing import process_pending
+    processed = {r.event_id: r for r in process_pending(session)["results"]}
+    results = [processed.get(r.event_id, r) if r.status is WebhookStatus.RECEIVED else r
+               for r in results]
+
     last = results[-1]
     base = spec.get("event_id", "evt_eval")
     return {
@@ -1118,10 +1128,16 @@ def run_scenario(session, sc: Scenario, run_id: str) -> EvaluationResult:
               f"expected {e.verification_state}, got {states}")
 
     if e.external_calls is not None:
-        submitted = [a for a in actions
-                     if a.status.value in ("SUBMITTED", "CONFIRMED", "UNKNOWN")]
-        check("external_calls", len(submitted) == e.external_calls,
-              f"expected {e.external_calls}, got {len(submitted)}")
+        # Provider calls ATTEMPTED. An action row is reserved immediately
+        # before exactly one provider call (tools/actions.py) and never
+        # otherwise -- a duplicate, a key conflict or a failed precondition
+        # creates none -- so the rows are the calls. This used to count rows
+        # by status as a stand-in, which stopped measuring the attempt once a
+        # timeout BEFORE submission started ending FAILED (nothing happened)
+        # instead of a stray UNKNOWN that no queue listed.
+        attempted = len(actions)
+        check("external_calls", attempted == e.external_calls,
+              f"expected {e.external_calls}, got {attempted}")
 
     if e.no_financial_effect:
         check("no_financial_effect", refunds_after == refunds_before,

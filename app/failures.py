@@ -113,6 +113,10 @@ TAXONOMY: dict[str, FailureClass] = {
     "TOOL_UNAVAILABLE": FailureClass(
         "INPUT_INVALID", Retryability.NEVER, Subsystem.TOOL_GATEWAY,
         "The tool is not registered or has no executor. This is a build defect."),
+    "IDEMPOTENCY_CONFLICT": FailureClass(
+        "INPUT_INVALID", Retryability.NEVER, Subsystem.TOOL_GATEWAY,
+        "The idempotency key was already used for a different request. A changed "
+        "request under a reused key is never a retry; nothing was sent."),
 
     # --- transient: bounded backoff (§57) ---
     "TOOL_TIMEOUT": FailureClass(

@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import shared_state
 from app.agent.activity import build as agent_activity
-from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify
+from app.agent.approval import ApprovalError, approve_and_execute, reject, reverify, revoke
 from app.agent.replay import playback, re_reason
 from app.agent.runtime import AgentRuntime, AgentRuntimeError, Principal
 from app.api import schemas
@@ -51,6 +51,7 @@ from app.db import session_scope
 from app.detection import detect
 from app.detection.engine import open_incidents
 from app.eval.runner import load_scenarios, run_scenario
+from app.events.vocabulary import STREAM_CATEGORIES
 from app.failures import TAXONOMY, describe
 from app.incidents.filters import (
     SAVED_VIEWS,
@@ -196,7 +197,11 @@ def _task_view(s, task: AgentTask) -> dict:
             "tool_registry": task.tool_registry_version,
             "policy": task.policy_version,
             "workflow": task.workflow_version,
+            "configuration": task.configuration_version,
         },
+        # How the reasoning was produced. A fallback run says so here, and the
+        # console shows it, so planner output never passes as a model's.
+        "ai_mode": task.ai_mode,
         "agent_version": task.agent_version, "model_version": task.model_version,
         "prompt_version": task.prompt_version,
         # MerchantOps §56 — category, retryability, owner and what to do next.
@@ -213,6 +218,10 @@ def _task_view(s, task: AgentTask) -> dict:
             # visible to the second approver before they click.
             "required_signatures": a.required_signatures,
             "signed_by": [s.user_id for s in a.signatures if s.decision == "APPROVED"],
+            # What the approver approved against (app/agent/approval.py).
+            "policy_version": a.policy_version,
+            "policy_decision": a.policy_decision,
+            "policy_rule": a.policy_rule,
         } for a in approvals],
         # Plan P0-08. Operational progress, built from rows this application
         # wrote -- tool calls, policy decisions, approvals, actions -- and never
@@ -1896,6 +1905,24 @@ def reject_task(task_id: str, principal: Principal = Depends(current_principal))
         return _task_view(s, task)
 
 
+@app.post("/tasks/{task_id}/revoke", response_model=schemas.TaskView,
+          response_model_exclude_unset=True)
+def revoke_task(task_id: str, principal: Principal = Depends(current_principal)):
+    """Withdraw a pending approval before it can execute.
+
+    For an approval that needs two signatures this is how the first signer takes
+    theirs back. Afterwards nothing can complete it: there is no pending
+    approval left to sign, and a REVOKED decision is never valid for execution.
+    """
+    with session_scope() as s:
+        _owned(s, task_id, principal)
+        try:
+            task = revoke(s, task_id, principal)
+        except ApprovalError as e:
+            raise HTTPException(409, {"error": str(e), "code": e.code}) from e
+        return _task_view(s, task)
+
+
 @app.post("/tasks/{task_id}/reverify", response_model=schemas.ReverifyResult,
           response_model_exclude_unset=True)
 def reverify_task(task_id: str, principal: Principal = Depends(current_principal)):
@@ -2203,9 +2230,11 @@ def list_events(after: str | None = None, limit: int = 100,
     from app.models import EventOutbox, OutboxStatus
 
     with session_scope() as s:
+        # The timeline's contract is v2 §62's frames. Domain and integration
+        # events share the outbox and are not frames (app/events/vocabulary.py).
         events = PostgresEventStore().since(
             s, after=after, merchant_id=principal.merchant_id,
-            limit=min(limit, 500))
+            limit=min(limit, 500), categories=STREAM_CATEGORIES)
         pending = s.query(EventOutbox).filter(
             EventOutbox.merchant_id == principal.merchant_id,
             EventOutbox.status == OutboxStatus.PENDING).count()
@@ -2250,6 +2279,7 @@ def stream_events(after: str | None = None, seconds: int = 25,
         while _time.monotonic() < deadline:
             with session_scope() as s:
                 batch = store.since(s, after=cursor, merchant_id=merchant_id,
+                                    categories=STREAM_CATEGORIES,
                                     limit=200)
             for event in batch:
                 cursor = event.id
@@ -2286,6 +2316,27 @@ def drain_events(limit: int = 200, principal: Principal = Depends(current_princi
 
     with session_scope() as s:
         return drain(s, limit=min(limit, 1000))
+
+
+@app.post("/webhooks/process", response_model=schemas.WebhookProcessReport)
+def process_webhooks(limit: int = 50, principal: Principal = Depends(current_principal)):
+    """Process acknowledged provider deliveries -- the worker's `webhooks` job.
+
+    The endpoint that receives a delivery only validates, stores, deduplicates
+    and acknowledges it; verification against the provider happens here or in
+    the worker (ADR-0053). Exposed as a route for the same reason as
+    `/events/drain`: a deployment with no worker -- Vercel -- needs a scheduled
+    invocation to do it, or acknowledged deliveries would wait forever.
+
+    Runs under the caller's scope, so it processes that merchant's deliveries
+    and no one else's. Safe to call concurrently: each delivery is claimed
+    `FOR UPDATE SKIP LOCKED` and the claim is committed before any provider read.
+    """
+    from app.webhooks.processing import process_pending
+
+    with session_scope() as s:
+        report = process_pending(s, limit=min(limit, 200))
+        return {k: v for k, v in report.items() if k != "results"}
 
 
 @app.post("/notifications/sweep", response_model=schemas.NotifySweepReport)

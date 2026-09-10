@@ -241,6 +241,31 @@ def test_a_failed_notification_is_retried_and_settles(db, monkeypatch):
     assert all(n.attempts == 2 for n in rows)
 
 
+def test_a_channel_that_keeps_refusing_is_retried_a_bounded_number_of_times(
+        db, monkeypatch):
+    """Never infinite retries. After the cap a notification stays FAILED and
+    visible, and the retry pass stops selecting it."""
+    from app.notify.service import MAX_DELIVERY_ATTEMPTS
+
+    class Down:
+        name = "log"
+
+        def send(self, message):
+            raise ConnectionRefusedError("smtp down")
+
+    monkeypatch.setattr("app.notify.service.build_channels", lambda: {"log": Down()})
+    ap = _approval(db)
+    consumers.on_approval_requested(
+        db, _Event(payload={"approval_id": ap.id}, merchant_id="MERCH_A"))
+    for _ in range(MAX_DELIVERY_ATTEMPTS + 3):
+        retry_pending(db)
+
+    rows = _notifications(db, subject_id=ap.id)
+    assert rows
+    assert all(n.status is NotificationStatus.FAILED for n in rows)
+    assert all(n.attempts == MAX_DELIVERY_ATTEMPTS for n in rows)
+
+
 # --------------------------------------------------------------------------
 # the sweep, and the reason dedupe is a constraint
 # --------------------------------------------------------------------------

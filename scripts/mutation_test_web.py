@@ -226,6 +226,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "            ? <>Execution is <strong>live</strong> against Razorpay test mode.</>",
         "            ? <>Execution is <strong>live</strong>.</>  // MUTANT",
     ),
+    # --- ADR-0053: how a run was produced, and what the provider is --------
+    (
+        # Planner output with nothing saying so reads as a model's conclusion.
+        "task: hide that a fallback run came from the planner",
+        "web/src/components/AgentActivity.tsx",
+        "  if (!aiModeSpec(mode).fallback) return null;",
+        "  if (mode !== undefined || true) return null;  // MUTANT",
+    ),
+    (
+        # A payments console that calls a simulator live is claiming money moves.
+        "command center: describe the mock provider as live",
+        "web/src/routes/CommandCenter.tsx",
+        '    return { title: "Mock provider — no real money moves.",',
+        '    return { title: "Live provider — payments are processed.",  // MUTANT',
+    ),
 ]
 
 SELF = "scripts/mutation_test_web.py"

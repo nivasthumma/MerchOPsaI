@@ -48,6 +48,17 @@ class LLMTurn:
         return bool(self.tool_requests)
 
 
+class ModelUnavailable(Exception):
+    """The configured model could not produce a turn: unreachable, timed out,
+    rate-limited, overloaded or erroring on its side.
+
+    Distinct from any other exception on purpose. It is the ONE failure the
+    runtime answers by finishing the run on the deterministic planner (and
+    saying so -- app/agent/provenance.py). A bug in our own code is not the
+    model being unavailable, and falling back on it would hide the bug.
+    """
+
+
 class LLMProvider(ABC):
     name: str = "abstract"
     model: str = "abstract"

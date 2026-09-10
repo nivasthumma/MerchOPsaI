@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from app.config import get_settings
-from app.llm.base import LLMProvider, LLMTurn, ToolRequest
+from app.llm.base import LLMProvider, LLMTurn, ModelUnavailable, ToolRequest
 
 CACHE_CONTROL = {"type": "ephemeral"}
 
@@ -84,40 +84,53 @@ class AnthropicProvider(LLMProvider):
 
     def turn(self, *, system: str, messages: list[dict], tools: list[dict],
              timeout: float | None = None) -> LLMTurn:
-        resp = self._client.messages.create(
-            model=self.model,
-            # The caller passes what is left of the task's wall clock, so the
-            # last turn of a nearly exhausted budget cannot outlive it. The
-            # client-level ceiling still applies to whichever is smaller.
-            **({"timeout": self._attempt_timeout(
-                    min(float(timeout), float(self._s.llm_timeout_seconds)))}
-               if timeout is not None else {}),
-            max_tokens=self._s.llm_max_tokens,
-            # Caching is a prefix match over tools -> system -> messages. Both
-            # are byte-stable across every turn of every task (the prompt is
-            # versioned, the registry is a literal), so this breakpoint is the
-            # cheap one: it is re-read on each of up to 8 turns per task.
-            system=[{"type": "text", "text": system, "cache_control": CACHE_CONTROL}],
-            messages=wire_messages(messages),
-            tools=tools,
-            thinking={"type": "adaptive"},
-            # MerchantOps §16 asks for "temperature: 0 / lowest supported", and
-            # this request deliberately does not set it.
-            #
-            # Not an omission and not a preference: sampling parameters
-            # (temperature, top_p, top_k) were REMOVED on this model family.
-            # Sending temperature to claude-opus-5 returns a 400, so the spec's
-            # instruction is not implementable as written.
-            #
-            # `effort` is the control that replaced it. §16's intent — make the
-            # reasoning as reproducible as the API allows — is served by pinning
-            # effort and the model id, both of which are recorded on every task
-            # (§41). Determinism was never fully available anyway: §28 of the
-            # contract already says a model is non-deterministic at temperature
-            # 0, which is why replay records divergence rather than asserting
-            # its absence.
-            output_config={"effort": self._s.llm_effort},
-        )
+        import anthropic
+
+        try:
+            resp = self._client.messages.create(
+                model=self.model,
+                # The caller passes what is left of the task's wall clock, so the
+                # last turn of a nearly exhausted budget cannot outlive it. The
+                # client-level ceiling still applies to whichever is smaller.
+                **({"timeout": self._attempt_timeout(
+                        min(float(timeout), float(self._s.llm_timeout_seconds)))}
+                   if timeout is not None else {}),
+                max_tokens=self._s.llm_max_tokens,
+                # Caching is a prefix match over tools -> system -> messages. Both
+                # are byte-stable across every turn of every task (the prompt is
+                # versioned, the registry is a literal), so this breakpoint is the
+                # cheap one: it is re-read on each of up to 8 turns per task.
+                system=[{"type": "text", "text": system, "cache_control": CACHE_CONTROL}],
+                messages=wire_messages(messages),
+                tools=tools,
+                thinking={"type": "adaptive"},
+                # MerchantOps §16 asks for "temperature: 0 / lowest supported", and
+                # this request deliberately does not set it.
+                #
+                # Not an omission and not a preference: sampling parameters
+                # (temperature, top_p, top_k) were REMOVED on this model family.
+                # Sending temperature to claude-opus-5 returns a 400, so the spec's
+                # instruction is not implementable as written.
+                #
+                # `effort` is the control that replaced it. §16's intent — make the
+                # reasoning as reproducible as the API allows — is served by pinning
+                # effort and the model id, both of which are recorded on every task
+                # (§41). Determinism was never fully available anyway: §28 of the
+                # contract already says a model is non-deterministic at temperature
+                # 0, which is why replay records divergence rather than asserting
+                # its absence.
+                output_config={"effort": self._s.llm_effort},
+            )
+        except (anthropic.APIConnectionError, anthropic.APITimeoutError,
+                anthropic.RateLimitError, anthropic.InternalServerError) as e:
+            # The model could not answer -- not our bug, and not a refusal.
+            # The runtime finishes the run on the planner and records that it
+            # did (ModelUnavailable, app/agent/provenance.py).
+            raise ModelUnavailable(f"{type(e).__name__}: {e}") from e
+        except anthropic.APIStatusError as e:
+            if getattr(e, "status_code", 0) >= 500:
+                raise ModelUnavailable(f"{type(e).__name__}: {e}") from e
+            raise
 
         # A refusal is a real stop_reason on current models; never read content
         # before checking it.

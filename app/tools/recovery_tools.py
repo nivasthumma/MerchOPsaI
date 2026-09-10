@@ -49,16 +49,18 @@ def calculate_recovery_candidates(session, merchant_id: str, incident_id: str) -
         return f"INR {minor / 100:,.2f}"
 
     ev = [
-        Evidence(key="intervention", value=draft.intervention.value, source="recovery_planner"),
-        Evidence(key="eligible_candidates", value=data["eligible_count"], source="recovery_planner"),
+        Evidence(key="intervention", value=draft.intervention.value,
+                 source="recovery_planner", kind="RECOMMENDED"),
+        Evidence(key="eligible_candidates", value=data["eligible_count"],
+                 source="recovery_planner", kind="DERIVED"),
         Evidence(key="revenue_at_risk", value=inr(incident.revenue_at_risk_minor),
-                 source="calculation_engine"),
+                 source="calculation_engine", kind="DERIVED"),
         Evidence(key="eligible_recovery", value=inr(draft.eligible_recovery_minor),
-                 source="calculation_engine"),
+                 source="calculation_engine", kind="DERIVED"),
         # The estimate never travels without its basis.
         Evidence(key="expected_recovery",
                  value=f"{inr(draft.expected_recovery_minor)} — {draft.basis}",
-                 source="calculation_engine"),
+                 source="calculation_engine", kind="DERIVED"),
     ]
     if not data["executable"]:
         ev.append(Evidence(

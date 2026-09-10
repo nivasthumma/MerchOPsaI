@@ -48,6 +48,9 @@ class RecoveryLedger:
     failed_minor: int = 0
     unknown_minor: int = 0
     outstanding_minor: int = 0          # attempted, not yet resolved either way
+    # `recovered`, split by what the money was (see as_dict's basis).
+    recovered_captured_minor: int = 0   # a customer paid a recovery link
+    recovered_refunded_minor: int = 0   # a verified refund reached the customer
     by_incident: list[dict] = field(default_factory=list)
     by_method: list[dict] = field(default_factory=list)
 
@@ -80,13 +83,15 @@ class RecoveryLedger:
             "failed_minor": self.failed_minor,
             "unknown_minor": self.unknown_minor,
             "outstanding_minor": self.outstanding_minor,
+            "recovered_captured_minor": self.recovered_captured_minor,
+            "recovered_refunded_minor": self.recovered_refunded_minor,
             "by_incident": self.by_incident,
             "by_method": self.by_method,
             "invariants_broken": self.invariants(),
             "basis": (
                 "Attributed exposure: each charge counted only to the extent the "
                 "incident is responsible for it. `recovered` is money confirmed "
-                "by independent verification — a payment link counts only once "
+                "by independent verification — a payment link counts to the extent "
                 "the provider reports it paid, never when it is merely sent."),
         }
 
@@ -112,12 +117,23 @@ def build_ledger(session, merchant_id: str) -> RecoveryLedger:
           COALESCE(SUM(attributed_amount_minor) FILTER (
               WHERE status IN ('ATTEMPTED','RECOVERED','FAILED','UNKNOWN')), 0) AS attempted,
           COALESCE(SUM(actual_recovery_minor), 0)                     AS recovered,
-          COALESCE(SUM(attributed_amount_minor) FILTER (
+          -- failed / unknown / outstanding are each net of money already
+          -- recovered on the same candidate: a part-paid link contributes its
+          -- paid share to `recovered` and only the remainder here, so no
+          -- rupee is counted twice and the parts add up to `attempted`.
+          COALESCE(SUM(attributed_amount_minor - actual_recovery_minor) FILTER (
               WHERE status = 'FAILED'), 0)                            AS failed,
-          COALESCE(SUM(attributed_amount_minor) FILTER (
+          COALESCE(SUM(attributed_amount_minor - actual_recovery_minor) FILTER (
               WHERE status = 'UNKNOWN'), 0)                           AS unknown,
-          COALESCE(SUM(attributed_amount_minor) FILTER (
-              WHERE status = 'ATTEMPTED'), 0)                         AS outstanding
+          COALESCE(SUM(attributed_amount_minor - actual_recovery_minor) FILTER (
+              WHERE status = 'ATTEMPTED'), 0)                         AS outstanding,
+          -- Recovered money by kind. A paid recovery link is revenue that
+          -- came back; a verified refund is money returned to a customer.
+          -- One total hides that difference, so both are reported.
+          COALESCE(SUM(actual_recovery_minor) FILTER (
+              WHERE intervention = 'PAYMENT_LINK'), 0)                AS recovered_captured,
+          COALESCE(SUM(actual_recovery_minor) FILTER (
+              WHERE intervention = 'REFUND'), 0)                      AS recovered_refunded
         FROM recovery_candidates WHERE merchant_id = :m
     """), {"m": merchant_id}).mappings().one()
 
@@ -127,6 +143,8 @@ def build_ledger(session, merchant_id: str) -> RecoveryLedger:
     led.failed_minor = int(row["failed"])
     led.unknown_minor = int(row["unknown"])
     led.outstanding_minor = int(row["outstanding"])
+    led.recovered_captured_minor = int(row["recovered_captured"])
+    led.recovered_refunded_minor = int(row["recovered_refunded"])
 
     # §50: at risk BY INCIDENT and BY PAYMENT METHOD.
     #

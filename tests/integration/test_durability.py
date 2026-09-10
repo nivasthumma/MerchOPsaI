@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 
+import pytest
 from sqlalchemy import text
 
 from app.agent.approval import approve_and_execute
@@ -144,10 +145,11 @@ def test_the_action_claim_outlives_the_request_that_made_it(db, owner):
 def test_a_lost_request_leaves_a_claim_the_sweep_can_finish(db, owner):
     """What is left behind is not an orphan.
 
-    Rolling back after the claim reproduces a request that died mid-action: the
-    reservation is committed, everything written after it is gone, so the row
-    sits PENDING with an idempotency key and no outcome. That is the state
-    reconciliation exists for, and before this it was a row nothing looked at.
+    Rolling back after execution reproduces a request that died during
+    verification: the claim and the provider's reference were committed before
+    verification's network reads (app/boundaries.py), everything written after
+    that is gone, so the row sits SUBMITTED with its reference and no outcome.
+    That is the state reconciliation exists for.
     """
     out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
     r = approve_and_execute(db, out.task.id, owner)
@@ -155,6 +157,38 @@ def test_a_lost_request_leaves_a_claim_the_sweep_can_finish(db, owner):
     db.rollback()
 
     action = db.get(AgentAction, action_id)
+    assert action.status is ActionStatus.SUBMITTED
+    assert action.external_reference, "the reference must outlive the request"
+    assert action.verification_state is None
+    assert action.idempotency_key, "nothing to ask the provider about"
+
+    # Too young: a request this age may still be running and about to write the
+    # outcome we would be overwriting.
+    assert action not in find_unsettled(db, min_age_seconds=0)
+
+    # Older than any request can live, and the sweep claims it.
+    _age(db, action_id, seconds=abandoned_claim_age_seconds() + 60)
+    assert action_id in [a.id for a in find_unsettled(db, min_age_seconds=0)]
+
+
+def test_a_request_lost_before_the_provider_answered_leaves_a_pending_claim(
+        db, owner, monkeypatch):
+    """The other place a request can die: after the claim is committed and
+    before the provider's answer is recorded. The row sits PENDING with an
+    idempotency key and no outcome, and the sweep must still find it."""
+    from app.integrations.razorpay.adapter import MockAdapter
+
+    def lost(self, *a, **k):
+        raise RuntimeError("process killed mid-call")
+    monkeypatch.setattr(MockAdapter, "create_refund", lost)
+
+    out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
+    with pytest.raises(RuntimeError):
+        approve_and_execute(db, out.task.id, owner)
+    db.rollback()
+
+    action = db.query(AgentAction).filter(AgentAction.task_id == out.task.id).one()
+    action_id = action.id
     assert action.status is ActionStatus.PENDING
     assert action.verification_state is None
     assert action.idempotency_key, "nothing to ask the provider about"
@@ -171,11 +205,14 @@ def test_a_lost_request_leaves_a_claim_the_sweep_can_finish(db, owner):
 def test_the_sweep_settles_an_abandoned_claim_by_its_key(db, owner):
     """Settlement is a read. It asks the provider about our own key and records
     the answer; it never re-issues the action."""
-    before = db.query(Refund).count()
     out = AgentRuntime(db, owner).run("Find the duplicate payment and refund it.")
     r = approve_and_execute(db, out.task.id, owner)
     action_id = r["action"].id
     db.rollback()
+    # Counted AFTER the lost request: the provider's refund was made and its
+    # reference committed before verification, as a real provider's would be.
+    # What must not happen is a SECOND one, caused by the sweep.
+    before = db.query(Refund).count()
 
     _age(db, action_id, seconds=abandoned_claim_age_seconds() + 60)
     report = reconcile(db, min_age_seconds=0)

@@ -126,6 +126,7 @@ class FailureCode(str, enum.Enum):
     EXTERNAL_STATE_UNKNOWN = "EXTERNAL_STATE_UNKNOWN"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
     PARTIAL_EXECUTION = "PARTIAL_EXECUTION"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
     MODEL_INVALID_OUTPUT = "MODEL_INVALID_OUTPUT"
     # MerchantOps §56. Distinct from MODEL_INVALID_OUTPUT: the output parsed and
     # matched the schema, and then cited evidence that does not exist. A
@@ -201,6 +202,9 @@ class WebhookStatus(str, enum.Enum):
     IGNORED = "IGNORED"          # valid, but nothing here subscribes to it
     DUPLICATE = "DUPLICATE"      # event_id already seen
     INVALID = "INVALID"          # signature failed
+    # Processing was attempted a bounded number of times and never completed.
+    # The dead letter: kept, visible, and not retried again automatically.
+    FAILED = "FAILED"
 
 
 class IncidentSeverity(str, enum.Enum):
@@ -814,7 +818,8 @@ class WebhookEvent(Base):
     entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     status: Mapped[WebhookStatus] = mapped_column(
-        Enum(WebhookStatus, native_enum=False), default=WebhookStatus.RECEIVED, index=True)
+        Enum(WebhookStatus, native_enum=False, length=16),
+        default=WebhookStatus.RECEIVED, index=True)
     signature_valid: Mapped[bool] = mapped_column(Boolean, default=False)
 
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -827,6 +832,12 @@ class WebhookEvent(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     processing_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Asynchronous processing (app/webhooks/processing.py `process_pending`).
+    # The endpoint persists and acknowledges; a worker claims the row, which
+    # stamps `claimed_at` so a second worker skips it, and counts the attempt so
+    # a delivery that can never be processed stops being retried.
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (Index("ix_webhook_entity_type", "entity_id", "event_type"),)
 
@@ -1061,6 +1072,15 @@ class AgentTask(Base):
     tool_registry_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     workflow_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # A hash of the settings that governed the run -- budgets, limits, provider
+    # selection (app/agent/provenance.py). Two runs with one hash ran under one
+    # set of rules; nothing about it is hand-kept, so it cannot be stale.
+    configuration_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # How the reasoning was produced (app/agent/provenance.py AIMode):
+    # AI_SUCCESS, AI_FAILED_FALLBACK, AI_UNAVAILABLE_FALLBACK, DETERMINISTIC_ONLY.
+    # Recorded as it happens, never inferred from the model name at read time:
+    # a run that began on the model and finished on the planner is neither.
+    ai_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     scenario_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # The incident this task investigates, when it was dispatched by one
     # (MerchantOps §13). Null for a task a user started by asking a question --
@@ -1321,6 +1341,15 @@ class Approval(Base):
     # not quietly reduce what an in-flight action needs.
     required_signatures: Mapped[int] = mapped_column(Integer, default=1)
 
+    # The policy snapshot the approval was requested under. Execution
+    # re-evaluates CURRENT policy regardless; this is what lets the record say
+    # which policy a human saw, and lets execution refuse a payload that no
+    # longer hashes to what was approved (app/agent/approval.py).
+    policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    policy_input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    policy_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    policy_rule: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     signatures: Mapped[list[ApprovalSignature]] = relationship(
         back_populates="approval", order_by="ApprovalSignature.signed_at")
 
@@ -1358,6 +1387,11 @@ class AuditLog(Base):
     incident_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     merchant_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # WHO acted, by kind: HUMAN, AGENT, WORKER, WEBHOOK, SYSTEM
+    # (app/context.py). `user_id` alone cannot say it -- a worker, a webhook
+    # and the reconciliation sweep all write with no user at all.
+    actor_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    actor: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
     # MerchantOps §47 names it on every event. As a payload key it could not be
     # joined on or indexed, which is the one thing a correlation id is for.
@@ -1367,6 +1401,46 @@ class AuditLog(Base):
     # application for its timestamps. The database stamps every row.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, server_default=func.now(), index=True)
+
+
+class IdempotencyRecord(Base):
+    """Unified application idempotency (app/idempotency.py).
+
+    One row per (merchant, operation, business key). The rules it enforces:
+
+        same key + same request       -> the same outcome, never a second one
+        same key + different request  -> a conflict, refused before any effect
+
+    Provider idempotency is kept alongside it, not replaced by it: the key an
+    action sends Razorpay (`X-Refund-Idempotency`, a payment link's
+    `reference_id`) protects the provider call; this protects everything on
+    our side of it, and remembers the request it was first used for, which a
+    UNIQUE constraint on a key alone cannot.
+    """
+    __tablename__ = "idempotency_records"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    merchant_id: Mapped[str] = mapped_column(String(64), index=True)
+    operation: Mapped[str] = mapped_column(String(64))
+    business_key: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    # IN_PROGRESS | SUCCEEDED | FAILED | UNKNOWN
+    status: Mapped[str] = mapped_column(String(16), default="IN_PROGRESS")
+    external_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # What the first request produced, so a replay can be answered with it.
+    resource_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    # NULL for a financial operation: its key must never be reusable.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "operation", "business_key",
+                         name="uq_idempotency_operation_key"),
+    )
 
 
 class EvaluationResult(Base):
@@ -1419,6 +1493,9 @@ class EventOutbox(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
 
     event_type: Mapped[str] = mapped_column(String(64), index=True)
+    # DOMAIN | INTEGRATION | UI | NOTIFICATION (app/events/vocabulary.py).
+    # Derived from event_type when the row is written, never supplied.
+    category: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     schema_version: Mapped[str] = mapped_column(String(16), default="v1")
 
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

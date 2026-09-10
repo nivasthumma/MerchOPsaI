@@ -51,7 +51,7 @@ describe("the five sections", () => {
     const headings = await screen.findAllByRole("heading", { level: 3 });
     expect(headings.map((h) => h.textContent?.replace(/\d+$/, "").trim()))
       .toEqual(["Awaiting approval", "Executing", "Unknown", "Escalated",
-                "Recently completed"]);
+                "Recently completed", "Failed"]);
   });
 
   it("puts an action in exactly one section", async () => {
@@ -72,6 +72,64 @@ describe("the five sections", () => {
     const row = await screen.findByText(ESCALATED.escalated[0].id);
     expect(row).toBeInTheDocument();
     expect(screen.getByText(/Automatic reconciliation is exhausted/)).toBeInTheDocument();
+  });
+});
+
+describe("verified failures have their own section", () => {
+  // "Recently completed" used to hold both settled outcomes. A verified FAILED
+  // now lands in Failed, and never under the heading that means the money moved.
+  const FAILED_ROW = {
+    ...UNKNOWN.unknown[0], id: "ACT_FAILED_1", status: "FAILED",
+    verification_state: "FAILED" as const, next_verify_at: null,
+  };
+  const WITH_FAILED = {
+    ...UNKNOWN,
+    failed: [FAILED_ROW],
+    counts: { ...UNKNOWN.counts, failed: 3 },
+    shown: { ...UNKNOWN.shown, failed: 1 },
+  } as ActionCenter;
+
+  function failedSection() {
+    const heading = screen.getAllByRole("heading", { level: 3 })
+      .find((h) => h.textContent?.startsWith("Failed"))!;
+    return { heading, section: heading.closest("section") as HTMLElement };
+  }
+
+  it("renders the Failed section with the server's total and the page it shows", async () => {
+    mocked.actionCenter.mockResolvedValue(WITH_FAILED);
+    renderActions();
+    await screen.findByText("ACT_FAILED_1");
+
+    const { heading, section } = failedSection();
+    // The COUNT, not the one row on the page — and said so, the same as every
+    // other section.
+    expect(heading).toHaveTextContent("Failed 3");
+    expect(within(section).getByText(/Showing 1 of 3/)).toBeInTheDocument();
+    expect(within(section).getByText("ACT_FAILED_1")).toBeInTheDocument();
+    // In exactly one section.
+    expect(screen.getAllByText("ACT_FAILED_1")).toHaveLength(1);
+  });
+
+  it("offers no re-verify on a settled failure", async () => {
+    mocked.actionCenter.mockResolvedValue(WITH_FAILED);
+    renderActions("/actions?section=failed");
+    await screen.findByText("ACT_FAILED_1");
+    const { section } = failedSection();
+    expect(within(section).queryByRole("button", { name: "Reverify" })).toBeNull();
+  });
+
+  it("puts Failed in the section chips with its count", async () => {
+    mocked.actionCenter.mockResolvedValue(WITH_FAILED);
+    renderActions();
+    const nav = await screen.findByRole("navigation", { name: "Sections" });
+    expect(within(nav).getByRole("button", { name: /Failed\s*3/ })).toBeInTheDocument();
+  });
+
+  it("says why Failed is empty", async () => {
+    mocked.actionCenter.mockResolvedValue(UNKNOWN);
+    renderActions("/actions?section=failed");
+    expect(await screen.findByText(/No action has been verified as failed/))
+      .toBeInTheDocument();
   });
 });
 

@@ -220,6 +220,9 @@ class Settings(BaseSettings):
     # hang off that delivery -- so this is the latency between an approval being
     # raised and the approver hearing about it. Cheap: one indexed query.
     worker_drain_interval_seconds: int = 5
+    # Acknowledged provider deliveries waiting to be processed. Seconds, like the
+    # drain: somebody may be waiting on the verification a delivery triggers.
+    worker_webhooks_interval_seconds: int = 5
     # notify: MUST be well under `notify_approval_warning_seconds` (300), or the
     # chase for an expiring approval is delivered after the window it was
     # warning about has closed. Sending is deduplicated by a UNIQUE constraint,
@@ -280,6 +283,13 @@ class Settings(BaseSettings):
     # gate, approve, execute, verify. Bumped when that shape changes, not when
     # a step's implementation does.
     workflow_version: str = "workflow-v2"
+    # The transaction-boundary invariant (app/boundaries.py): warn | strict | off.
+    # No external call while a transaction holding writes is open.
+    transaction_boundary_mode: str = "warn"
+    # When the configured model cannot be reached or fails mid-run, finish the
+    # run on the deterministic planner and SAY so on the task
+    # (ai_mode = AI_*_FALLBACK). Off means such a run fails instead.
+    llm_fallback_enabled: bool = True
 
     @property
     def effective_wall_clock_seconds(self) -> int:

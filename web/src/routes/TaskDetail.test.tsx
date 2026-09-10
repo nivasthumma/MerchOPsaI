@@ -38,7 +38,7 @@ vi.mock("../api/client", async (importOriginal) => {
     ...actual,
     api: {
       getTask: vi.fn(), getTrace: vi.fn(), getEvidence: vi.fn(), approve: vi.fn(),
-      reject: vi.fn(), reverify: vi.fn(), replay: vi.fn(),
+      reject: vi.fn(), revoke: vi.fn(), reverify: vi.fn(), replay: vi.fn(),
     },
   };
 });
@@ -81,7 +81,7 @@ const BASE: Task = {
     action_payload: { synthetic_payment_id: "SYN_PAY_0002", amount_minor: 499900,
                       reason: "Duplicate payment: a second capture was recorded." },
     risk_level: "HIGH", expires_at: new Date(Date.now() + 9e5).toISOString(),
-    decided_by: null,
+    decided_by: null, required_signatures: 1, signed_by: [],
   }],
   actions: [],
 };
@@ -168,6 +168,107 @@ describe("pending approval", () => {
     await approve();
     expect(await screen.findByText("Approved and executed")).toBeInTheDocument();
     expect(screen.getByText(/Independent verification: SUCCESS/)).toBeInTheDocument();
+  });
+});
+
+describe("revoking a half-signed approval", () => {
+  // A CRITICAL action needs two signatures. Between the first and the second,
+  // the first signer must be able to take theirs back — and once they have,
+  // nothing can complete it.
+  const halfSigned: Task = {
+    ...BASE,
+    approvals: [{ ...BASE.approvals[0], required_signatures: 2,
+                  signed_by: ["USR_A_OWNER"] }],
+  };
+
+  it("offers no revoke before anybody has signed — Reject is the decision then", async () => {
+    renderAt(BASE);
+    await screen.findByText("Approval required");
+    expect(screen.queryByRole("button", { name: /Revoke/ })).toBeNull();
+  });
+
+  it("shows who has signed, against how many are needed", async () => {
+    renderAt(halfSigned);
+    expect(await screen.findByText(/1 of 2 · USR_A_OWNER/)).toBeInTheDocument();
+  });
+
+  it("revokes through the endpoint and reloads rather than trusting the response", async () => {
+    renderAt(halfSigned);
+    mocked.revoke.mockResolvedValue({ ...halfSigned, status: "REJECTED" });
+    await userEvent.click(await screen.findByRole("button", { name: "Revoke approval" }));
+    await waitFor(() => expect(mocked.revoke).toHaveBeenCalledWith("TASK_ABC"));
+    await waitFor(() => expect(mocked.getTask).toHaveBeenCalledTimes(2));
+    expect(mocked.reject).not.toHaveBeenCalled();
+    expect(await screen.findByText("Revoked")).toBeInTheDocument();
+  });
+
+  it("shows a refusal with its code, exactly as a refused reject is shown", async () => {
+    renderAt(halfSigned);
+    mocked.revoke.mockRejectedValue(
+      new ApiError(409, "There is no pending approval to revoke.", "NO_PENDING_APPROVAL"));
+    await userEvent.click(await screen.findByRole("button", { name: "Revoke approval" }));
+    expect(await screen.findByText("NO_PENDING_APPROVAL")).toBeInTheDocument();
+    expect(document.querySelector(".banner.warn")).toBeInTheDocument();
+  });
+
+  it("names the policy the approval was requested under, when the row carries it", async () => {
+    renderAt({ ...BASE, approvals: [{ ...BASE.approvals[0], policy_version: "policy-v4",
+                                      policy_rule: "high_risk_requires_approval" }] });
+    expect(await screen.findByText(/Requested under policy/)).toBeInTheDocument();
+    expect(screen.getByText("policy-v4")).toBeInTheDocument();
+  });
+
+  it("does not invent a policy version for an approval recorded without one", async () => {
+    renderAt(BASE);
+    await screen.findByText("Approval required");
+    expect(screen.queryByText(/Requested under policy/)).toBeNull();
+  });
+});
+
+describe("how the run was produced", () => {
+  // A fallback run was produced by the deterministic planner. Presenting its
+  // output as a model's would have a merchant read arithmetic as judgement.
+  for (const mode of ["AI_FAILED_FALLBACK", "AI_UNAVAILABLE_FALLBACK"]) {
+    it(`says a ${mode} run is not a model result`, async () => {
+      renderAt({ ...BASE, ai_mode: mode });
+      const note = await screen.findByRole("note", { name: "How this run was produced" });
+      expect(note).toHaveTextContent(/deterministic planner/);
+      expect(note).toHaveTextContent(/This is not a model result/);
+      // And the conclusion is not headed as the model's.
+      expect(screen.getByText("What the deterministic planner concluded")).toBeInTheDocument();
+      expect(screen.queryByText("Model confidence")).toBeNull();
+    });
+  }
+
+  it("shows no fallback notice for a run the model produced", async () => {
+    renderAt({ ...BASE, ai_mode: "AI_SUCCESS" });
+    expect((await screen.findAllByText("Model result")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("note", { name: "How this run was produced" })).toBeNull();
+    expect(screen.queryByText(/not a model result/)).toBeNull();
+    expect(screen.getByText("What the agent concluded")).toBeInTheDocument();
+  });
+
+  it("calls a planner-only run what it is, without calling it a failure", async () => {
+    renderAt({ ...BASE, ai_mode: "DETERMINISTIC_ONLY" });
+    expect((await screen.findAllByText("Deterministic planner (no model configured)")).length)
+      .toBeGreaterThan(0);
+    // By design, not a fallback: nothing went wrong, so there is no notice.
+    expect(screen.queryByRole("note", { name: "How this run was produced" })).toBeNull();
+  });
+
+  it("says the mode was not recorded rather than guessing for an old run", async () => {
+    renderAt(BASE);
+    expect((await screen.findAllByText("Mode not recorded")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("note", { name: "How this run was produced" })).toBeNull();
+  });
+
+  it("lists the provider, model and configuration version with the other versions", async () => {
+    renderAt({ ...BASE, versions: { ...BASE.versions, model_provider: "anthropic",
+                                    model: "claude-test", configuration: "cfg-1a2b3c" } });
+    const versions = await screen.findByLabelText("Run versions");
+    expect(within(versions).getByText("anthropic · claude-test")).toBeInTheDocument();
+    expect(within(versions).getByText("cfg-1a2b3c")).toBeInTheDocument();
+    expect(within(versions).getByText("policy-v3")).toBeInTheDocument();
   });
 });
 
@@ -332,6 +433,21 @@ describe("trace controls", () => {
     await userEvent.type(screen.getByLabelText("Search the trace"), "missing_permission");
     expect(screen.getByText("policy_decision")).toBeInTheDocument();
     expect(screen.queryByText("llm_turn")).toBeNull();
+  });
+
+  it("tags an event with who caused it, and leaves an unattributed one untagged", async () => {
+    renderAt({ ...BASE, status: "COMPLETED", approvals: [] }, [
+      { id: 1, at: new Date().toISOString(), event: "approval_granted",
+        payload: {}, actor_type: "HUMAN", actor: "USR_A_OWNER" },
+      { id: 2, at: new Date().toISOString(), event: "llm_turn", payload: {} },
+    ]);
+    const tag = await screen.findByText("Human");
+    expect(tag).toHaveTextContent("USR_A_OWNER");
+    expect(tag.closest("li")).toHaveTextContent("approval_granted");
+    // An older row has no actor. Labelling it "System" would attribute to the
+    // system something a person may have done.
+    const untagged = screen.getByText("llm_turn").closest("li")!;
+    expect(within(untagged).queryByText(/Caused by/)).toBeNull();
   });
 });
 

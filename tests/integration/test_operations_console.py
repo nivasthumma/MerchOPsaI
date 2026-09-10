@@ -49,7 +49,7 @@ def test_the_action_center_partitions_the_queue(client, db, owner):
 
     body = client.get("/actions", headers=token("USR_A_OWNER")).json()
     assert body["sections"] == ["awaiting_approval", "executing", "unknown",
-                                "escalated", "recently_completed"]
+                                "escalated", "recently_completed", "failed"]
 
     placements = [s for s in ("executing", "unknown", "escalated",
                               "recently_completed")

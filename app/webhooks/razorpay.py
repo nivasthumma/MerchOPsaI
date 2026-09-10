@@ -33,6 +33,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -60,6 +61,9 @@ ACTIONABLE = frozenset({
     # however long it took someone to ask.
     "payment_link.paid", "payment_link.expired", "payment_link.cancelled",
 })
+
+
+_log = logging.getLogger("merchantops.webhooks")
 
 
 @dataclass
@@ -152,8 +156,13 @@ def ingest(session, raw_body: bytes, signature: str | None,
         if not isinstance(payload, dict):
             raise ValueError("event envelope must be an object")
     except (UnicodeDecodeError, ValueError) as exc:
-        return IngestResult(WebhookStatus.INVALID, None,
-                            note=f"Unparseable body: {exc}")
+        # Persisted, not dropped. A malformed delivery is either a provider
+        # defect or somebody probing the one unauthenticated write path, and
+        # both are worth being able to find. Only a bounded prefix of the body
+        # is kept: it is untrusted and it has not been authenticated.
+        return _persist_unprocessable(
+            session, raw_body, payload_hash, event_id_header, correlation_id,
+            note=f"Unparseable body: {exc}")
 
     event_type, entity_id, occurred_at = _extract(payload)
     # Razorpay carries the event id in a header. Falling back to the payload
@@ -201,15 +210,27 @@ def ingest(session, raw_body: bytes, signature: str | None,
     except IntegrityError:
         sp.rollback()
         prior = session.execute(
-            text("SELECT id FROM webhook_events WHERE event_id = :e"),
-            {"e": event_id}).scalar()
-        return IngestResult(WebhookStatus.DUPLICATE, event_id, stored_id=prior,
+            text("SELECT id, payload_hash FROM webhook_events WHERE event_id = :e"),
+            {"e": event_id}).mappings().first()
+        if prior is not None and prior["payload_hash"] != payload_hash:
+            # The same event id carrying a different body is not a retry. It is
+            # a provider defect or a forgery that happens to reuse an id, and
+            # either way the first body stays the one on record. Reported, not
+            # silently merged into "duplicate".
+            _log.warning("webhook_event_id_conflict", extra={"webhook": {
+                "event_id": event_id, "stored_id": prior["id"]}})
+            return IngestResult(
+                WebhookStatus.DUPLICATE, event_id, stored_id=prior["id"],
+                note="CONFLICT: this event id was already delivered with a "
+                     "different body. The first delivery stands; this one was "
+                     "not stored or processed.")
+        return IngestResult(WebhookStatus.DUPLICATE, event_id,
+                            stored_id=prior["id"] if prior else None,
                             note="Already delivered; not processed again.")
 
     if status is not WebhookStatus.RECEIVED:
         return IngestResult(status, event_id, stored_id=row.id, note=note)
 
-    # ---- processing ----------------------------------------------------
     if event_type not in ACTIONABLE:
         row.status = WebhookStatus.IGNORED
         row.processed_at = datetime.now(UTC)
@@ -218,5 +239,63 @@ def ingest(session, raw_body: bytes, signature: str | None,
         return IngestResult(WebhookStatus.IGNORED, event_id, stored_id=row.id,
                             note=row.processing_note)
 
-    from app.webhooks.processing import process_event
-    return process_event(session, row, adapter=adapter)
+    if merchant_id is None:
+        # Nothing of ours touches this entity -- established from our own
+        # tables at ingest, so there is no provider read to queue for it.
+        row.status = WebhookStatus.IGNORED
+        row.processed_at = datetime.now(UTC)
+        row.processing_note = (f"No record of ours touches {entity_id}. Recorded as "
+                               f"provider history; nothing to reconcile.")
+        session.flush()
+        return IngestResult(WebhookStatus.IGNORED, event_id, stored_id=row.id,
+                            note=row.processing_note)
+
+    # What the provider told us, as an INTEGRATION event: in the same
+    # transaction as the stored delivery, and evidence rather than authority --
+    # nothing consumes it as a statement of what happened to money.
+    from app.events.bus import publish
+    publish(session, f"razorpay.{event_type}", tenant_id=tenant_id,
+            merchant_id=merchant_id, entity_id=entity_id, provider="razorpay",
+            correlation_id=correlation_id,
+            payload={"webhook_event_id": row.id, "event_id": event_id,
+                     "occurred_at": occurred_at.isoformat() if occurred_at else None})
+
+    # ---- ACK -------------------------------------------------------------
+    # Processing is NOT done here. It re-reads provider state, which is a
+    # network call, and this request is holding the row it just inserted: a
+    # provider retry of the same delivery would block on that uncommitted key
+    # for as long as our read of Razorpay took. So the delivery is stored,
+    # deduplicated and acknowledged, and a worker processes it
+    # (app/webhooks/processing.py `process_pending`, the `webhooks` job).
+    #
+    # `adapter` is accepted for callers that still pass one and is unused on
+    # this path: the worker builds its own.
+    del adapter
+    return IngestResult(WebhookStatus.RECEIVED, event_id, stored_id=row.id,
+                        note="Accepted. Verification against the provider runs "
+                             "asynchronously.")
+
+
+def _persist_unprocessable(session, raw_body: bytes, payload_hash: str,
+                           event_id_header: str | None, correlation_id: str,
+                           *, note: str) -> IngestResult:
+    """Store a delivery that could not be parsed, as INVALID, and never act on it."""
+    event_id = event_id_header or ("sha256:" + payload_hash)
+    row = WebhookEvent(
+        id=f"WHE_{uuid.uuid4().hex[:10].upper()}", event_id=event_id,
+        provider="razorpay", event_type="unparseable", schema_version=SCHEMA_VERSION,
+        status=WebhookStatus.INVALID, signature_valid=False,
+        payload={"unparseable_body_prefix": raw_body[:512].decode("utf-8", "replace")},
+        payload_hash=payload_hash, correlation_id=correlation_id,
+        processing_note=note[:500],
+    )
+    sp = session.begin_nested()
+    try:
+        session.add(row)
+        session.flush()
+        sp.commit()
+    except IntegrityError:
+        sp.rollback()
+        return IngestResult(WebhookStatus.DUPLICATE, event_id,
+                            note="Already delivered; not stored again.")
+    return IngestResult(WebhookStatus.INVALID, event_id, stored_id=row.id, note=note)

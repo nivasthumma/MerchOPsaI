@@ -34,7 +34,7 @@ from typing import Protocol, runtime_checkable
 
 from sqlalchemy import select
 
-from app.events.vocabulary import is_known
+from app.events.vocabulary import category_of, is_known
 from app.models import EventOutbox, OutboxStatus
 
 
@@ -140,8 +140,10 @@ def publish(session, event_type: str, *, payload: dict | None = None,
     """
     if not is_known(event_type):
         raise UnknownEventType(
-            f"{event_type!r} is not one of MerchantOps v2 §62's events. "
-            f"Add it to app.events.vocabulary.EVENT_TYPES if it should be."
+            f"{event_type!r} is not a known event: not one of MerchantOps v2 "
+            f"§62's timeline events, nor a domain, integration or notification "
+            f"event. Add it to app.events.vocabulary, with its category, if it "
+            f"should be."
         )
 
     body = payload or {}
@@ -161,6 +163,9 @@ def publish(session, event_type: str, *, payload: dict | None = None,
     row = EventOutbox(
         id=f"EVT_{uuid.uuid4().hex[:16].upper()}",
         event_type=event_type,
+        # Derived from the type, never passed: a caller that could choose the
+        # category could put a domain fact on a merchant's live timeline.
+        category=category_of(event_type),
         schema_version=schema_version,
         tenant_id=tenant_id, merchant_id=merchant_id,
         entity_id=entity_id, provider=provider,
@@ -257,7 +262,8 @@ class PostgresEventStore:
     """`EventStore` over `event_outbox`. MerchantOps v2 §13."""
 
     def since(self, session, *, after: str | None = None,
-              merchant_id: str | None = None, limit: int = 100) -> list[Event]:
+              merchant_id: str | None = None, limit: int = 100,
+              categories: tuple[str, ...] | None = None) -> list[Event]:
         """Events after a cursor, oldest first — the SSE resume path.
 
         The cursor is an event id rather than a timestamp because two events in
@@ -268,6 +274,11 @@ class PostgresEventStore:
         q = select(EventOutbox)
         if merchant_id:
             q = q.where(EventOutbox.merchant_id == merchant_id)
+        if categories is not None:
+            # NULL is a row written before categories existed: all of those
+            # were §62 frames, so they stay on the timeline.
+            q = q.where(EventOutbox.category.in_(categories)
+                        | EventOutbox.category.is_(None))
         if after:
             anchor = session.get(EventOutbox, after)
             if anchor is not None:

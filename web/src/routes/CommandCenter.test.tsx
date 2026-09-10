@@ -167,6 +167,86 @@ describe("honesty about the figures", () => {
   });
 });
 
+describe("the recovered split", () => {
+  it("shows captured revenue and verified refunds beside Recovered, unchanged", async () => {
+    mocked.commandCenter.mockResolvedValue({
+      ...DATA,
+      revenue: { ...DATA.revenue, recovered_minor: 150_000,
+                 recovered_captured_minor: 100_000, recovered_refunded_minor: 50_000 },
+    });
+    renderCC();
+
+    // The tile still shows the server's Recovered figure, not a re-added one.
+    const tile = (await screen.findByText("Recovered", { selector: ".tile-l" }))
+      .closest(".tile") as HTMLElement;
+    expect(within(tile).getByTitle("150000 minor units")).toHaveTextContent("₹1,500.00");
+
+    const split = screen.getByText(/Of recovered:/);
+    expect(within(split).getByTitle("100000 minor units")).toHaveTextContent("₹1,000.00");
+    expect(within(split).getByTitle("50000 minor units")).toHaveTextContent("₹500.00");
+    expect(split).toHaveTextContent(/returned to customers by\s+verified refunds/);
+  });
+});
+
+describe("provider status — never implies real money", () => {
+  function providerSection() {
+    return screen.getByRole("heading", { name: "Provider status" })
+      .closest("section") as HTMLElement;
+  }
+
+  it("says plainly that a mock provider moves no real money", async () => {
+    mocked.commandCenter.mockResolvedValue(DATA);   // captured with adapter_mode "mock"
+    renderCC();
+    expect(await screen.findByText("Mock provider — no real money moves."))
+      .toBeInTheDocument();
+    // Not one "live" anywhere in the panel. On a payments console that word is
+    // read as real money whatever qualifies it.
+    expect(providerSection().textContent).not.toMatch(/\blive\b/i);
+  });
+
+  it("calls the provider's test environment test mode, not live", async () => {
+    mocked.commandCenter.mockResolvedValue({
+      ...DATA, provider: { ...DATA.provider, adapter_mode: "live_test_mode", live: true },
+    });
+    renderCC();
+    expect(await screen.findByText("Provider test mode — no real money moves."))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/Mock provider/)).toBeNull();
+    expect(providerSection().textContent).not.toMatch(/\blive\b/i);
+  });
+
+  it("shows webhooks pending and dead-lettered as the server counted them", async () => {
+    mocked.commandCenter.mockResolvedValue({
+      ...DATA, provider: { ...DATA.provider, webhooks_pending: 3, webhooks_dead_lettered: 2 },
+    });
+    renderCC();
+    await screen.findByText("Provider status");
+    const section = providerSection();
+    expect(within(section).getByText("Webhooks pending").nextElementSibling)
+      .toHaveTextContent("3");
+    expect(within(section).getByText("Webhooks dead-lettered").nextElementSibling)
+      .toHaveTextContent("2");
+  });
+});
+
+describe("agent status", () => {
+  it("counts runs by how they were really produced, in words", async () => {
+    mocked.commandCenter.mockResolvedValue({
+      ...DATA,
+      agent: { provider: "anthropic", model: "claude-test", fallback_enabled: true,
+               runs_by_mode: { AI_SUCCESS: 4, AI_UNAVAILABLE_FALLBACK: 2, UNRECORDED: 1 } },
+    });
+    renderCC();
+    const runs = await screen.findByLabelText("Runs by mode");
+    expect(within(runs).getByText("Model result").nextElementSibling).toHaveTextContent("4");
+    expect(within(runs).getByText("Deterministic fallback — model unavailable")
+      .nextElementSibling).toHaveTextContent("2");
+    expect(within(runs).getByText("Mode not recorded").nextElementSibling)
+      .toHaveTextContent("1");
+    expect(screen.getByText("anthropic · claude-test")).toBeInTheDocument();
+  });
+});
+
 describe("freshness", () => {
   it("shows when the data was last good", async () => {
     mocked.commandCenter.mockResolvedValue(DATA);

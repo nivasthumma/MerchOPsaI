@@ -13,8 +13,13 @@
 
 import { Link } from "react-router";
 import { api } from "../api/client";
-import type { CommandCenter as CommandCenterData, FunnelStage } from "../api/types";
-import { Empty, ErrorBanner, Money, SectionHead, Skeleton } from "../components/Bits";
+import type {
+  AgentPosture, CommandCenter as CommandCenterData, FunnelStage, ProviderPosture,
+} from "../api/types";
+import {
+  Empty, ErrorBanner, Money, RecoveredSplit, SectionHead, Skeleton, When,
+} from "../components/Bits";
+import { aiModeSpec } from "../components/AgentActivity";
 import { Status, statusSpec } from "../components/Status";
 import { LiveBar } from "../components/LiveBar";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -40,6 +45,10 @@ export default function CommandCenter() {
           <Attention d={d} />
           <RevenueHealth d={d} />
           <Funnel stages={d.funnel} />
+          {/* Optional-chained: a server older than these fields omits them,
+              and the rest of the page is still worth having. */}
+          {d.agent ? <AgentStatus a={d.agent} /> : null}
+          {d.provider ? <ProviderStatus p={d.provider} /> : null}
           <Activity d={d} />
         </>
       )}
@@ -142,6 +151,12 @@ function RevenueHealth({ d }: { d: CommandCenterData }) {
                 hint="Attempted, outcome not yet established." />
       </div>
 
+      {/* Beside the tile rather than instead of it. "Recovered" keeps meaning
+          what it meant; this says what it is made of, because a refund returned
+          to a customer and revenue captured back are not the same good news. */}
+      <RecoveredSplit captured={r.recovered_captured_minor}
+                      refunded={r.recovered_refunded_minor} />
+
       {/* Reported rather than hidden. A violated ordering is a reporting defect
           that has to be visible, and a page that refuses to render is a page
           nobody can use to find out why. */}
@@ -223,6 +238,93 @@ function Funnel({ stages }: { stages: FunnelStage[] }) {
           })}
         </ol>
       )}
+    </section>
+  );
+}
+
+/** Which reasoning is configured, and how runs were really produced.
+ *
+ *  The two can disagree — a model can be configured and every run still be
+ *  falling back to the planner — which is why the counts are shown rather than
+ *  only the configuration. They are the server's counts, by mode, as sent. */
+function AgentStatus({ a }: { a: AgentPosture }) {
+  const modes = Object.entries(a.runs_by_mode);
+  return (
+    <section className="card">
+      <h3 className="card-title">Agent status</h3>
+      <dl className="kv">
+        <dt>Configured reasoning</dt>
+        <dd>{a.provider}{a.model ? ` · ${a.model}` : ""}</dd>
+        <dt>Fallback</dt>
+        <dd>
+          {a.fallback_enabled
+            ? "On — if the model fails or cannot be reached, the deterministic "
+              + "planner runs instead, and the task says so."
+            : "Off — a model failure fails the run instead of falling back."}
+        </dd>
+      </dl>
+      <h3 className="card-title" style={{ marginTop: 14 }}>Runs by how they were produced</h3>
+      {modes.length === 0 ? (
+        <Empty>No run has been recorded for this merchant yet.</Empty>
+      ) : (
+        <dl className="kv" aria-label="Runs by mode">
+          {modes.map(([mode, n]) => (
+            <div key={mode} style={{ display: "contents" }}>
+              {/* UNRECORDED is the server's key for runs from before the mode
+                  was stored — the same "not recorded" the task page shows. */}
+              <dt>{aiModeSpec(mode === "UNRECORDED" ? null : mode).label}</dt>
+              <dd>{n}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+/** What `adapter_mode` means for money, in words. Never "live": the only
+ *  non-mock mode is the provider's TEST environment, and the word "live" on a
+ *  payments console is read as real money whatever qualifies it (CONTRACT §7). */
+function providerHeadline(mode: string): { title: string; detail: string } {
+  if (mode === "mock") {
+    return { title: "Mock provider — no real money moves.",
+             detail: "Actions are answered by a simulated provider. Nothing is "
+                     + "sent to a payment provider." };
+  }
+  if (mode === "live_test_mode") {
+    return { title: "Provider test mode — no real money moves.",
+             detail: "Actions reach the provider's test environment with test "
+                     + "credentials. Test payments are not real payments." };
+  }
+  // Rendered as received rather than guessed at: an unfamiliar mode is a
+  // reason to check the server, not a reason to reassure.
+  return { title: `Adapter mode: ${mode}`,
+           detail: "Not a mode this console recognises. Check the server's "
+                   + "configuration before relying on it." };
+}
+
+function ProviderStatus({ p }: { p: ProviderPosture }) {
+  const head = providerHeadline(p.adapter_mode);
+  return (
+    <section className="card">
+      <h3 className="card-title">Provider status</h3>
+      <p className={`banner ${p.adapter_mode === "mock" || p.adapter_mode === "live_test_mode"
+                               ? "info" : "warn"}`}>
+        <strong>{head.title}</strong> {head.detail}
+      </p>
+      <dl className="kv">
+        <dt>Adapter mode</dt><dd>{p.adapter_mode}</dd>
+        <dt>Webhook signatures</dt>
+        <dd>
+          {p.webhook_signature_verification
+            ? "Verified — a delivery that fails its signature is refused."
+            : "No webhook secret configured — deliveries are recorded but never acted on."}
+        </dd>
+        <dt>Webhooks pending</dt><dd>{p.webhooks_pending}</dd>
+        <dt>Webhooks dead-lettered</dt><dd>{p.webhooks_dead_lettered}</dd>
+        <dt>Last webhook</dt>
+        <dd>{p.last_webhook_at ? <When iso={p.last_webhook_at} /> : "none received"}</dd>
+      </dl>
     </section>
   );
 }

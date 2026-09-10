@@ -407,6 +407,12 @@ export const api = {
   reject: (id: string) =>
     request<Task>(`/tasks/${encodeURIComponent(id)}/reject`, { method: "POST" }),
 
+  /** Withdraw a pending approval — typically a two-signature one that has its
+   *  first signature — so it can never execute. The task comes back REJECTED;
+   *  a 409 means there was no pending approval left to withdraw. */
+  revoke: (id: string) =>
+    request<Task>(`/tasks/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
+
   /** Re-reads provider state. It never re-issues the action.
    *
    *  The response carries what the read FOUND, and callers must render that

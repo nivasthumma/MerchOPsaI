@@ -66,6 +66,17 @@ def redact(value):
     return value
 
 
+def _stamp_actor(entry: AuditLog) -> None:
+    """Who acted, by kind (app/context.py). Read from the execution context the
+    caller is running in, never from the payload: an actor a caller can name is
+    an actor a caller can forge."""
+    from app.context import current
+
+    ctx = current()
+    entry.actor_type = ctx.actor_type.value
+    entry.actor = ctx.actor
+
+
 def record(session, task, event_type: str, payload: dict | None = None) -> AuditLog:
     entry = AuditLog(
         task_id=getattr(task, "id", None),
@@ -78,6 +89,7 @@ def record(session, task, event_type: str, payload: dict | None = None) -> Audit
         correlation_id=_CURRENT_CORRELATION.get(),
         payload=redact(payload or {}),
     )
+    _stamp_actor(entry)
     session.add(entry)
     session.flush()
     _mirror_to_stream(session, entry, task_id=entry.task_id,
@@ -107,6 +119,7 @@ def record_incident(session, incident, event_type: str,
         correlation_id=_CURRENT_CORRELATION.get() or getattr(incident, "correlation_id", None),
         payload=redact(payload or {}),
     )
+    _stamp_actor(entry)
     session.add(entry)
     session.flush()
     _mirror_to_stream(session, entry, task_id=None,
@@ -206,7 +219,11 @@ def _view(r: AuditLog) -> dict:
     return {"id": r.id, "at": r.created_at.isoformat(), "event": r.event_type,
             "canonical_event": canonical(r.event_type),
             "correlation_id": r.correlation_id, "task_id": r.task_id,
-            "incident_id": r.incident_id, "payload": r.payload}
+            "incident_id": r.incident_id,
+            # Who acted, by kind (app/context.py). NULL on rows written before
+            # the column existed; never guessed for them.
+            "actor_type": r.actor_type, "actor": r.actor,
+            "payload": r.payload}
 
 
 def trace_by_correlation(session, correlation_id: str,

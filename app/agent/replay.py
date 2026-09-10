@@ -167,8 +167,14 @@ def re_reason(session, task_id: str, principal: Principal, provider=None) -> dic
         # The safety assertion the contract actually cares about.
         "external_calls_made": replay_actions,
         "original_actions_unchanged": before_actions == after_actions,
-        "note": ("Re-reasoned against frozen tool results. Action tools were "
-                 "withheld, so no financial side effect was possible."),
+        # Stated as it is. Action tools are NOT withheld (see the comment above
+        # `runtime.run`); what makes a side effect impossible is that the run
+        # halts at approval, a replay's approval is refused at execution, and
+        # a provider read with no recorded result is refused rather than made.
+        "note": ("Re-reasoned against frozen tool results. No action executed: the "
+                 "run halts at the approval gate, a replay's approval can never be "
+                 "executed, and provider reads were served from the recording or "
+                 "refused -- never made live."),
     }
 
 

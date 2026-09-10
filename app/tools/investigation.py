@@ -72,7 +72,7 @@ def get_revenue_summary(session, merchant_id: str) -> ToolResult:
     ev = [
         Evidence(key="current_period_revenue", value=_fmt_inr(cur), source="payments"),
         Evidence(key="previous_period_revenue", value=_fmt_inr(prev), source="payments"),
-        Evidence(key="change_pct", value=pct, source="payments"),
+        Evidence(key="change_pct", value=pct, source="payments", kind="DERIVED"),
     ]
     return ToolResult(success=True, data=data, evidence=ev, risk_level="LOW")
 
@@ -137,7 +137,8 @@ def get_payment_metrics(session, merchant_id: str, method: str | None = None) ->
 
     data: dict = {"period_days": PERIOD_DAYS, "by_method": methods}
     ev = [Evidence(key=f"{m['method']}_success_change_pp",
-                   value=m["delta_pct_points"], source="payments") for m in methods]
+                   value=m["delta_pct_points"], source="payments", kind="DERIVED")
+          for m in methods]
 
     if method:
         hourly = session.execute(text("""
@@ -158,7 +159,7 @@ def get_payment_metrics(session, merchant_id: str, method: str | None = None) ->
         data["hourly_breakdown"]["worst_hours"] = top
         ev.append(Evidence(key=f"{method}_worst_hours",
                            value=[f"{r['hour']:02d}:00 ({r['failure_rate_pct']}% failed)" for r in top],
-                           source="payments"))
+                           source="payments", kind="DERIVED"))
 
         err = session.execute(text("""
             SELECT error_reason, COUNT(*) AS n FROM payments
@@ -481,7 +482,8 @@ def get_payment(session, merchant_id: str, payment_id: str) -> ToolResult:
         Evidence(key="payment_amount", value=_fmt_inr(int(r["amount_minor"])), source="payments"),
         Evidence(key="payment_status", value=r["status"], source="payments"),
         Evidence(key="refundable_balance",
-                 value=_fmt_inr(data["refundable_balance_minor"]), source="payments"),
+                 value=_fmt_inr(data["refundable_balance_minor"]), source="payments",
+                 kind="DERIVED"),
     ]
     if r["error_reason"]:
         ev.append(Evidence(key="error_reason", value=r["error_reason"], source="payments"))

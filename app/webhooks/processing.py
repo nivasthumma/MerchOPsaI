@@ -145,12 +145,6 @@ def process_event(session, event: WebhookEvent, adapter=None):
 
         reverified.append(action.id)
 
-        # §49. An action that came from a recovery candidate settles its plan
-        # here, so a paid link is recorded as recovered when the provider says
-        # so rather than when someone next asks.
-        if action.recovery_candidate_id:
-            settled_plans.add(_settle_candidates_plan(session, action, adapter))
-
         if before is VerificationState.SUCCESS and vr.state in CONTRADICTS_SUCCESS:
             inc = _raise_mismatch(session, action, before, vr.state, event)
             if inc is not None:
@@ -164,6 +158,18 @@ def process_event(session, event: WebhookEvent, adapter=None):
             notes.append(f"{action.id}: {before.value if before else 'None'} "
                          f"-> {vr.state.value}")
 
+        # §49. An action that came from a recovery candidate settles its plan
+        # here, so a paid link is recorded as recovered when the provider says
+        # so rather than when someone next asks.
+        #
+        # AFTER the mismatch, never before: `settle_plan` commits ahead of its
+        # own provider reads, and a failure after that commit used to leave the
+        # contradicted state durable with no incident -- and a retry then read
+        # FAILED as "before" and never raised one. Committed together, or not
+        # at all.
+        if action.recovery_candidate_id:
+            settled_plans.add(_settle_candidates_plan(session, action, adapter))
+
     event.status = WebhookStatus.PROCESSED
     event.processed_at = datetime.now(UTC)
     plans = sorted(p for p in settled_plans if p)
@@ -175,3 +181,128 @@ def process_event(session, event: WebhookEvent, adapter=None):
     return IngestResult(WebhookStatus.PROCESSED, event.event_id, stored_id=event.id,
                         note=event.processing_note, reverified=reverified,
                         incident_id=incident_id)
+
+
+# --------------------------------------------------------------------------
+# Asynchronous processing — validate -> persist -> dedupe -> ACK -> HERE
+# --------------------------------------------------------------------------
+#: How long a claim is honoured before another worker may take the row over.
+#: Also the pacing between attempts on a delivery whose processing failed.
+#: Longer than one delivery can take to process: it may page a payment's
+#: refunds and read back several actions and links, each read bounded at 10s.
+#: A lease shorter than that hands a delivery to a second worker mid-run.
+CLAIM_LEASE_SECONDS = 900
+#: Attempts before a delivery is dead-lettered (status FAILED). Bounded: a
+#: delivery that can never be processed must stop being retried and become
+#: visible, not be retried forever.
+MAX_ATTEMPTS = 5
+
+
+def _claim_next(session, *, lease_seconds: int, max_attempts: int,
+                exclude: list[str]) -> str | None:
+    """Claim the oldest processable delivery and COMMIT the claim.
+
+    `FOR UPDATE SKIP LOCKED` settles which worker gets the row; the claim is
+    then committed at once, so no lock is held across the provider reads that
+    processing makes. `claimed_at` is what keeps a second worker off it after
+    that, until the lease runs out.
+
+    Oldest by the provider's own event time first: processing re-reads the
+    provider rather than trusting the payload, so order cannot change an
+    outcome, but reading in event order keeps the trail legible.
+    """
+    from sqlalchemy import text
+
+    from app.db import checkpoint
+
+    row_id = session.execute(text("""
+        UPDATE webhook_events SET claimed_at = clock_timestamp(), attempts = attempts + 1
+         WHERE id = (SELECT id FROM webhook_events
+                      WHERE status = 'RECEIVED' AND signature_valid
+                        AND attempts < :max
+                        AND NOT (id = ANY(:seen))
+                        AND (claimed_at IS NULL
+                             OR claimed_at < clock_timestamp() - make_interval(secs => :lease))
+                      ORDER BY occurred_at NULLS LAST, received_at, id
+                      FOR UPDATE SKIP LOCKED
+                      LIMIT 1)
+        RETURNING id
+    """), {"max": max_attempts, "lease": lease_seconds, "seen": exclude}).scalar()
+    # `clock_timestamp()`, not `now()`: `now()` is frozen at the start of the
+    # transaction, so a lease measured against it would never run out for a
+    # worker that holds one long session.
+    checkpoint(session)
+    return row_id
+
+
+def dead_letter_exhausted(session, *, max_attempts: int = MAX_ATTEMPTS,
+                          lease_seconds: int = CLAIM_LEASE_SECONDS) -> int:
+    """Deliveries out of attempts become FAILED: kept, visible, not retried.
+
+    Not while a claim is live: a delivery on its last attempt may still be
+    running in another worker, and dead-lettering it underneath that worker
+    would record a failure for a delivery about to succeed."""
+    from sqlalchemy import text
+
+    return session.execute(text("""
+        UPDATE webhook_events
+           SET status = 'FAILED', processed_at = now(),
+               processing_note = COALESCE(processing_note || ' ', '')
+                   || 'Dead-lettered after ' || attempts || ' processing attempts.'
+         WHERE status = 'RECEIVED' AND signature_valid AND attempts >= :max
+           AND (claimed_at IS NULL
+                OR claimed_at < clock_timestamp() - make_interval(secs => :lease))
+    """), {"max": max_attempts, "lease": lease_seconds}).rowcount or 0
+
+
+def process_pending(session, *, limit: int = 50, adapter=None,
+                    lease_seconds: int = CLAIM_LEASE_SECONDS,
+                    max_attempts: int = MAX_ATTEMPTS) -> dict:
+    """Process acknowledged deliveries. The worker's `webhooks` job.
+
+    Each delivery is processed as WEBHOOK, bound to the merchant our own
+    records resolved it to at ingest (never the payload's say-so), so the
+    database narrows everything it touches to that merchant.
+
+    Bounded twice: `limit` deliveries per pass, and `max_attempts` per
+    delivery. A failure leaves the delivery RECEIVED with its attempt counted;
+    the lease is the backoff before it is tried again.
+    """
+    from app import context
+    from app.db import checkpoint
+
+    adapter = adapter or get_adapter(session)
+    report = {"processed": 0, "failed": 0, "dead_lettered": 0, "results": []}
+    # At most one attempt per delivery per pass. Without this a delivery that
+    # fails fast is claimed again at once and spends every attempt it has in
+    # one pass -- dead-lettered in milliseconds for what may be a blip.
+    seen: list[str] = []
+
+    for _ in range(limit):
+        row_id = _claim_next(session, lease_seconds=lease_seconds,
+                             max_attempts=max_attempts, exclude=seen)
+        if row_id is None:
+            break
+        seen.append(row_id)
+        event = session.get(WebhookEvent, row_id)
+        ctx = context.ExecutionContext(
+            context.ActorType.WEBHOOK, actor=event.event_id,
+            tenant_id=event.tenant_id, merchant_id=event.merchant_id,
+            correlation_id=event.correlation_id)
+        try:
+            with context.bound(ctx, session):
+                result = process_event(session, event, adapter=adapter)
+            checkpoint(session)
+            report["processed"] += 1
+            report["results"].append(result)
+        except Exception as exc:
+            session.rollback()
+            event = session.get(WebhookEvent, row_id)
+            event.processing_note = (f"Attempt {event.attempts} failed: "
+                                     f"{type(exc).__name__}: {exc}")[:500]
+            checkpoint(session)
+            report["failed"] += 1
+
+    report["dead_lettered"] = dead_letter_exhausted(session, max_attempts=max_attempts,
+                                                    lease_seconds=lease_seconds)
+    return report

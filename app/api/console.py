@@ -40,7 +40,7 @@ from app.verification.schedule import MAX_ATTEMPTS
 # the page is read top-down by someone under time pressure, and "awaiting
 # approval" is the section with a human in the critical path.
 SECTIONS = ("awaiting_approval", "executing", "unknown", "escalated",
-            "recently_completed")
+            "recently_completed", "failed")
 
 # Everything one row needs to be judged without opening it: amount,
 # customer/payment, incident/task, reason, risk, policy, approval, provider
@@ -126,15 +126,24 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
     # comes to show rows its own count says are not there.
     escalated_where = ("a.escalated = true AND (a.verification_state IS NULL "
                        "OR a.verification_state IN ('UNKNOWN', 'PARTIAL'))")
+    # SUBMITTED joins PENDING: the provider reference is committed before
+    # verification reads the provider, so a request that dies during those
+    # reads leaves a submitted action with no outcome. With PENDING alone it
+    # fell out of every section once it aged past `executing` -- a hidden
+    # UNKNOWN, which this queue exists to make impossible.
     unknown_where = (
         "a.escalated = false AND (a.verification_state IN ('UNKNOWN', 'PARTIAL') "
-        "OR (a.verification_state IS NULL AND a.status = 'PENDING' "
+        "OR (a.verification_state IS NULL AND a.status IN ('PENDING', 'SUBMITTED') "
         "    AND a.created_at < now() - interval '2 minutes'))")
     executing_where = (
         "a.escalated = false AND a.verification_state IS NULL "
         "AND a.status IN ('PENDING', 'SUBMITTED') "
         "AND a.created_at >= now() - interval '2 minutes'")
-    completed_where = "a.verification_state IN ('SUCCESS', 'FAILED')"
+    # Completed and failed are separate sections: "settled" is true of both,
+    # and an operator scanning for what went wrong should not have to read
+    # every success to find it.
+    completed_where = "a.verification_state = 'SUCCESS'"
+    failed_where = "a.verification_state = 'FAILED'"
 
     # Approvals that no action has been claimed for yet. These are the rows the
     # plan cares most about — the human is the gate and the money has not moved
@@ -173,6 +182,7 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
                     "a.next_verify_at NULLS FIRST, a.created_at", limit)
     executing = _rows(session, executing_where, params, "a.created_at DESC", limit)
     completed = _rows(session, completed_where, params, "a.updated_at DESC", limit)
+    failed = _rows(session, failed_where, params, "a.updated_at DESC", limit)
 
     # True totals, not page lengths. See `_count`.
     counts = {
@@ -184,6 +194,7 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
         "unknown": _count(session, unknown_where, params),
         "escalated": _count(session, escalated_where, params),
         "recently_completed": _count(session, completed_where, params),
+        "failed": _count(session, failed_where, params),
     }
 
     return {
@@ -194,6 +205,7 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
         "unknown": unknown,
         "escalated": escalated,
         "recently_completed": completed,
+        "failed": failed,
         "counts": counts,
         # How many rows each section actually returned. A client showing
         # `counts` beside a shorter list is showing a number it cannot
@@ -205,6 +217,7 @@ def action_center(session, merchant_id: str, *, limit: int = 50) -> dict:
             "unknown": len(unknown),
             "escalated": len(escalated),
             "recently_completed": len(completed),
+            "failed": len(failed),
         },
         "limit": limit,
         # Published so the UI can render "next check in 4m" and "gives up after
@@ -310,13 +323,54 @@ def command_center(session, merchant_id: str) -> dict:
             "unknown_minor": led["unknown_minor"],
             "outstanding_minor": led["outstanding_minor"],
             "invariants_broken": led["invariants_broken"],
+            "recovered_captured_minor": led["recovered_captured_minor"],
+            "recovered_refunded_minor": led["recovered_refunded_minor"],
         },
         "funnel": funnel,
         "attention": {k: int(v) for k, v in dict(attention).items()},
         "by_incident": led["by_incident"],
         "by_method": led["by_method"],
         "activity": recent,
+        "agent": _agent_posture(session, merchant_id),
+        "provider": _provider_posture(session, merchant_id),
     }
+
+
+def _agent_posture(session, merchant_id: str) -> dict:
+    """Configured reasoning, and how this merchant's runs were really produced."""
+    from app.config import get_settings
+    from app.llm.deterministic import DeterministicProvider
+
+    s = get_settings()
+    provider = s.resolved_llm_provider
+    by_mode = {(r[0] or "UNRECORDED"): int(r[1]) for r in session.execute(text("""
+        SELECT ai_mode, COUNT(*) FROM agent_tasks
+         WHERE merchant_id = :m AND is_replay = false
+         GROUP BY ai_mode
+    """), {"m": merchant_id}).all()}
+    return {"provider": provider,
+            "model": s.llm_model if provider == "anthropic" else DeterministicProvider.model,
+            "fallback_enabled": s.llm_fallback_enabled,
+            "runs_by_mode": by_mode}
+
+
+def _provider_posture(session, merchant_id: str) -> dict:
+    """Where actions go, and whether provider deliveries are being processed."""
+    from app.config import get_settings
+
+    s = get_settings()
+    mode = s.resolved_razorpay_mode
+    hooks = session.execute(text("""
+        SELECT COUNT(*) FILTER (WHERE status = 'RECEIVED' AND signature_valid) AS pending,
+               COUNT(*) FILTER (WHERE status = 'FAILED')                       AS dead,
+               MAX(received_at)                                                AS last_at
+          FROM webhook_events WHERE merchant_id = :m
+    """), {"m": merchant_id}).mappings().one()
+    return {"adapter_mode": mode, "live": mode == "live_test_mode",
+            "webhook_signature_verification": s.webhook_verification_enabled,
+            "webhooks_pending": int(hooks["pending"] or 0),
+            "webhooks_dead_lettered": int(hooks["dead"] or 0),
+            "last_webhook_at": hooks["last_at"].isoformat() if hooks["last_at"] else None}
 
 
 # --------------------------------------------------------------------------

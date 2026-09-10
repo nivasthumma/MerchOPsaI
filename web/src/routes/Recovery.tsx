@@ -16,7 +16,7 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import type { Dashboard } from "../api/types";
 import {
-  Empty, ErrorBanner, Money, SectionHead, Skeleton,
+  Empty, ErrorBanner, Money, RecoveredSplit, SectionHead, Skeleton,
 } from "../components/Bits";
 import { LiveBar } from "../components/LiveBar";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
@@ -86,6 +86,8 @@ function Ledger({ d }: { d: Dashboard }) {
         <Figures items={activity} />
         <h3 className="card-title">Settled</h3>
         <Figures items={settled} />
+        <RecoveredSplit captured={r.recovered_captured_minor}
+                        refunded={r.recovered_refunded_minor} />
         <p className="sub" style={{ marginBottom: 0 }}>{r.basis}</p>
       </section>
 

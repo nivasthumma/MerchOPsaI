@@ -935,6 +935,36 @@ VERIFICATION_FAILED    PARTIAL_EXECUTION       MODEL_INVALID_OUTPUT
 EVIDENCE_INSUFFICIENT  BUDGET_EXCEEDED         REPLAY_DIVERGED
 ```
 
+## Truth hierarchy and the remediation (ADR-0053)
+
+Every financial fact has one authoritative layer, and everything else is a
+projection of it:
+
+| Fact | Authority |
+|---|---|
+| Did money move at the provider? | the **provider**, read back through the adapter |
+| What we asked for, and under which key | `agent_actions` + `idempotency_records` |
+| What verification last established | `agent_actions.verification_state` (a cached provider read) |
+| What was attempted, recovered, left unknown | the recovery ledger — never a link's creation |
+| What a provider told us | `webhook_events` — evidence, never state |
+| What MerchantOps did, and who did it | `audit_logs`, append-only, with `actor_type` |
+
+Four invariants the remediation made enforceable rather than conventional:
+
+- **No provider call with writes held open** (`app/boundaries.py`) — raising
+  across the suite and the scenario evaluation.
+- **A commit does not shed the tenant scope** — applied on every transaction
+  begin (`app/db.py`), and bound explicitly by background work (`app/context.py`).
+- **Ambiguity is UNKNOWN, and UNKNOWN is only ever read, never re-issued** — on
+  the live adapter as well as the mock.
+- **A replay has no side effects** — its approvals are refused at execution and
+  its provider reads are served from the recording or refused.
+
+The webhook path is validate → persist → dedupe → ACK → worker → verify; events
+are classified DOMAIN / INTEGRATION / UI / NOTIFICATION and only UI and
+NOTIFICATION frames reach the timeline. ADR-0053 has the full decision record and
+what it deliberately leaves open.
+
 ## Future state (not built)
 
 Ordered in `docs/gap-closure-plan.md`.

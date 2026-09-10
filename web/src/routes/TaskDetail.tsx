@@ -7,13 +7,15 @@ import type {
   TraceEvent,
 } from "../api/types";
 import {
-  Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
+  ActorTag, Busy, CopyId, Empty, ErrorBanner, Money, SectionHead, Skeleton, StatStrip,
   StatusPill, VerificationPill, When,
 } from "../components/Bits";
 import { EvidencePanel } from "../components/Evidence";
 import { forgetOne } from "../recent";
 import { PolicyOutcome, policyDecisions } from "../components/PolicyOutcome";
-import { AgentActivity } from "../components/AgentActivity";
+import {
+  AgentActivity, AiModeBadge, FallbackNotice, aiModeSpec,
+} from "../components/AgentActivity";
 import { Stepper } from "../components/Stepper";
 import { useToast } from "../components/Toast";
 import { groupOf, iconOf, summarise, type TraceGroup } from "./trace-summary";
@@ -177,19 +179,32 @@ export default function TaskDetail() {
 
       <Stepper task={task} />
 
+      {/* Outside the collapsible below, so collapsing the activity list can
+          never hide the one sentence saying none of this came from a model. */}
+      <FallbackNotice mode={task.ai_mode} />
+
       {/* P0-08. What actually ran, in the order it ran, from rows the server
           recorded. The stepper above says how far the loop got; this says what
           it did on the way — two different questions, so two components. */}
       <details className="activity-wrap" open>
-        <summary>Agent activity <span className="count">{task.activity?.length ?? 0}</span></summary>
+        <summary>
+          Agent activity <span className="count">{task.activity?.length ?? 0}</span>{" "}
+          <AiModeBadge mode={task.ai_mode} />
+        </summary>
         <AgentActivity steps={task.activity ?? []} />
+        <RunVersionsList task={task} />
       </details>
 
       <StatStrip items={[
         ["Tool calls", task.tool_calls ?? 0],
         ["LLM turns", task.llm_turns ?? 0],
         ["Duration", `${task.duration_ms ?? 0} ms`],
-        ["Reasoning", task.model_version],
+        // `model_version` is recorded when the run starts. On a run the model
+        // began and the planner finished, it names the model — so it is
+        // qualified here rather than left to read as what produced the result.
+        ["Reasoning", task.ai_mode === "AI_FAILED_FALLBACK"
+          ? <>{task.model_version} <span className="muted">→ planner</span></>
+          : task.model_version],
         ["Prompt", task.prompt_version],
       ]} />
 
@@ -222,6 +237,10 @@ export default function TaskDetail() {
           })}
           onReject={() => act("reject", () => api.reject(task.id),
                               () => ["Rejected", "No external call was made."])}
+          onRevoke={() => act("revoke", () => api.revoke(task.id),
+                              () => ["Revoked",
+                                     "The approval was withdrawn and can never execute. "
+                                     + "No external call was made."])}
         />
       ) : null}
 
@@ -383,14 +402,15 @@ export default function TaskDetail() {
                 record is not an approval.
               </caption>
               <thead>
-                <tr><th>Approval</th><th>Action</th><th>Risk</th><th>Decision</th>
-                    <th>Decided by</th><th>Expired</th></tr>
+                <tr><th>Approval</th><th>Action</th><th>Policy</th><th>Risk</th>
+                    <th>Decision</th><th>Decided by</th><th>Expired</th></tr>
               </thead>
               <tbody>
                 {decided.map((a) => (
                   <tr key={a.id}>
                     <td className="mono">{a.id}</td>
                     <td>{a.action_type}</td>
+                    <td><PolicyVersion approval={a} /></td>
                     <td><span className="pill warn">{a.risk_level}</span></td>
                     <td>
                       <span className={`pill ${a.decision === "APPROVED" ? "ok" : "danger"}`}>
@@ -510,13 +530,59 @@ function LiveDot({ state }: { state: "live" | "hidden" | "idle" }) {
   );
 }
 
+/** The versions that reproduce this run — MerchantOps §41 — beside how it was
+ *  produced. Provider and model first, because "which model" is the question a
+ *  reader of a conclusion has; the configuration hash last, because it is the
+ *  one that answers "were the limits the same". A version the run did not
+ *  record is said to be unrecorded rather than left blank, which reads as "none". */
+function RunVersionsList({ task }: { task: Task }) {
+  // Optional-chained: captured fixtures from before versions were served have
+  // none, and a missing block must not take the task page down with it.
+  const v = task.versions;
+  if (!v) return null;
+  const unrecorded = <span className="muted">not recorded</span>;
+  const byModel = aiModeSpec(task.ai_mode);
+  return (
+    <dl className="kv" aria-label="Run versions" style={{ marginTop: 10 }}>
+      <dt>Produced by</dt><dd>{byModel.label}</dd>
+      <dt>Provider</dt>
+      <dd>{v.model_provider ?? unrecorded}{v.model ? ` · ${v.model}` : ""}</dd>
+      <dt>Agent</dt><dd>{v.agent}</dd>
+      <dt>Prompt</dt><dd>{v.prompt ?? unrecorded}</dd>
+      <dt>Policy</dt><dd>{v.policy ?? unrecorded}</dd>
+      <dt>Tool registry</dt><dd>{v.tool_registry ?? unrecorded}</dd>
+      <dt>Workflow</dt><dd>{v.workflow ?? unrecorded}</dd>
+      <dt>Configuration</dt><dd>{v.configuration ?? unrecorded}</dd>
+    </dl>
+  );
+}
+
+/** Which policy asked for an approval. Rendered only when the row carries it:
+ *  approvals recorded before the version was pinned have none, and showing
+ *  today's version beside them would misdate the decision. */
+function PolicyVersion({ approval }: { approval: Approval }) {
+  if (!approval.policy_version) return <span className="muted">—</span>;
+  return (
+    <span>
+      Requested under policy <span className="mono">{approval.policy_version}</span>
+      {approval.policy_rule
+        ? <span className="muted"> · <span className="mono">{approval.policy_rule}</span></span>
+        : null}
+    </span>
+  );
+}
+
 function ApprovalGate(
-  { approval, busy, signer, onApprove, onReject }:
+  { approval, busy, signer, onApprove, onReject, onRevoke }:
   { approval: Approval; busy: string | null;
-    signer: string; onApprove: () => void; onReject: () => void },
+    signer: string; onApprove: () => void; onReject: () => void;
+    onRevoke: () => void },
 ) {
   const expires = new Date(approval.expires_at);
   const expired = expires.getTime() < Date.now();
+  // Defaulted because captured fixtures from before the field was served lack
+  // it; the server always sends it.
+  const signed = approval.signed_by ?? [];
   // Approval is two-step on purpose: a gate you can clear by reflex is not a
   // gate. It arms locally and disarms itself; the server-side authorization
   // check on approve is unchanged and remains the real authority.
@@ -560,6 +626,15 @@ function ApprovalGate(
           <When iso={approval.expires_at} />
           {expired ? <span className="pill danger" style={{ marginLeft: 8 }}>expired</span> : null}
         </dd>
+        {approval.policy_version ? (
+          <><dt>Policy</dt><dd><PolicyVersion approval={approval} /></dd></>
+        ) : null}
+        {signed.length > 0 ? (
+          <>
+            <dt>Signatures</dt>
+            <dd>{signed.length} of {approval.required_signatures} · {signed.join(", ")}</dd>
+          </>
+        ) : null}
       </dl>
       {typeof approval.action_payload.reason === "string" ? (
         <p style={{ marginTop: 12 }}>{approval.action_payload.reason}</p>
@@ -585,6 +660,16 @@ function ApprovalGate(
             : armed ? "Confirm — this moves money" : "Approve and execute"}
         </button>
         <button className="danger" disabled={!!busy} onClick={onReject}>Reject</button>
+        {/* Only once somebody has signed. With no signature there is nothing to
+            withdraw and Reject is the decision; with one, this is how that
+            signature is taken back before a second person completes it.
+            Enabled whoever is looking — whether this session may revoke is the
+            server's call, and a refusal comes back into the banner above. */}
+        {signed.length > 0 ? (
+          <button disabled={!!busy} aria-busy={busy === "revoke"} onClick={onRevoke}>
+            {busy === "revoke" ? "Revoking…" : "Revoke approval"}
+          </button>
+        ) : null}
         <span className="gate-sign">
           <strong>{signer}</strong>SIGNED → AUDIT LOG
         </span>
@@ -739,17 +824,25 @@ const FILTERS: { key: TraceGroup | "all"; label: string }[] = [
  *  would read as a disagreement it is not entitled to have. */
 function Conclusion({ task }: { task: Task }) {
   if (!task.intent && !task.recommendation && task.agent_confidence == null) return null;
+  // Worded by who actually produced it. A run the planner produced — by design
+  // or as a fallback — must not have its output headed "the agent concluded"
+  // beside "model confidence": that is fallback output presented as a model's.
+  // An unrecorded mode keeps the old wording, because nothing on the row says
+  // otherwise and inventing a producer would be the same mistake reversed.
+  const planner = !!task.ai_mode && task.ai_mode !== "AI_SUCCESS";
+  const who = planner ? "planner" : "model";
   return (
     <div className="card conclusion">
-      <SectionHead title="What the agent concluded" />
+      <SectionHead title={planner
+        ? "What the deterministic planner concluded" : "What the agent concluded"} />
       <StatStrip items={[
         ["Intent", task.intent ?? <span className="muted">—</span>],
         ["Recommends", task.recommendation
           ? <code>{task.recommendation.type}</code>
           : <span className="muted">no action</span>],
-        ["Model confidence", task.agent_confidence == null
+        [planner ? "Planner confidence" : "Model confidence", task.agent_confidence == null
           ? <span className="muted">—</span>
-          : <span title="Reported by the model. Consulted by nothing.">
+          : <span title={`Reported by the ${who}. Consulted by nothing.`}>
               {task.agent_confidence.toFixed(2)}
             </span>],
         ["Human required", task.requires_human ? "yes" : "no"],
@@ -758,7 +851,7 @@ function Conclusion({ task }: { task: Task }) {
         ? <p className="muted">{task.recommendation.detail}</p> : null}
       {task.requires_human && !task.model_requires_human ? (
         <p className="muted">
-          Policy requires a human here; the model did not ask for one. The model
+          Policy requires a human here; the {who} did not ask for one. The {who}{" "}
           can raise that bar and never lower it.
         </p>
       ) : null}
@@ -906,7 +999,8 @@ function TracePanel({ events }: { events: TraceEvent[] }) {
                 <span className="when">{new Date(e.at).toLocaleTimeString()}</span>
                 <span className="icon" aria-hidden="true">{iconOf(e.event)}</span>
                 <span className="what">
-                  {e.event}
+                  {e.event}{" "}
+                  <ActorTag type={e.actor_type} actor={e.actor} />
                   {line ? <div className="summary-line">{line}</div> : null}
                   {Object.keys(e.payload ?? {}).length ? (
                     <details>

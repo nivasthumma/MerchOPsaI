@@ -94,7 +94,7 @@ def main() -> int:
     r4 = client.post(f"/payments/{pid}/refund",
                      json={"amount": amount, "speed": "normal",
                            "notes": {"idempotency_key": key}},
-                     headers={"X-Payment-Idempotency": key})
+                     headers={"X-Refund-Idempotency": key})
     ok4 = r4.status_code in (200, 201)
     step("create_refund", ok4, f"HTTP {r4.status_code} {r4.text[:200]}")
     if not ok4:

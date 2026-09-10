@@ -12,15 +12,19 @@
 
 import type { components } from "./schema";
 import type {
+  ActionCenterCounts,
   AgentAction,
   AgentMessage,
+  AgentPosture,
   Approval,
   FailureClass,
   Finding,
   LiveEvent,
   LiveEventList,
+  ProviderPosture,
   RunVersions,
   Task,
+  TraceEvent,
 } from "./types";
 
 type Schema = components["schemas"];
@@ -42,3 +46,10 @@ export type _Failure = ServerFits<Schema["FailureClassView"], FailureClass>;
 export type _Message = ServerFits<Schema["MessageView"], AgentMessage>;
 export type _LiveEvent = ServerFits<Schema["LiveEventView"], LiveEvent>;
 export type _LiveEvents = ServerFits<Schema["LiveEventList"], LiveEventList>;
+// The shapes that tell an operator how a run was produced, who caused an
+// event, and whether the provider is real. Each is one the screen makes a
+// claim from, so each is pinned rather than trusted.
+export type _Trace = ServerFits<Schema["TraceEvent"], TraceEvent>;
+export type _Agent = ServerFits<Schema["AgentPosture"], AgentPosture>;
+export type _Provider = ServerFits<Schema["ProviderPosture"], ProviderPosture>;
+export type _ActionCounts = ServerFits<Schema["ActionCenterCounts"], ActionCenterCounts>;

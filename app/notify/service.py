@@ -151,7 +151,7 @@ def notify(session, *, kind: NotificationKind, tenant_id: str, merchant_id: str,
                 continue
 
             created += 1
-            outcome = _deliver(channel, row)
+            outcome = _deliver(channel, row, session)
             sent += outcome == NotificationStatus.SENT
             failed += outcome == NotificationStatus.FAILED
             suppressed += outcome == NotificationStatus.SUPPRESSED
@@ -160,8 +160,15 @@ def notify(session, *, kind: NotificationKind, tenant_id: str, merchant_id: str,
     return SendReport(created, sent, failed, suppressed, duplicate)
 
 
-def _deliver(channel, row: OperatorNotification) -> NotificationStatus:
-    """One attempt on one channel. Never raises."""
+def _deliver(channel, row: OperatorNotification, session=None) -> NotificationStatus:
+    """One attempt on one channel. Never raises (except a boundary violation in
+    strict mode, which is a defect, not a delivery failure)."""
+    # A network channel is an external call (app/boundaries.py). The drain
+    # still sends while holding its claimed rows -- a known, documented gap
+    # (ADR-0053) -- so outside strict mode this reports it rather than hides it.
+    if getattr(channel, "name", "log") != "log":
+        from app.boundaries import assert_no_open_write
+        assert_no_open_write(session, f"notify.{channel.name}")
     row.attempts += 1
     message = ChannelMessage(
         recipient=row.recipient, title=row.title, body=row.body,
@@ -186,6 +193,13 @@ def _deliver(channel, row: OperatorNotification) -> NotificationStatus:
     return row.status
 
 
+#: Delivery attempts before a notification stops being retried. It stays
+#: FAILED and visible -- the operator console lists it -- but a channel that
+#: has refused five times is not going to be persuaded by a sixth, and an
+#: unbounded retry loop is a hot loop against somebody else's endpoint.
+MAX_DELIVERY_ATTEMPTS = 5
+
+
 def pending_notifications(session, *, merchant_id: str | None = None,
                           limit: int = 200) -> list[OperatorNotification]:
     """Notifications that were recorded and never got out.
@@ -196,7 +210,8 @@ def pending_notifications(session, *, merchant_id: str | None = None,
     """
     q = select(OperatorNotification).where(
         OperatorNotification.status.in_(
-            [NotificationStatus.PENDING, NotificationStatus.FAILED])
+            [NotificationStatus.PENDING, NotificationStatus.FAILED]),
+        OperatorNotification.attempts < MAX_DELIVERY_ATTEMPTS,
     ).order_by(OperatorNotification.created_at).limit(limit)
     if merchant_id:
         q = q.where(OperatorNotification.merchant_id == merchant_id)
@@ -218,7 +233,7 @@ def retry_pending(session, *, limit: int = 200) -> SendReport:
             row.last_error = f"channel {row.channel!r} is no longer configured"
             suppressed += 1
             continue
-        outcome = _deliver(channel, row)
+        outcome = _deliver(channel, row, session)
         sent += outcome == NotificationStatus.SENT
         failed += outcome == NotificationStatus.FAILED
         suppressed += outcome == NotificationStatus.SUPPRESSED

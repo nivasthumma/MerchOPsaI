@@ -312,6 +312,14 @@ async def current_principal(
     # Not reset afterwards, and it does not need to be: this context belongs to
     # this request, and the next one starts from the default.
     tenancy.bind(principal.tenant_id, principal.merchant_id)
+    # And who is acting, for every audit row this request writes (app/context.py).
+    from app import context
+    from app.audit.trace import current_correlation_id
+    context.bind(context.ExecutionContext(
+        context.ActorType.HUMAN, actor=principal.user_id,
+        tenant_id=principal.tenant_id, merchant_id=principal.merchant_id,
+        permissions=tuple(principal.permissions),
+        correlation_id=current_correlation_id()))
     return principal
 
 

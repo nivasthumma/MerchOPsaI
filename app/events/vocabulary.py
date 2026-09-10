@@ -39,7 +39,52 @@ EVENT_TYPES: tuple[str, ...] = (
     "incident.resolved",
 )
 
-_KNOWN = frozenset(EVENT_TYPES)
+# ---- taxonomy (ADR-0053) ----------------------------------------------------
+# EVENT_TYPES above is the UI contract and stays exactly v2 §62's list. The
+# other kinds of event this system raises are named separately, so the stream
+# a browser renders is never widened by accident into "something happened".
+#
+#   DOMAIN        a business fact about money, written in the same transaction
+#                 as the mutation it describes
+#   INTEGRATION   what a provider told us -- evidence, never authority
+#   UI            a timeline frame for a person watching (§62)
+#   NOTIFICATION  somebody needs to be told (consumed by app.notify)
+DOMAIN = "DOMAIN"
+INTEGRATION = "INTEGRATION"
+UI = "UI"
+NOTIFICATION = "NOTIFICATION"
+
+DOMAIN_EVENT_TYPES: tuple[str, ...] = (
+    "refund.requested",      # an approved refund was reserved; nothing sent yet
+    "refund.submitted",      # the provider accepted it and issued a reference
+    "refund.verified",       # an independent read of the payment confirmed it
+    "recovery.completed",    # every eligible candidate of a plan settled
+)
+
+#: One per provider event type we act on (app/webhooks/razorpay.py ACTIONABLE).
+INTEGRATION_EVENT_TYPES: tuple[str, ...] = tuple(f"razorpay.{t}" for t in (
+    "refund.processed", "refund.failed", "refund.created",
+    "payment.captured", "payment.failed",
+    "payment_link.paid", "payment_link.expired", "payment_link.cancelled",
+))
+
+_CATEGORY: dict[str, str] = {
+    **{t: UI for t in EVENT_TYPES},
+    # Shown on the timeline AND what the notify consumers act on; it is a
+    # request for a person's decision before it is a frame.
+    "approval.requested": NOTIFICATION,
+    **{t: DOMAIN for t in DOMAIN_EVENT_TYPES},
+    **{t: INTEGRATION for t in INTEGRATION_EVENT_TYPES},
+}
+
+#: What a browser's timeline receives: the §62 frames and nothing else.
+STREAM_CATEGORIES: tuple[str, ...] = (UI, NOTIFICATION)
+
+_KNOWN = frozenset(_CATEGORY)
+
+
+def category_of(event_type: str) -> str | None:
+    return _CATEGORY.get(event_type)
 
 
 def is_known(event_type: str) -> bool:

@@ -40,6 +40,7 @@ from sqlalchemy import true as sa_true
 
 from app.audit.trace import record
 from app.config import PLATFORM_MARGIN_SECONDS, get_settings
+from app.db import checkpoint
 from app.failures import unsettled_states
 from app.integrations.razorpay.adapter import get_adapter
 from app.models import ActionStatus, AgentAction, AgentTask, TaskStatus, VerificationState
@@ -58,6 +59,13 @@ from app.verification.schedule import (
 # One rule, one place, and a mutant that makes an unknown financial state
 # retryable now changes what the sweep picks up as well as what the table says.
 UNSETTLED = tuple(VerificationState(s) for s in unsettled_states())
+
+# An action with no verification outcome whose request is gone. PENDING: it
+# died between the claim and the provider's answer. SUBMITTED: it died after
+# the reference was committed and before verification recorded anything --
+# possible since the reference is made durable ahead of verification's
+# network reads (app/tools/actions.py). Both may have moved money.
+ABANDONABLE = (ActionStatus.PENDING, ActionStatus.SUBMITTED)
 
 
 @dataclass
@@ -144,7 +152,7 @@ def find_unsettled(session, *, min_age_seconds: int = 30, max_attempts: int = MA
                         and_(AgentAction.verification_state.in_(list(UNSETTLED)),
                              AgentAction.updated_at <= cutoff),
                         and_(AgentAction.verification_state.is_(None),
-                             AgentAction.status == ActionStatus.PENDING,
+                             AgentAction.status.in_(ABANDONABLE),
                              AgentAction.updated_at <= abandoned_cutoff),
                     ))
             # Oldest schedule first, then oldest touch. An action whose next
@@ -203,7 +211,7 @@ def escalate_exhausted(session, *, max_attempts: int = MAX_ATTEMPTS) -> int:
                      AgentAction.verify_attempts >= max_attempts,
                      or_(AgentAction.verification_state.in_(list(UNSETTLED)),
                          and_(AgentAction.verification_state.is_(None),
-                              AgentAction.status == ActionStatus.PENDING)))
+                              AgentAction.status.in_(ABANDONABLE))))
              .all())
     for action in stuck:
         escalate(session, action,
@@ -226,6 +234,12 @@ def reconcile(session, *, min_age_seconds: int = 30, max_attempts: int = MAX_ATT
     for action in find_unsettled(session, min_age_seconds=min_age_seconds,
                                  max_attempts=max_attempts, limit=limit,
                                  respect_backoff=respect_backoff):
+        # One short transaction per action. Without this the sweep held an
+        # UPDATE lock on every action it had settled so far -- up to `limit` of
+        # them -- across every later action's provider calls, so a webhook or
+        # an operator's re-verify of an already-settled action waited behind a
+        # provider that was slow about a different one (app/boundaries.py).
+        checkpoint(session)
         report.scanned += 1
         before = action.verification_state
         task = session.get(AgentTask, action.task_id)
@@ -327,7 +341,11 @@ def unsettled_queue(session, *, merchant_id: str | None = None,
                    -- An abandoned claim. It keeps a NULL verification_state, so
                    -- listing only the two named states would drop the one
                    -- action nobody has ever established an outcome for.
-                   OR (a.verification_state IS NULL AND a.status = 'PENDING'))"""]
+                   -- SUBMITTED joins it: the reference is committed before
+                   -- verification's reads, so a request that dies during them
+                   -- leaves a submitted action nobody verified.
+                   OR (a.verification_state IS NULL
+                       AND a.status IN ('PENDING', 'SUBMITTED')))"""]
     if merchant_id:
         clauses.append("a.merchant_id = :m")
         params["m"] = merchant_id

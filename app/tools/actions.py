@@ -21,11 +21,20 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db import checkpoint
+from app.idempotency import IdempotencyConflict, action_operation
+from app.idempotency import claim as idem_claim
+from app.idempotency import settle as idem_settle
 from app.integrations.mapping import resolve as resolve_mapping
 from app.integrations.razorpay.adapter import RazorpayAdapter
 from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
-from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
+from app.tools.contracts import (
+    Evidence,
+    RiskClass,
+    ToolResult,
+    ToolSpec,
+    verification_kind,
+)
 from app.verification.engine import VerificationResult, verify_refund
 from app.verification.schedule import record_attempt
 
@@ -75,6 +84,30 @@ SPEC_REFUND_STATUS = ToolSpec(
     required_permissions=["read:orders"],
     risk_class=RiskClass.LOW,
 )
+
+
+#: What an action's status becomes once verification has read the provider.
+#: One table, used by every path that settles an action.
+ACTION_STATUS_FOR = {
+    VerificationState.SUCCESS: ActionStatus.CONFIRMED,
+    VerificationState.FAILED: ActionStatus.FAILED,
+    VerificationState.PARTIAL: ActionStatus.SUBMITTED,
+    VerificationState.UNKNOWN: ActionStatus.UNKNOWN,
+}
+
+
+def _domain_event(session, event_type: str, action: AgentAction, **extra) -> None:
+    """A business fact about money, written into THIS transaction -- the one
+    carrying the mutation it describes (app/events/bus.py). Either both land or
+    neither does; never "committed, then announced"."""
+    from app.events.bus import publish
+
+    publish(session, event_type, merchant_id=action.merchant_id,
+            entity_id=action.external_payment_id, provider="razorpay",
+            task_id=action.task_id,
+            payload={"action_id": action.id, "payment_id": action.target_payment_id,
+                     "amount_minor": action.amount_minor,
+                     "external_reference": action.external_reference, **extra})
 
 
 def derive_idempotency_key(merchant_id: str, external_payment_id: str,
@@ -175,6 +208,23 @@ def execute_refund(
 
     key = derive_idempotency_key(merchant_id, external_id, "refund", approval_id)
 
+    # --- unified idempotency (app/idempotency.py) -------------------------
+    # The key remembers the request it was first used for. The same key with
+    # a different request is refused HERE, before a row is reserved or the
+    # provider is called; the same request falls through to the reservation,
+    # whose UNIQUE key reports it as the duplicate it is.
+    try:
+        claimed = idem_claim(session, merchant_id=merchant_id,
+                             operation=action_operation("refund"), business_key=key,
+                   request={"payment_id": synthetic_payment_id,
+                            "external_payment_id": external_id,
+                            "amount_minor": amount_minor})
+    except IdempotencyConflict as e:
+        return RefundOutcome(None, ToolResult(  # type: ignore[arg-type]
+            success=False, error_code="IDEMPOTENCY_CONFLICT",
+            data={"error": "idempotency_conflict", "detail": str(e)},
+            risk_level="HIGH"))
+
     # --- CONTRACT §24: RESERVE before calling -----------------------------
     action = AgentAction(
         id=f"ACT_{uuid.uuid4().hex[:12].upper()}", task_id=task_id, merchant_id=merchant_id,
@@ -219,6 +269,11 @@ def execute_refund(
                       "existing_action": dict(prior)},
                 risk_level="HIGH"))
 
+        # No action row exists for this request and none will: it lost the
+        # race before anything was sent. Its idempotency record says so,
+        # rather than sitting IN_PROGRESS for a request that ended here.
+        if claimed.fresh:
+            idem_settle(claimed.record, status="FAILED")
         live = session.execute(text("""
             SELECT id, status, external_reference, verification_state, approval_id
             FROM agent_actions
@@ -234,6 +289,8 @@ def execute_refund(
                              "made. Exactly one refund proceeds."),
                   "existing_action": dict(live) if live else None},
             risk_level="HIGH"))
+
+    _domain_event(session, "refund.requested", action, approval_id=approval_id)
 
     # The reservation is worth nothing until it is durable. A flushed row is
     # still inside the request's transaction and dies with it, so a crash after
@@ -252,28 +309,35 @@ def execute_refund(
         external_ref = ext.id
         action.status = ActionStatus.SUBMITTED
         action.external_reference = external_ref
-        session.flush()
+        _domain_event(session, "refund.submitted", action)
+        # The reference is the one thing that ties a real refund to this row.
+        # Committed before verification's network reads, not after them: a
+        # crash mid-verification must not leave the refund unattributable.
+        checkpoint(session)
     except ProviderTimeout as e:
         # The outcome is genuinely unknown. Do NOT retry blindly (CONTRACT §35).
         action.status = ActionStatus.UNKNOWN
-        session.flush()
+        # Durable BEFORE the reads below. They are network calls, and the one
+        # fact that must survive whatever happens during them is that this
+        # action may have moved money (app/boundaries.py).
+        checkpoint(session)
 
         # Reconcile immediately: ask the provider about our own key. If the
         # outage has cleared we recover the reference and can settle the state
         # honestly instead of parking it in UNKNOWN.
         recovered = None
         try:
-            recovered = adapter.find_refund_by_idempotency_key(key)
+            recovered = adapter.find_refund_by_idempotency_key(
+                key, external_payment_id=external_id)
         except Exception:
             recovered = None
-        if recovered is not None:
-            action.external_reference = recovered.id
-            session.flush()
 
         vr = verify_refund(adapter, external_payment_id=external_id,
                            expected_refund_minor=amount_minor,
                            refunded_before_minor=refunded_before,
-                           external_reference=action.external_reference)
+                           external_reference=recovered.id if recovered else None)
+        if recovered is not None:
+            action.external_reference = recovered.id
         if e.submitted and vr.state is VerificationState.SUCCESS \
                 and action.external_reference is None:
             # The payment shows a refund, but with no reference we cannot
@@ -293,15 +357,44 @@ def execute_refund(
         action.verification_state = vr.state
         action.verification_detail = vr.as_dict()
         action.verify_attempts += 1
+        # The action's status follows what verification established, exactly
+        # as on the ordinary path. It used to stay UNKNOWN whatever was found:
+        # a timeout-before-submit verified FAILED sat as an UNKNOWN action that
+        # no queue listed (they select on verification state), and a lost
+        # response the provider then confirmed stayed UNKNOWN beside SUCCESS.
+        action.status = ACTION_STATUS_FOR[vr.state]
         # A timeout is the single most likely way an action reaches UNKNOWN, so
         # it is the last place that may skip the schedule. Without this the
         # action the reconciliation queue exists for would arrive in it with no
         # next-check time.
         record_attempt(session, action, vr.state)
+        if vr.state is VerificationState.SUCCESS:
+            _domain_event(session, "refund.verified", action, reconciled_after_timeout=True)
+            # Established by our own key and an independent read of the
+            # payment -- the same evidence the ordinary path requires.
+            return RefundOutcome(action, ToolResult(
+                success=True,
+                data={"verification": vr.as_dict(), "action_id": action.id,
+                      "amount_minor": amount_minor, "payment_id": synthetic_payment_id,
+                      "reconciled_after": str(e)},
+                evidence=[
+                    Evidence(key="external_reference", value=action.external_reference,
+                             source="razorpay", kind="EXECUTED"),
+                    Evidence(key="verification_state", value=vr.state.value,
+                             source="verification",
+                             kind=verification_kind(vr.state.value)),
+                ],
+                external_reference=action.external_reference, risk_level="HIGH",
+                approval_id=approval_id))
         return RefundOutcome(action, ToolResult(
-            success=False, error_code="EXTERNAL_STATE_UNKNOWN",
+            success=False,
+            # FAILED is reachable here only when nothing was sent: a timeout
+            # AFTER submission that reads unchanged is downgraded to UNKNOWN
+            # above. So the honest code for it is the timeout itself.
+            error_code=("TOOL_TIMEOUT" if vr.state is VerificationState.FAILED
+                        else "EXTERNAL_STATE_UNKNOWN"),
             data={"verification": vr.as_dict(), "action_id": action.id},
-            evidence=[Evidence(key="verification_state", value=vr.state.value, source="verification")],
+            evidence=[Evidence(key="verification_state", value=vr.state.value, source="verification", kind=verification_kind(vr.state.value))],
             external_reference=None, risk_level="HIGH", approval_id=approval_id))
     except ProviderError as e:
         action.status = ActionStatus.FAILED
@@ -325,12 +418,9 @@ def execute_refund(
     action.verification_state = vr.state
     action.verification_detail = vr.as_dict()
     action.verify_attempts += 1
-    action.status = {
-        VerificationState.SUCCESS: ActionStatus.CONFIRMED,
-        VerificationState.FAILED: ActionStatus.FAILED,
-        VerificationState.PARTIAL: ActionStatus.SUBMITTED,
-        VerificationState.UNKNOWN: ActionStatus.UNKNOWN,
-    }[vr.state]
+    action.status = ACTION_STATUS_FOR[vr.state]
+    if vr.state is VerificationState.SUCCESS:
+        _domain_event(session, "refund.verified", action)
     # The first read is attempt one of the ladder, not a separate thing that
     # happens to look like one. Stamping the schedule here is what makes an
     # action that comes back UNKNOWN from its very first verification appear in
@@ -342,10 +432,12 @@ def execute_refund(
         data={"verification": vr.as_dict(), "action_id": action.id,
               "amount_minor": amount_minor, "payment_id": synthetic_payment_id},
         evidence=[
-            Evidence(key="external_reference", value=external_ref, source="razorpay"),
-            Evidence(key="verification_state", value=vr.state.value, source="verification"),
+            Evidence(key="external_reference", value=external_ref, source="razorpay",
+                     kind="EXECUTED"),
+            Evidence(key="verification_state", value=vr.state.value, source="verification", kind=verification_kind(vr.state.value)),
             Evidence(key="amount_refunded_after",
-                     value=vr.actual.get("amount_refunded_minor"), source="razorpay"),
+                     value=vr.actual.get("amount_refunded_minor"), source="razorpay",
+                     kind=verification_kind(vr.state.value)),
         ],
         external_reference=external_ref, risk_level="HIGH", approval_id=approval_id))
 
@@ -360,17 +452,21 @@ def _reverify_refund(session, adapter, action) -> VerificationResult:
     reference = action.external_reference
     if reference is None:
         try:
-            found = adapter.find_refund_by_idempotency_key(action.idempotency_key)
+            found = adapter.find_refund_by_idempotency_key(
+                action.idempotency_key, external_payment_id=action.external_payment_id)
         except Exception:
             found = None
         if found is not None:
             reference = found.id
-            action.external_reference = reference
 
-    return verify_refund(adapter, external_payment_id=action.external_payment_id or "",
-                         expected_refund_minor=action.amount_minor,
-                         refunded_before_minor=refunded_before,
-                         external_reference=reference)
+    vr = verify_refund(adapter, external_payment_id=action.external_payment_id or "",
+                       expected_refund_minor=action.amount_minor,
+                       refunded_before_minor=refunded_before,
+                       external_reference=reference)
+    # Recorded after the provider reads, not before: an attribute set ahead of
+    # a network call is a pending write held across it (app/boundaries.py).
+    action.external_reference = reference
+    return vr
 
 
 def _reverify_payment_link(session, adapter, action) -> VerificationResult:
@@ -384,15 +480,16 @@ def _reverify_payment_link(session, adapter, action) -> VerificationResult:
             found = None
         if found is not None:
             reference = found.id
-            action.external_reference = reference
     if reference is None:
         return VerificationResult(
             VerificationState.UNKNOWN,
             "No payment link reference, and the provider could not be asked about "
             "our key. Whether a link reached the customer cannot be established.",
             {"idempotency_key": action.idempotency_key[:16] + "..."}, {}, None)
-    return verify_payment_link(adapter, link_id=reference,
-                               expected_amount_minor=action.amount_minor)
+    vr = verify_payment_link(adapter, link_id=reference,
+                             expected_amount_minor=action.amount_minor)
+    action.external_reference = reference     # after the reads; see _reverify_refund
+    return vr
 
 
 def _reverify_notification(session, adapter, action) -> VerificationResult:
@@ -406,14 +503,15 @@ def _reverify_notification(session, adapter, action) -> VerificationResult:
             found = None
         if found is not None:
             reference = found.id
-            action.external_reference = reference
     if reference is None:
         return VerificationResult(
             VerificationState.UNKNOWN,
             "No notification reference, and the provider could not be asked about "
             "our key. Whether the customer was contacted cannot be established.",
             {"idempotency_key": action.idempotency_key[:16] + "..."}, {}, None)
-    return verify_notification(adapter, notification_id=reference)
+    vr = verify_notification(adapter, notification_id=reference)
+    action.external_reference = reference     # after the reads; see _reverify_refund
+    return vr
 
 
 # One re-verifier per action type. There used to be one, and it was the refund
@@ -433,6 +531,10 @@ REVERIFIERS = {
 
 def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> VerificationResult:
     """CONTRACT §26 (amended) — the UNKNOWN exit path, per action type."""
+    # The sweep, the webhook worker and the operator's Re-verify all enter
+    # here, and every one of them reaches the provider next. Whatever the
+    # caller wrote first is committed rather than held across those reads.
+    checkpoint(session)
     reverifier = REVERIFIERS.get(action.action_type)
     if reverifier is None:
         vr = VerificationResult(
@@ -443,15 +545,13 @@ def reverify_action(session, adapter: RazorpayAdapter, action: AgentAction) -> V
     else:
         vr = reverifier(session, adapter, action)
 
+    if (action.action_type == "refund" and vr.state is VerificationState.SUCCESS
+            and action.verification_state is not VerificationState.SUCCESS):
+        _domain_event(session, "refund.verified", action, reconciled=True)
     action.verification_state = vr.state
     action.verification_detail = vr.as_dict()
     action.verify_attempts += 1
-    action.status = {
-        VerificationState.SUCCESS: ActionStatus.CONFIRMED,
-        VerificationState.FAILED: ActionStatus.FAILED,
-        VerificationState.PARTIAL: ActionStatus.SUBMITTED,
-        VerificationState.UNKNOWN: ActionStatus.UNKNOWN,
-    }[vr.state]
+    action.status = ACTION_STATUS_FOR[vr.state]
     # Every re-read goes through here — the sweep, the webhook, the operator's
     # Re-verify button — so the schedule is stamped once, in the one place all
     # three meet, rather than three times with three chances to drift.
@@ -489,7 +589,9 @@ def get_refund_status(session, merchant_id: str, action_id: str) -> ToolResult:
         success=True, data=data, external_reference=action.external_reference,
         risk_level="LOW",
         evidence=[
-            Evidence(key="action_status", value=action.status.value, source="agent_actions"),
+            Evidence(key="action_status", value=action.status.value, source="agent_actions",
+                     kind="EXECUTED"),
             Evidence(key="verification_state", value=data["verification_state"],
-                     source="verification"),
+                     source="verification",
+                     kind=verification_kind(data["verification_state"])),
         ])

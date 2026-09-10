@@ -1,9 +1,10 @@
 // The Action Center — plan P0-03, P0-04, P1-04.
 //
 // A first-class financial operations queue, in the five sections the plan
-// names and in its order. The order is the design: someone opening this page
-// during an incident is looking for the thing waiting on them, and that is
-// always the approval queue.
+// names and in its order, plus Failed — verified failures, split out of
+// "Recently completed" so a settled failure is never read as a success. The
+// order is the design: someone opening this page during an incident is
+// looking for the thing waiting on them, and that is always the approval queue.
 //
 // The UNKNOWN section is not a status list. P0-04 is explicit that UNKNOWN is
 // unresolved financial *work*, so each row carries age, amount, provider,
@@ -38,7 +39,7 @@ import { useModalFocus } from "../hooks/useModalFocus";
 const INTERVAL_MS = 4000;
 
 type SectionKey = "awaiting_approval" | "executing" | "unknown" | "escalated"
-                | "recently_completed";
+                | "recently_completed" | "failed";
 
 /** What to tell the operator happened. Shaped like a toast because that is
  *  where it goes; named for what it is, because the point is that an action
@@ -95,7 +96,14 @@ const TITLES: Record<SectionKey, { title: string; sub: string; status: string }>
   },
   recently_completed: {
     title: "Recently completed", status: "SUCCESS",
-    sub: "Settled either way, verified against the provider.",
+    sub: "Verified against the provider as having taken effect. The money moved.",
+  },
+  // Split out of "Recently completed", which used to hold both settled
+  // outcomes: "the money moved" and "it did not take effect" under one heading
+  // is a list an operator has to read row by row to learn which it is.
+  failed: {
+    title: "Failed", status: "FAILED",
+    sub: "Verified against the provider as not having taken effect. Settled — no money moved, and nothing here is waiting on reconciliation.",
   },
 };
 
@@ -257,7 +265,10 @@ function emptyCopy(k: SectionKey): string {
       return "Automatic reconciliation has settled everything it was given. "
            + "Nothing needs a person.";
     case "recently_completed":
-      return "No action has settled yet.";
+      return "No action has been verified as having taken effect yet.";
+    case "failed":
+      return "No action has been verified as failed. An action lands here only "
+           + "once the provider confirms it did not take effect.";
   }
 }
 

@@ -149,7 +149,8 @@ def apply(connection, scope: Scope | None = None) -> None:
 #: Tables carrying a merchant_id of their own.
 MERCHANT_SCOPED: tuple[str, ...] = (
     "agent_actions", "agent_tasks", "approvals", "audit_logs", "customers",
-    "event_outbox", "evidence_edges", "hypotheses", "incidents", "notifications",
+    "event_outbox", "evidence_edges", "hypotheses", "idempotency_records",
+    "incidents", "notifications",
     "operator_notifications", "orders", "payment_links", "payments",
     # A mapping ties one merchant's synthetic payment to a real provider payment
     # id. Arriving from feat/incident-spine, which had no row-level security, it

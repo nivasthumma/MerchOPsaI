@@ -39,9 +39,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db import checkpoint
+from app.idempotency import IdempotencyConflict, action_operation
+from app.idempotency import claim as idem_claim
 from app.integrations.razorpay.faults import ProviderError, ProviderTimeout
 from app.models import ActionStatus, AgentAction, VerificationState
-from app.tools.contracts import Evidence, RiskClass, ToolResult, ToolSpec
+from app.tools.contracts import (
+    Evidence,
+    RiskClass,
+    ToolResult,
+    ToolSpec,
+    verification_kind,
+)
 from app.verification.engine import VerificationResult
 from app.verification.schedule import record_attempt
 
@@ -130,6 +138,17 @@ def _reserve(session, *, task_id, merchant_id, action_type, target, amount_minor
              key, approval_id) -> tuple[AgentAction | None, ToolResult | None]:
     """Claim the action before calling out. UNIQUE(idempotency_key) is what makes
     a duplicate send impossible rather than merely unlikely."""
+    # Same key, different request: refused before anything is reserved or sent
+    # (app/idempotency.py). The same request falls through to the UNIQUE key.
+    try:
+        idem_claim(session, merchant_id=merchant_id, operation=action_operation(action_type),
+                   business_key=key,
+                   request={"target": target, "amount_minor": amount_minor})
+    except IdempotencyConflict as e:
+        return None, ToolResult(
+            success=False, error_code="IDEMPOTENCY_CONFLICT",
+            data={"error": "idempotency_conflict", "detail": str(e)},
+            risk_level="MEDIUM")
     action = AgentAction(
         id=f"ACT_{uuid.uuid4().hex[:12].upper()}", task_id=task_id,
         merchant_id=merchant_id, action_type=action_type, target_payment_id=target,
@@ -217,7 +236,8 @@ def execute_payment_link(session, adapter, *, task_id: str, merchant_id: str,
 
     action.status = ActionStatus.SUBMITTED
     action.external_reference = link.id
-    session.flush()
+    # Durable before the read-back below, which is a network call.
+    checkpoint(session)
 
     vr = verify_payment_link(adapter, link_id=link.id, expected_amount_minor=amount)
     action.verification_state = vr.state
@@ -234,8 +254,9 @@ def execute_payment_link(session, adapter, *, task_id: str, merchant_id: str,
               "short_url": link.short_url, "amount_minor": amount,
               "verification": vr.as_dict()},
         evidence=[
-            Evidence(key="payment_link_id", value=link.id, source="razorpay"),
-            Evidence(key="verification_state", value=vr.state.value, source="verification"),
+            Evidence(key="payment_link_id", value=link.id, source="razorpay", kind="EXECUTED"),
+            Evidence(key="verification_state", value=vr.state.value, source="verification",
+                     kind=verification_kind(vr.state.value)),
         ],
         external_reference=link.id, risk_level="MEDIUM", approval_id=approval_id))
 
@@ -293,7 +314,8 @@ def execute_notification(session, adapter, *, task_id: str, merchant_id: str,
 
     action.status = ActionStatus.SUBMITTED
     action.external_reference = notif.id
-    session.flush()
+    # Durable before the read-back below, which is a network call.
+    checkpoint(session)
 
     vr = verify_notification(adapter, notification_id=notif.id)
     action.verification_state = vr.state
@@ -309,8 +331,9 @@ def execute_notification(session, adapter, *, task_id: str, merchant_id: str,
         data={"action_id": action.id, "notification_id": notif.id,
               "channel": channel, "template": template, "verification": vr.as_dict()},
         evidence=[
-            Evidence(key="notification_id", value=notif.id, source="razorpay"),
-            Evidence(key="verification_state", value=vr.state.value, source="verification"),
+            Evidence(key="notification_id", value=notif.id, source="razorpay", kind="EXECUTED"),
+            Evidence(key="verification_state", value=vr.state.value, source="verification",
+                     kind=verification_kind(vr.state.value)),
         ],
         external_reference=notif.id, risk_level="MEDIUM", approval_id=approval_id))
 
@@ -332,13 +355,19 @@ def verify_payment_link(adapter, *, link_id: str,
                                   "The provider has no such payment link.",
                                   expected, {}, link_id)
     actual = {"status": link.status, "amount_minor": link.amount_minor,
+              "amount_paid_minor": link.amount_paid_minor,
               "short_url": link.short_url}
     if link.amount_minor != expected_amount_minor:
         return VerificationResult(
             VerificationState.PARTIAL,
             f"The link exists but is for {link.amount_minor / 100:,.2f}, not "
             f"{expected_amount_minor / 100:,.2f}.", expected, actual, link_id)
-    if link.status in ("created", "paid"):
+    # What this verifies is the ACTION -- a usable link exists -- not the money.
+    # `partially_paid` is a live link a customer has started paying; reading it
+    # as FAILED would tell an operator the link is dead while money arrives on
+    # it. Whether anything was recovered is the ledger's question, answered
+    # from `amount_paid_minor` (app/recovery/dispatch.py), never from this.
+    if link.status in ("created", "partially_paid", "paid"):
         return VerificationResult(VerificationState.SUCCESS,
                                   f"Payment link {link_id} exists and is {link.status}.",
                                   expected, actual, link_id)

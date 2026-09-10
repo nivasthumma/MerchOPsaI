@@ -110,6 +110,10 @@ MAP: dict[str, Policy] = {
               "behind every claim the agent made"),
     "approvals": Policy(
         None, "Who authorised a movement of money, and when"),
+    "idempotency_records": Policy(
+        None, "The memory that a financial operation already happened under this "
+              "key, and for which request. Pruning one makes the key reusable, "
+              "which is the one thing a key on a movement of money must never be"),
     "incidents": Policy(
         None, "The durable object everything else refers to"),
 }

@@ -147,6 +147,25 @@ describe("replay", () => {
   });
 });
 
+describe("revoke", () => {
+  it("posts to the task's own revoke endpoint", async () => {
+    setToken("t");
+    fetchMock.mockResolvedValue(jsonResponse({ id: "TASK_1", status: "REJECTED" }));
+    await api.revoke("TASK_1");
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/tasks/TASK_1/revoke");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("reports a 409 as a refusal that changed nothing", async () => {
+    setToken("t");
+    fetchMock.mockResolvedValue(jsonResponse(
+      { detail: { error: "There is no pending approval.", code: "NO_PENDING_APPROVAL" } }, 409));
+    const err = await rejection(api.revoke("TASK_1"));
+    expect(err.code).toBe("NO_PENDING_APPROVAL");
+    expect(err.effect).toBe("refused");
+  });
+});
+
 describe("activity counter", () => {
   it("counts a request as in flight for exactly as long as it is", async () => {
     setToken("t");

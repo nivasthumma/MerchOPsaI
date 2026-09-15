@@ -8,24 +8,50 @@
 [![Scenarios](https://img.shields.io/badge/scenarios-187%2F187-brightgreen.svg)](#-measured-results)
 [![Mutations caught](https://img.shields.io/badge/mutations%20caught-150%2F150%20%C2%B7%2024%2F24%20web-brightgreen.svg)](#-measured-results)
 
-An AI agent that investigates merchant payment and revenue problems, recommends a
-corrective action, and — only with human approval — executes it through a controlled
-tool, then independently verifies what actually happened.
+**An AI payments-operations control plane.** It detects merchant payment and revenue
+incidents, investigates them with an agent, proposes a corrective action, and — only after
+policy and a human approve — executes it, independently verifies what actually happened at
+the provider, and reconciles anything it cannot yet prove.
+
+> **The model reasons. Deterministic controls hold authority.**
+> The model never moves money, chooses a tenant, sets a limit or skips an approval.
+
+**🚀 Live demo: [merchantops-agent.vercel.app](https://merchantops-agent.vercel.app)** —
+sign in with one click as a seeded owner, approver or analyst. Synthetic data and a mock
+payment provider: no real money moves. [How to use it ↓](#-live-demo)
 
 > **Independent developer project. Uses Razorpay Test Mode APIs where applicable.
 > Not affiliated with, sponsored by, or endorsed by Razorpay.**
 
 The point of this project is not the chatbot. It is the **trustworthy action loop
-around the agent**:
+around the agent**, end to end:
 
 ```
-DETECT → INCIDENT → REASON → DECIDE → POLICY CHECK → HUMAN APPROVAL → ACT
-       → VERIFY → AUDIT → REPLAY → EVALUATE
+DETECT → INVESTIGATE → EVIDENCE → POLICY → HUMAN APPROVAL → ACT
+       → VERIFY → RECONCILE → MEASURE → AUDIT → REPLAY
 ```
 
 The loop begins at detection, not at a question: a deterministic sweep over payment
 history raises incidents, and an incident dispatches the agent. Asking a question
 directly is the second entry point, not the only one.
+
+### What makes it trustworthy
+
+| Guarantee | How it holds |
+|---|---|
+| **An HTTP 200 is not an outcome** | Every action is read back at the provider before it counts: `SUCCESS`, `FAILED`, `PARTIAL` or `UNKNOWN` |
+| **`UNKNOWN` is never retried** | A timeout, 5xx or 409 is settled by asking the provider about our own idempotency key — never by sending the request again |
+| **Money counts only when it moved** | A payment link created is an attempt. Recovered revenue is a captured payment; a verified refund is reported separately |
+| **Tenants are walled twice** | The application's own checks **and** PostgreSQL row-level security, on a database role that cannot bypass it |
+| **No external call inside a transaction** | Checked on every provider call, and enforced across the whole test suite and the scenario evaluation |
+| **Same key, different request → refused** | Unified idempotency records sit beside the provider's own idempotency key |
+| **Approvals pin what was approved** | The policy snapshot is recorded; a changed payload, an expired, revoked or replayed approval never executes |
+| **AI fallback is never disguised** | Every run records whether the model or the deterministic planner produced it, and the console says so |
+| **Replay has zero side effects** | Frozen tool results; a provider read with no recording is refused, not made |
+| **The audit trail names who acted** | Append-only, enforced by PostgreSQL; every row says `HUMAN`, `AGENT`, `WORKER`, `WEBHOOK` or `SYSTEM` |
+
+**Stack:** FastAPI · SQLAlchemy · PostgreSQL · React + Vite + TypeScript · Claude or a
+deterministic planner · Razorpay Test Mode adapter (mock by default) · deployed on Vercel.
 
 ---
 
@@ -35,6 +61,7 @@ directly is the second entry point, not the only one.
 
 | | |
 |---|---|
+| [🚀 Live demo](#-live-demo) | One-click demo accounts on the deployed console |
 | [🧭 Built vs designed](#-built-vs-designed) | What ships today vs what is architecture |
 | [⚠️ Two honesty disclosures](#-two-honesty-disclosures) | Mocked execution, and what the metrics measure |
 | [📊 Measured results](#-measured-results) | 1332 tests · 187/187 scenarios · 150/150 mutations caught |
@@ -59,6 +86,25 @@ directly is the second entry point, not the only one.
 | [🚧 Known limitations](#-known-limitations) | Split by *why* each one exists |
 | [🗺️ Roadmap](#-roadmap) · [📁 Repository layout](#-repository-layout) | What is next; where things live |
 | [📄 License / disclaimer](#-license--disclaimer) | MIT, and what this project is not |
+
+---
+
+## 🚀 Live demo
+
+**[merchantops-agent.vercel.app](https://merchantops-agent.vercel.app)** → **Sign in** → choose an
+account under **Demo accounts**:
+
+| Account | Role | Try this |
+|---|---|---|
+| `USR_A_OWNER` | owner | Investigate and ask *"Find the duplicate payment and refund it."* Policy pauses it for approval; approve it and watch the refund execute and verify |
+| `USR_A_APPROVER` | approver | The approver's side: the Action Center and its approval queue |
+| `USR_A_ANALYST` | analyst | Investigate freely, then ask for a refund and see policy refuse it for a missing permission |
+| `USR_B_OWNER` | owner | A second merchant: none of merchant A's payments, tasks or audit trail is visible |
+
+Each click issues a fresh one-hour session from the server; nothing secret is written into
+the page. The deployment runs synthetic data, the mock payment adapter and the deterministic
+planner, so every result is reproducible and nothing reaches a real payment provider. It is
+public, so demo state can change between visits; it is reseeded when it needs to be.
 
 ---
 

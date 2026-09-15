@@ -407,9 +407,18 @@ header.top {
   letter-spacing: 0.04em; text-transform: uppercase;
 }
 
+/* The navigation is sixteen destinations in five groups: wider than a laptop
+   screen with its labels. It always takes a row of its own under the identity
+   and the controls, and it may scroll inside that row -- it must never be the
+   thing that makes the page wider than the window (a flex item cannot shrink
+   below its content unless it is told `min-width: 0`). */
 nav.tabs { display: flex; gap: 2px; padding: 3px; background: var(--surface-2);
-           border-radius: var(--r); border: 1px solid var(--border); }
+           border-radius: var(--r); border: 1px solid var(--border);
+           order: 3; flex: 1 1 100%; min-width: 0;
+           overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+nav.tabs::-webkit-scrollbar { display: none; }
 nav.tabs a {
+  white-space: nowrap; flex-shrink: 0;
   padding: 5px 12px; border-radius: 7px; font-size: 13px; font-weight: 500;
   color: var(--text-dim); transition: color var(--t), background var(--t);
 }
@@ -1090,15 +1099,7 @@ ul.asserts li { margin-bottom: 3px; color: var(--text-2); }
   body { font-size: 14.5px; }
   .shell { padding: 16px 12px 84px; }
 
-  /* The logo and the controls hold the top row; navigation gets its own,
-     scrollable rather than wrapped into three ragged lines. */
-  .top-inner { flex-wrap: wrap; row-gap: 8px; }
-  nav.tabs {
-    order: 3; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  nav.tabs::-webkit-scrollbar { display: none; }
-  nav.tabs a { white-space: nowrap; }
+  .top-inner { row-gap: 8px; }
 
   .stats { grid-template-columns: repeat(2, 1fr); }
   .stats dd { font-size: 15px; }
@@ -1473,19 +1474,23 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
    ========================================================================== */
 
 /* --- P1-01: the nav groups --------------------------------------------- */
-.tab-group { display: inline-flex; align-items: center; gap: 2px; }
+.tab-group { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .tab-group + .tab-group { margin-left: 6px; padding-left: 8px;
                           border-left: 1px solid var(--border); }
 .tab-group-label {
   font-size: 9.5px; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--text-dim); padding: 0 4px; user-select: none;
 }
-@media (max-width: 1100px) {
-  /* The group labels are orientation, not navigation. On a narrow header the
-     destinations matter and the headings are what gives way — hidden rather
-     than wrapped, so the tabs stay on one scrollable row. */
+@media (max-width: 1680px) {
+  /* The group labels are orientation, not navigation. With them the tabs need
+     about 1600px; without them a 1280px laptop still shows every destination.
+     So the headings are what gives way — hidden rather than wrapped, and the
+     dividers keep the grouping visible. */
   .tab-group-label { display: none; }
   .tab-group + .tab-group { margin-left: 2px; padding-left: 4px; }
+}
+@media (max-width: 1360px) {
+  nav.tabs a { padding: 5px 9px; }
 }
 
 /* --- P1-12: text for assistive tech only, never a visual-only meaning --- */

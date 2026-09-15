@@ -213,6 +213,14 @@ function MainNav() {
     ]],
   ];
 
+  // The tabs scroll inside their row on a narrow window, so the current one
+  // is brought into view rather than left somewhere past the edge.
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.querySelector("nav.tabs a.active")
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
+
   return (
     <nav className="tabs" aria-label="Sections">
       {groups.map(([label, items]) => (

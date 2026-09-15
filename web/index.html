@@ -17,6 +17,17 @@
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=Azeret+Mono:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- The saved theme, applied before first paint. ThemeToggle sets the same
+         attribute, but only once React has mounted and only on screens that
+         render a toggle: a reload flashed the system theme first, and opening
+         /signin directly ignored a saved "dark" altogether. Same key and values
+         as components/Theme.tsx. -->
+    <script>
+      try {
+        var t = localStorage.getItem("merchantops.theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

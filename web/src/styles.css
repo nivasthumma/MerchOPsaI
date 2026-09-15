@@ -365,6 +365,7 @@ pre {
 }
 
 .top-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.top-right button { white-space: nowrap; }
 a.icon-btn { text-decoration: none; }
 a.icon-btn:hover { text-decoration: none; }
 
@@ -372,7 +373,9 @@ a.icon-btn:hover { text-decoration: none; }
   /* The rail stacks above the route rather than disappearing: it is the only
      way back to a task, and hiding navigation on a narrow screen is how people
      lose the thing they were told to approve. */
-  .frame { grid-template-columns: minmax(0, 1fr); }
+  /* Both selectors: `.frame:has(.rail-empty)` outranks a bare `.frame`, and
+     without it a phone kept a 186px empty rail beside 230px of page. */
+  .frame, .frame:has(.rail-empty) { grid-template-columns: minmax(0, 1fr); }
   .rail { position: static; min-height: 0; border-right: 0;
           border-bottom: 1px solid var(--border); }
   .rail-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -556,7 +559,8 @@ button[aria-busy="true"] { position: relative; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-textarea, input[type="text"], input[type="password"], select {
+textarea, select, input:not([type]), input[type="text"], input[type="password"],
+input[type="number"], input[type="email"], input[type="search"], input[type="url"] {
   font: inherit; width: 100%; padding: 11px 13px; border-radius: var(--r-sm);
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
   transition: border-color var(--t), box-shadow var(--t);
@@ -632,7 +636,10 @@ label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--surface-3); }
 tbody tr:nth-child(even) { background: var(--surface-2); }
-th { font-family: var(--mono); font-size: 8.5px; text-transform: uppercase;
+/* Column headings stay on one line: a narrow table scrolls in its .table-wrap
+   rather than stacking "HELD" over "BY". */
+th { white-space: nowrap;
+     font-family: var(--mono); font-size: 8.5px; text-transform: uppercase;
      letter-spacing: 0.16em; background: var(--surface-2);
      color: var(--text-dim); font-weight: 650; background: var(--surface-2); }
 tbody tr { transition: background var(--t); }
@@ -734,7 +741,7 @@ td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
 .row-form input, .row-form select { min-width: 13rem; }
 
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.row-actions button { padding: 5px 11px; font-size: 13px; box-shadow: none; }
+.row-actions button { padding: 5px 11px; font-size: 13px; box-shadow: none; white-space: nowrap; }
 
 /* One permission per row, its description beside it. A grid of bare names asks
    the reader to already know what `action:recover` grants. */
@@ -1059,12 +1066,15 @@ hr.divider { height: 1px; background: var(--border); margin: 20px 0; border: 0; 
   font-size: 13px;
 }
 .assert-line { display: flex; gap: 10px; margin-bottom: 6px; align-items: baseline; }
+.assert-line > :last-child { min-width: 0; overflow-wrap: anywhere; }
 .assert-line .k {
   color: var(--text-dim); font-size: 10.5px; text-transform: uppercase;
   letter-spacing: 0.06em; font-weight: 650; min-width: 62px;
 }
 ul.asserts { margin: 8px 0 0; padding-left: 18px; }
-ul.asserts li { margin-bottom: 3px; color: var(--text-2); }
+/* Assertions quote JSON (`["method","current_success_rate_pct",...]`) with no
+   spaces to break at; without this they ran out of the cell and were cut off. */
+ul.asserts li { margin-bottom: 3px; color: var(--text-2); overflow-wrap: anywhere; }
 
 /* ======================================================================
    Responsive. Until now every measurement here assumed a desktop window:
@@ -2693,4 +2703,16 @@ p a:not(.linkish) {
    while giving each state room for what follows from it. */
 @media (min-width: 1000px) {
   .lp-states .lp-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Demo accounts on the sign-in page: one column of equal buttons and one of
+   roles, rather than a ragged edge set by the length of each user id. */
+.demo-accounts { list-style: none; padding: 0; margin: 0;
+                 display: grid; grid-template-columns: max-content minmax(0, 1fr);
+                 gap: 8px 12px; align-items: center; }
+.demo-accounts li { display: contents; }
+.demo-accounts button { text-align: left; }
+@media (max-width: 420px) {
+  .demo-accounts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .demo-accounts .muted { margin-bottom: 8px; }
 }

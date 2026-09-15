@@ -68,12 +68,11 @@ export default function Operations() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Operations</h1>
-        <p className="request">
-          Everything the agent left unsettled, and the one safe way to settle it.
-        </p>
-      </div>
+      {/* The same head as every other console screen, under the name the nav
+          gives it -- this page was the one with a display-size title. */}
+      <SectionHead title="Reconciliation">
+        Everything the agent left unsettled, and the one safe way to settle it.
+      </SectionHead>
 
       <div role="alert" aria-live="assertive"><ErrorBanner error={error} /></div>
 

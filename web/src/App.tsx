@@ -815,13 +815,13 @@ function SignIn(
                 Synthetic data and a mock payment provider — no real money moves.
                 Each button issues a fresh one-hour token for that seeded user.
               </p>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              <ul className="demo-accounts">
                 {demo.accounts.map((a) => (
                   <li key={a.user_id}>
                     <button onClick={() => signInAs(a.user_id)} disabled={busy !== null}
                             aria-busy={busy === a.user_id}>
                       Sign in as <code>{a.user_id}</code>
-                    </button>{" "}
+                    </button>
                     <span className="muted">{a.role} · {a.merchant_id}</span>
                   </li>
                 ))}

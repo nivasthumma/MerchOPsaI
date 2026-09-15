@@ -1450,7 +1450,7 @@ table.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
 .live-feed { list-style: none; margin: 0; padding: 0; }
 .live-feed .feed-row { display: grid; gap: .7rem; align-items: baseline; padding: .3rem 0;
             grid-template-columns: 5.5rem 12rem 1fr auto auto;
-            border-bottom: 1px solid var(--line); font-size: .85rem; }
+            border-bottom: 1px solid var(--border); font-size: .85rem; }
 .live-feed .feed-at { font-variant-numeric: tabular-nums; color: var(--text-dim);
            font-size: .78rem; }
 /* The event name is the one thing a reader scans down the column, so it is the

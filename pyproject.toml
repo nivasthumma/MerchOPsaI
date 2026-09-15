@@ -24,6 +24,7 @@ dependencies = [
   "redis==6.4.0",
   "cryptography==50.0.1",
   "httpx==0.28.1",
+  "alembic==1.19.1",
 ]
 
 # Vercel detects this repository as a FastAPI backend-framework project and

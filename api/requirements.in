@@ -6,8 +6,9 @@
 #
 # Narrower than requirements-runtime.in, which is the container's set: a
 # serverless bundle has a size limit and a cold start, and this path needs
-# neither a server (Vercel provides it) nor alembic (migrations are run
-# separately, never by the function). The reasoning provider on a deployment
+# no server (Vercel provides it). Migrations are run separately, never by the
+# function -- but `/ready` compares the database to the migration head, and
+# reading that head needs alembic, so alembic is here (see below). The reasoning provider on a deployment
 # like this is `deterministic` -- no credential, no outbound call -- so the
 # Anthropic SDK is not here either. Add it back and set ANTHROPIC_API_KEY to
 # use the model path.
@@ -43,3 +44,8 @@ cryptography==50.0.1
 # test tooling, and nothing pulled it into this one. The live Razorpay adapter
 # needs it too. Found by CI's clean-room bundle import (2026-09-15).
 httpx==0.28.1
+
+# `/ready` imports scripts.migrate.head_revision, which imports alembic, to
+# compare the database's revision with the migration head. Without it every
+# readiness probe on Vercel returned 500 while /health said "ok" (2026-09-15).
+alembic==1.19.1

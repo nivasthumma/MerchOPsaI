@@ -36,3 +36,10 @@ redis==6.4.0
 # because something else happened to pull it in, which is not a dependency, it
 # is a coincidence that installs fine until the day it does not.
 cryptography==50.0.1
+
+# Imported at module level by `app/notify/channels.py`, which `app.api.main`
+# imports -- so without it `api/index.py` fails to import and every request to
+# the function fails. It was reaching the other sets through anthropic and the
+# test tooling, and nothing pulled it into this one. The live Razorpay adapter
+# needs it too. Found by CI's clean-room bundle import (2026-09-15).
+httpx==0.28.1

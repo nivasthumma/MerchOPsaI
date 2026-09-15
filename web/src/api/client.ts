@@ -6,19 +6,46 @@
 // here decides what the user may do — it asks, and renders the answer.
 
 import type {
+  AccessReview,
   ActionCenter,
   AgentMessage,
+  AuditPage,
   CommandCenter,
   Dashboard,
+  DemoSignInOptions,
+  EscalatedAction,
+  Health,
   IncidentDetail,
-  AccessReview, EscalatedAction, Health, IncidentList, IncidentQuery,
-  AuditPage, MerchantList, MerchantView, PolicyChange, PolicyView,
+  IncidentList,
+  IncidentQuery,
+  LiveEventList,
+  MerchantList,
+  MerchantView,
+  Metrics,
+  PaymentLifecycle,
+  PolicyChange,
+  PolicyView,
+  Principal,
+  ProviderChange,
   ProviderHealth,
-  RoleChange, RoleList, ScimTokenCreated, ScimTokenList, SsoConfig,
-  UserChange, UserCreated, UserList,
-  LiveEventList, Metrics, PaymentLifecycle, Principal, ProviderChange,
-  ReconcileReport, Readiness, ReplayResult, Scenario, ScenarioResult,
-  SearchResults, Task, TaskEvidence, TraceEvent, VerificationDetail,
+  Readiness,
+  ReconcileReport,
+  ReplayResult,
+  RoleChange,
+  RoleList,
+  Scenario,
+  ScenarioResult,
+  ScimTokenCreated,
+  ScimTokenList,
+  SearchResults,
+  SsoConfig,
+  Task,
+  TaskEvidence,
+  TraceEvent,
+  UserChange,
+  UserCreated,
+  UserList,
+  VerificationDetail,
 } from "./types";
 
 const BASE = "/api";
@@ -279,6 +306,19 @@ function safeJson(text: string): unknown {
 
 export const api = {
   health: () => request<Health>("/health", {}, { auth: false }),
+  /** The demo accounts this deployment offers, or why it offers none. */
+  demoAccounts: () => request<DemoSignInOptions>("/auth/demo", {}, { auth: false }),
+  /** Sign in as a demo account. A fresh pair per click: access tokens expire
+   *  after an hour, so nothing is written into the page. Stored exactly as a
+   *  refreshed session is, and the access token is returned for the caller. */
+  demoSignIn: async (userId: string): Promise<string> => {
+    const pair = await request<{ access_token: string; refresh_token: string }>(
+      "/auth/demo", { method: "POST", body: JSON.stringify({ user_id: userId }) },
+      { auth: false });
+    setRefreshToken(pair.refresh_token);
+    setToken(pair.access_token);
+    return pair.access_token;
+  },
 
   me: () => request<Principal>("/me"),
 

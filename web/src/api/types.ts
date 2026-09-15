@@ -1037,3 +1037,17 @@ export interface ProviderHealth {
   operations: ProviderOperation[];
   history: ProviderDay[];
 }
+
+/** A seeded account the sign-in page offers — GET /auth/demo. */
+export interface DemoAccount {
+  user_id: string;
+  merchant_id: string;
+  role: string;
+}
+
+/** Whether this deployment offers demo sign-in, and if not, why not. */
+export interface DemoSignInOptions {
+  enabled: boolean;
+  reason?: string | null;
+  accounts: DemoAccount[];
+}

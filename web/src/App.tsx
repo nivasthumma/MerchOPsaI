@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { api, getToken, isDemoSession, setToken } from "./api/client";
-import type { Health, Metrics, Principal } from "./api/types";
+import type { DemoSignInOptions, Health, Metrics, Principal } from "./api/types";
 import { ActivityBar, DensityToggle } from "./components/Chrome";
 import {
   ForkDiagram, LadderMark, LandingHeader, LimitMark, ScreenCarousel, SECTIONS,
@@ -93,7 +93,7 @@ export default function App() {
         <a className="skip" href="#main">Skip to content</a>
         <main className={signingIn ? "auth-page" : "landing-page"} id="main">
           {signingIn
-            ? <SignIn draft={draft} setDraft={setDraft} save={save} />
+            ? <SignIn draft={draft} setDraft={setDraft} save={save} onToken={setTok} />
             : <Landing health={health} />}
         </main>
       </ToastHost>
@@ -649,8 +649,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>130 of them critical</em></div>
           <div><b>150<i>/150</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>1749</b><span>Automated tests</span>
-            <em>1322 backend · 427 frontend</em></div>
+          <div><b>1762</b><span>Automated tests</span>
+            <em>1332 backend · 430 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -670,7 +670,7 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  1322 python tests · 427 vitest · 187 scenarios · 150 mutants"}
+              {"measured:  1332 python tests · 430 vitest · 187 scenarios · 150 mutants"}
             </span>
             <span className="ln">{"browser:   17 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>
@@ -727,9 +727,33 @@ function Landing({ health }: { health: Health | null }) {
  *  screen should look like one thing to do, and the split is what stops the
  *  explanation and the field competing for the same attention. */
 function SignIn(
-  { draft, setDraft, save }:
-  { draft: string; setDraft: (s: string) => void; save: () => void },
+  { draft, setDraft, save, onToken }:
+  { draft: string; setDraft: (s: string) => void; save: () => void;
+    onToken: (token: string) => void },
 ) {
+  // Asked of the server rather than assumed: the list is empty, with a reason,
+  // unless the deployment enables demo sign-in and payments are mocked.
+  const [demo, setDemo] = useState<DemoSignInOptions | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => api.demoAccounts())
+      .then((options) => { if (live && options) setDemo(options); })
+      .catch(() => { if (live) setDemo(null); });
+    return () => { live = false; };
+  }, []);
+
+  const signInAs = (userId: string) => {
+    setBusy(userId);
+    setDemoError(null);
+    api.demoSignIn(userId)
+      .then((token) => onToken(token))
+      .catch((e: unknown) => setDemoError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(null));
+  };
+
   return (
     <div className="auth">
       <aside className="auth-aside">
@@ -773,6 +797,30 @@ function SignIn(
               Use token
             </button>
           </div>
+
+          {demo?.enabled && demo.accounts.length > 0 ? (
+            <section aria-labelledby="demo-accounts-h" style={{ marginTop: 18 }}>
+              <h3 id="demo-accounts-h" className="signin-h" style={{ fontSize: "1rem" }}>
+                Demo accounts
+              </h3>
+              <p className="signin-note">
+                Synthetic data and a mock payment provider — no real money moves.
+                Each button issues a fresh one-hour token for that seeded user.
+              </p>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+                {demo.accounts.map((a) => (
+                  <li key={a.user_id}>
+                    <button onClick={() => signInAs(a.user_id)} disabled={busy !== null}
+                            aria-busy={busy === a.user_id}>
+                      Sign in as <code>{a.user_id}</code>
+                    </button>{" "}
+                    <span className="muted">{a.role} · {a.merchant_id}</span>
+                  </li>
+                ))}
+              </ul>
+              {demoError ? <p className="banner warn" role="alert">{demoError}</p> : null}
+            </section>
+          ) : null}
 
           <p className="signin-note">
             The token carries no permissions — those are read from the database

@@ -2018,6 +2018,78 @@
         "title": "DashboardView",
         "type": "object"
       },
+      "DemoAccount": {
+        "additionalProperties": false,
+        "description": "A seeded account the sign-in page offers (GET /auth/demo).",
+        "properties": {
+          "merchant_id": {
+            "title": "Merchant Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "merchant_id",
+          "role"
+        ],
+        "title": "DemoAccount",
+        "type": "object"
+      },
+      "DemoSignInOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "accounts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DemoAccount"
+            },
+            "title": "Accounts",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DemoSignInOptions",
+        "type": "object"
+      },
+      "DemoSignInRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "DemoSignInRequest",
+        "type": "object"
+      },
       "DetectResult": {
         "additionalProperties": false,
         "properties": {
@@ -8206,6 +8278,62 @@
           }
         },
         "summary": "Search Audit"
+      }
+    },
+    "/auth/demo": {
+      "get": {
+        "description": "Which demo accounts the sign-in page may offer. Unauthenticated: it is\nwhat a visitor with no token reads to find a way in.\n\nEmpty, with a reason, unless `DEMO_SIGN_IN_ENABLED` is set AND payment\nexecution is mocked (Settings.demo_sign_in_refusal).",
+        "operationId": "demo_sign_in_options_auth_demo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSignInOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Demo Sign In Options"
+      },
+      "post": {
+        "description": "Sign in as one seeded demo account.\n\nA fresh token pair per click, because access tokens expire after an hour\n(ADR-0049) and a token written into the page would stop working an hour\nafter each deploy. Refused (404) when demo sign-in is off or payment\nexecution is not mocked; refused (403) for any account not on the\nallowlist or no longer active. Rate limited per client, and recorded in\nthe audit trail as the account that signed in.",
+        "operationId": "demo_sign_in_auth_demo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoSignInRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Sign In"
       }
     },
     "/auth/refresh": {

@@ -191,6 +191,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo Sign In Options
+         * @description Which demo accounts the sign-in page may offer. Unauthenticated: it is
+         *     what a visitor with no token reads to find a way in.
+         *
+         *     Empty, with a reason, unless `DEMO_SIGN_IN_ENABLED` is set AND payment
+         *     execution is mocked (Settings.demo_sign_in_refusal).
+         */
+        get: operations["demo_sign_in_options_auth_demo_get"];
+        put?: never;
+        /**
+         * Demo Sign In
+         * @description Sign in as one seeded demo account.
+         *
+         *     A fresh token pair per click, because access tokens expire after an hour
+         *     (ADR-0049) and a token written into the page would stop working an hour
+         *     after each deploy. Refused (404) when demo sign-in is off or payment
+         *     execution is not mocked; refused (403) for any account not on the
+         *     allowlist or no longer active. Rate limited per client, and recorded in
+         *     the audit trail as the account that signed in.
+         */
+        post: operations["demo_sign_in_auth_demo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/refresh": {
         parameters: {
             query?: never;
@@ -2694,6 +2729,35 @@ export interface components {
             incidents: components["schemas"]["IncidentCounts"];
             recovery: components["schemas"]["LedgerView"];
         };
+        /**
+         * DemoAccount
+         * @description A seeded account the sign-in page offers (GET /auth/demo).
+         */
+        DemoAccount: {
+            /** Merchant Id */
+            merchant_id: string;
+            /** Role */
+            role: string;
+            /** User Id */
+            user_id: string;
+        };
+        /** DemoSignInOptions */
+        DemoSignInOptions: {
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts: components["schemas"]["DemoAccount"][];
+            /** Enabled */
+            enabled: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** DemoSignInRequest */
+        DemoSignInRequest: {
+            /** User Id */
+            user_id: string;
+        };
         /** DetectResult */
         DetectResult: {
             /** Already Known */
@@ -4931,6 +4995,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_sign_in_options_auth_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoSignInOptions"];
+                };
+            };
+        };
+    };
+    demo_sign_in_auth_demo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoSignInRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPair"];
                 };
             };
             /** @description Validation Error */

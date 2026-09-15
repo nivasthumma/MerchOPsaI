@@ -290,6 +290,12 @@ class Settings(BaseSettings):
     # run on the deterministic planner and SAY so on the task
     # (ai_mode = AI_*_FALLBACK). Off means such a run fails instead.
     llm_fallback_enabled: bool = True
+    # Demo sign-in: the sign-in page lists these seeded accounts and issues a
+    # token for one on a click. Off unless set, and refused anyway unless the
+    # payment adapter is the mock -- a button that signs anybody in as an owner
+    # is acceptable only where nothing reaches a real financial system.
+    demo_sign_in_enabled: bool = False
+    demo_sign_in_users: str = "USR_A_OWNER,USR_A_APPROVER,USR_A_ANALYST,USR_B_OWNER"
 
     @property
     def effective_wall_clock_seconds(self) -> int:
@@ -339,6 +345,17 @@ class Settings(BaseSettings):
         if self.llm_provider != "auto":
             return self.llm_provider
         return "anthropic" if self.anthropic_credential_source else "deterministic"
+
+    @property
+    def demo_sign_in_refusal(self) -> str | None:
+        """Why demo sign-in is off, or None when it is on. Stated, so the
+        sign-in page can say it rather than silently offer nothing."""
+        if not self.demo_sign_in_enabled:
+            return "Demo sign-in is not enabled on this deployment."
+        if self.resolved_razorpay_mode != "mock":
+            return ("Demo sign-in is refused while payment execution is not mocked: "
+                    "a public account must never reach a real provider.")
+        return None
 
     @property
     def webhook_verification_enabled(self) -> bool:

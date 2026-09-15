@@ -848,6 +848,79 @@ def refresh_tokens(body: schemas.RefreshRequest):
                 "expires_in": issued.expires_in, "token_type": "Bearer"}
 
 
+def _demo_accounts(s) -> list[dict]:
+    """The allowlisted demo users that exist and are active, with the role the
+    database gives them today -- never a role written into configuration."""
+    from app import authz
+
+    wanted = [u.strip() for u in get_settings().demo_sign_in_users.split(",") if u.strip()]
+    accounts = []
+    for user_id in wanted:
+        row = authz.resolve(s, user_id)
+        if row is not None and row.status == "ACTIVE":
+            accounts.append({"user_id": row.user_id, "merchant_id": row.merchant_id,
+                             "role": row.role})
+    return accounts
+
+
+def _client_key(request: Request) -> str:
+    return f"demo:{request.client.host if request.client else 'unknown'}"
+
+
+@app.get("/auth/demo", response_model=schemas.DemoSignInOptions)
+def demo_sign_in_options(request: Request):
+    """Which demo accounts the sign-in page may offer. Unauthenticated: it is
+    what a visitor with no token reads to find a way in.
+
+    Empty, with a reason, unless `DEMO_SIGN_IN_ENABLED` is set AND payment
+    execution is mocked (Settings.demo_sign_in_refusal).
+    """
+    check_rate_limit(_client_key(request), request.url.path, "GET")
+    refusal = get_settings().demo_sign_in_refusal
+    if refusal is not None:
+        return {"enabled": False, "reason": refusal, "accounts": []}
+    with session_scope() as s:
+        return {"enabled": True, "accounts": _demo_accounts(s)}
+
+
+@app.post("/auth/demo", response_model=schemas.TokenPair)
+def demo_sign_in(body: schemas.DemoSignInRequest, request: Request):
+    """Sign in as one seeded demo account.
+
+    A fresh token pair per click, because access tokens expire after an hour
+    (ADR-0049) and a token written into the page would stop working an hour
+    after each deploy. Refused (404) when demo sign-in is off or payment
+    execution is not mocked; refused (403) for any account not on the
+    allowlist or no longer active. Rate limited per client, and recorded in
+    the audit trail as the account that signed in.
+    """
+    from types import SimpleNamespace
+
+    from app import auth, context
+    from app.audit.trace import record as audit_record
+
+    check_rate_limit(_client_key(request), request.url.path, "POST")
+    refusal = get_settings().demo_sign_in_refusal
+    if refusal is not None:
+        raise HTTPException(404, {"error": refusal, "code": "DEMO_SIGN_IN_DISABLED"})
+    with session_scope() as s:
+        account = {a["user_id"]: a for a in _demo_accounts(s)}.get(body.user_id)
+        if account is None:
+            raise HTTPException(403, {"error": f"{body.user_id} is not an active demo account.",
+                                      "code": "AUTHORIZATION_DENIED"})
+        with context.acting(context.ExecutionContext(
+                context.ActorType.HUMAN, actor=body.user_id,
+                merchant_id=account["merchant_id"])):
+            audit_record(s, SimpleNamespace(id=None, incident_id=None,
+                                            merchant_id=account["merchant_id"],
+                                            user_id=body.user_id),
+                         "demo_sign_in", {"user_id": body.user_id, "role": account["role"]})
+        issued = auth.issue_pair(body.user_id)
+        return {"access_token": issued.access_token,
+                "refresh_token": issued.refresh_token,
+                "expires_in": issued.expires_in, "token_type": "Bearer"}
+
+
 @app.post("/auth/sign-out", response_model=schemas.SignOutResult)
 def sign_out(everywhere: bool = False, authorization: str | None = Header(default=None),
              principal: Principal = Depends(current_principal)):

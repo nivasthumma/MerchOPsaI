@@ -1714,6 +1714,24 @@ class TokenPair(Contract):
     token_type: str = "Bearer"  # noqa: S105 - the scheme name, not a secret
 
 
+class DemoAccount(Contract):
+    """A seeded account the sign-in page offers (GET /auth/demo)."""
+    user_id: str
+    merchant_id: str
+    role: str
+
+
+class DemoSignInOptions(Contract):
+    enabled: bool
+    #: Why it is off, when it is -- said rather than implied by an empty list.
+    reason: str | None = None
+    accounts: list[DemoAccount] = []
+
+
+class DemoSignInRequest(Contract):
+    user_id: str
+
+
 class SignOutResult(Contract):
     #: `this_session` or `all_sessions`.
     signed_out: str

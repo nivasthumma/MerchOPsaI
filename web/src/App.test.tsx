@@ -12,13 +12,15 @@ import type { Health } from "./api/types";
 vi.mock("./api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/client")>();
   return { ...actual, api: { health: vi.fn(), me: vi.fn(), setProvider: vi.fn(),
-                           metrics: vi.fn() } };
+                           metrics: vi.fn(), demoAccounts: vi.fn(), demoSignIn: vi.fn() } };
 });
 
 const { api } = await import("./api/client");
 const health = api.health as unknown as ReturnType<typeof vi.fn>;
 const me = api.me as unknown as ReturnType<typeof vi.fn>;
 const metrics = api.metrics as unknown as ReturnType<typeof vi.fn>;
+const demoAccounts = api.demoAccounts as unknown as ReturnType<typeof vi.fn>;
+const demoSignIn = api.demoSignIn as unknown as ReturnType<typeof vi.fn>;
 
 const OWNER = {
   user_id: "USR_A_OWNER", merchant_id: "MERCH_A", role: "owner",
@@ -185,6 +187,50 @@ describe("token gate", () => {
     health.mockResolvedValue(OK);
     renderSignIn();
     expect(await screen.findByLabelText(/Mint one with/)).toHaveAttribute("type", "password");
+  });
+});
+
+describe("demo sign-in", () => {
+  it("offers the seeded accounts when the deployment enables it, and signs in with one", async () => {
+    health.mockResolvedValue(OK);
+    demoAccounts.mockResolvedValue({
+      enabled: true,
+      accounts: [
+        { user_id: "USR_A_OWNER", merchant_id: "MERCH_A", role: "owner" },
+        { user_id: "USR_A_ANALYST", merchant_id: "MERCH_A", role: "analyst" },
+      ],
+    });
+    demoSignIn.mockResolvedValue("minted-access-token");
+    renderSignIn();
+
+    expect(await screen.findByRole("heading", { name: "Demo accounts" })).toBeInTheDocument();
+    expect(screen.getByText(/no real money moves/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Sign in as USR_A_ANALYST/ }));
+    expect(demoSignIn).toHaveBeenCalledWith("USR_A_ANALYST");
+    expect(await screen.findByText("SIGNED IN")).toBeInTheDocument();
+  });
+
+  it("offers nothing when the deployment does not enable demo sign-in", async () => {
+    health.mockResolvedValue(OK);
+    demoAccounts.mockResolvedValue({ enabled: false, reason: "not enabled", accounts: [] });
+    renderSignIn();
+    expect(await screen.findByLabelText(/Mint one with/)).toBeInTheDocument();
+    await waitFor(() => expect(demoAccounts).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "Demo accounts" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sign in as/ })).toBeNull();
+  });
+
+  it("says why when a demo sign-in is refused, and stays on the sign-in page", async () => {
+    health.mockResolvedValue(OK);
+    demoAccounts.mockResolvedValue({
+      enabled: true,
+      accounts: [{ user_id: "USR_A_OWNER", merchant_id: "MERCH_A", role: "owner" }],
+    });
+    demoSignIn.mockRejectedValue(new Error("USR_A_OWNER is not an active demo account."));
+    renderSignIn();
+    await userEvent.click(await screen.findByRole("button", { name: /Sign in as USR_A_OWNER/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not an active demo account/);
+    expect(screen.queryByText("SIGNED IN")).toBeNull();
   });
 });
 

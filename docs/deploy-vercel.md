@@ -29,6 +29,7 @@ Set these in **Project → Settings → Environment Variables**.
 | `RAZORPAY_MODE` | `mock` | No outbound financial call. Set to `live_test_mode` with keys only if you mean it. |
 | `LOG_FORMAT` | `json` | Default. Vercel ingests stdout, so structured logs are searchable with no further setup. |
 | `METRICS_SCRAPE_TOKEN` | *(leave unset)* | `/metrics/prometheus` returns 404 without it. Counters reset on every cold start here, so they measure little; the logs are the operational channel on serverless. |
+| `DEMO_SIGN_IN_ENABLED` | `true` *(only on a synthetic, mock-payment deployment)* | Puts one-click "Sign in as USR_…" buttons for the seeded accounts on the sign-in page. Each click issues a fresh one-hour token from `POST /auth/demo`. Refused unless `RAZORPAY_MODE` resolves to `mock`, limited to `DEMO_SIGN_IN_USERS`, rate limited, and audited as `demo_sign_in`. Anyone who can open the page can act as those accounts, owner included. |
 
 > **Do not set `ANTHROPIC_API_KEY` on this deployment unless you also add
 > `anthropic` to `api/requirements.txt`.** Provider selection is `auto` by

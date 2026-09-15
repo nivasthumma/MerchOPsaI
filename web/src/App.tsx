@@ -649,8 +649,8 @@ function Landing({ health }: { health: Health | null }) {
             <em>130 of them critical</em></div>
           <div><b>150<i>/150</i></b><span>Injected defects caught</span>
             <em>every control has a test that fails when it breaks</em></div>
-          <div><b>1747</b><span>Automated tests</span>
-            <em>1320 backend · 427 frontend</em></div>
+          <div><b>1749</b><span>Automated tests</span>
+            <em>1322 backend · 427 frontend</em></div>
           <div><b>0</b><span>Dependency advisories</span>
             <em>both ecosystems, pinned</em></div>
         </div>
@@ -670,7 +670,7 @@ function Landing({ health }: { health: Health | null }) {
           <pre><code>
             <span className="ln"><b>$</b> make counts</span>
             <span className="ln">
-              {"measured:  1320 python tests · 427 vitest · 187 scenarios · 150 mutants"}
+              {"measured:  1322 python tests · 427 vitest · 187 scenarios · 150 mutants"}
             </span>
             <span className="ln">{"browser:   17 Playwright tests defined"}</span>
             <span className="ln ok">✓ published numbers match what the tree measures</span>

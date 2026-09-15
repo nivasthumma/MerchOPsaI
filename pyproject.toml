@@ -10,13 +10,20 @@ requires-python = ">=3.12"
 # function died on `import starlette` — a file added to fix routing broke
 # packaging instead. Kept deliberately narrow: no pytest, no Streamlit, no
 # Anthropic SDK. A serverless bundle pays for every one of them at cold start.
+# Pinned, and the same set as api/requirements.in. Vercel's uv install reads THIS
+# list, not that file: `cryptography`, `httpx` and `redis` were in the file and
+# missing here, and the function died on `import cryptography` (2026-09-15).
+# `tests/unit/test_vercel_bundle.py` fails if the two ever disagree again.
 dependencies = [
-  "fastapi>=0.141.1",
-  "sqlalchemy>=2.0.52",
-  "psycopg2-binary>=2.9.12",
-  "pydantic>=2.13.4",
-  "pydantic-settings>=2.15.0",
-  "pyyaml>=6.0.3",
+  "fastapi==0.141.1",
+  "sqlalchemy==2.0.52",
+  "psycopg2-binary==2.9.12",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.15.0",
+  "pyyaml==6.0.3",
+  "redis==6.4.0",
+  "cryptography==50.0.1",
+  "httpx==0.28.1",
 ]
 
 # Vercel detects this repository as a FastAPI backend-framework project and

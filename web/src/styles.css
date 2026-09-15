@@ -1846,7 +1846,7 @@ a.tile:hover { border-color: var(--accent-border); background: var(--accent-soft
 
 .lp-cta { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
 .lp-btn {
-  display: inline-flex; align-items: center; gap: 9px;
+  display: inline-flex; align-items: center; gap: 9px; white-space: nowrap;
   padding: 12px 20px; border-radius: var(--r); font-weight: 600; font-size: 15px;
   text-decoration: none; background: var(--accent); color: var(--on-warn);
   border: 1px solid var(--accent);
@@ -2717,4 +2717,52 @@ p a:not(.linkish) {
 @media (max-width: 420px) {
   .demo-accounts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .demo-accounts .muted { margin-bottom: 8px; }
+}
+
+/* ======================================================================
+   Phones and touch. Measured on emulated phones (320-412px): no page
+   overflowed, but on a 568px-tall screen the first heading started at
+   461px -- a sticky header wrapped to four rows (31% of the screen, all the
+   time) above an empty task rail -- inputs under 16px made iOS zoom the page
+   on focus, disclosure toggles were 19px tap targets, and the mono labels
+   were 8.5px.
+   ====================================================================== */
+
+/* An empty rail has nothing to go back to, so where it stacks above the page
+   it shrinks to its one action instead of spending a screenful on "Nothing
+   yet". With tasks in it, it stays as it is: then it is the way back. */
+@media (max-width: 1080px) {
+  .rail:has(.rail-empty) .rail-head,
+  .rail-empty { display: none; }
+  .rail:has(.rail-empty) .rail-new { border-bottom: 0; }
+}
+
+@media (max-width: 600px) {
+  /* The header scrolls away on a phone. Its wrapped rows cost a third of
+     the screen on every page; the nav is one scroll up. The deck tabs stick
+     to the top of the screen instead of below a header that has gone. */
+  header.top { position: relative; }
+  .deck-tabs { top: 0; }
+
+  /* The micro labels, legible at arm's length: 8.5-9.5px -> 10.5px. */
+  .strip-cell, th, .rail-head, .card h3, h3.card-title, .rail-sec-head,
+  .gate-amount .k, .gate-sign, .deck-tabs button, .rail-id, .rail-s, .ask-note,
+  .shell:has(.task-layout) .stats dt { font-size: 10.5px; }
+
+  /* The palette's hint drops under its command rather than both halving. */
+  .palette li { flex-wrap: wrap; row-gap: 2px; }
+}
+
+@media (pointer: coarse) {
+  /* iOS Safari zooms the page into any field under 16px when it is focused,
+     and does not zoom back out. Labels set 13px and fields inherit it. */
+  textarea, select, input:not([type]), input[type="text"], input[type="password"],
+  input[type="number"], input[type="email"], input[type="search"], input[type="url"],
+  .ask-box textarea, .palette input { font-size: 16px; }
+
+  /* Tap targets to at least 24px (WCAG 2.5.8): the disclosure toggles were
+     19-20px and the sign-in back link 22px. */
+  summary { padding-block: 3px; }
+  .auth-back { padding-block: 4px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
 }

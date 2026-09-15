@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 type Theme = "system" | "light" | "dark";
 const KEY = "merchantops.theme";
+// --bg in styles.css, for the phone browser bar (index.html carries the same).
+const GROUND = { light: "#f2f5f3", dark: "#0a100d" };
 
 function read(): Theme {
   try {
@@ -21,6 +23,12 @@ export function ThemeToggle() {
     const root = document.documentElement;
     if (theme === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", theme);
+    // The browser bar on a phone. Each meta keeps its own media query for
+    // "system"; an explicit choice sets both to that theme's ground.
+    document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
+      const dark = theme === "dark" || (theme === "system" && m.media.includes("dark"));
+      m.content = dark ? GROUND.dark : GROUND.light;
+    });
     try {
       if (theme === "system") localStorage.removeItem(KEY);
       else localStorage.setItem(KEY, theme);

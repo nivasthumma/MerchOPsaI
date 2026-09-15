@@ -9,6 +9,11 @@
          404 in the console. The mark matches the one in the header, and carries
          its own dark variant: at 16px the light ground vanishes on dark chrome. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- The phone's browser bar, in the page's ground rather than a default white
+         band above a dark page. Values match --bg in styles.css; an explicit
+         theme choice rewrites both (below, and in components/Theme.tsx). -->
+    <meta name="theme-color" content="#f2f5f3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a100d" media="(prefers-color-scheme: dark)" />
     <!-- Display + text faces. Both have full system fallbacks in styles.css, so a
          blocked font request degrades to the previous look rather than to Times. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -25,7 +30,12 @@
     <script>
       try {
         var t = localStorage.getItem("merchantops.theme");
-        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+          document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+            m.setAttribute("content", t === "dark" ? "#0a100d" : "#f2f5f3");
+          });
+        }
       } catch (e) {}
     </script>
   </head>

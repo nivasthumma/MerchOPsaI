@@ -116,7 +116,13 @@
   }
 }
 
+/* An explicit theme pins native controls too. `color-scheme: light dark` resolves
+   from the OS, so choosing "dark" on a light phone recoloured the page but left
+   select popups, checkboxes and scrollbars light (and the reverse for "light"). */
+:root[data-theme="light"] { color-scheme: light; }
+
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0a100d; --bg-elev: #111a16; --surface: #111a16; --surface-2: #0f1815;
   --surface-3: #18231e; --border: #1f2c26; --border-strong: #2a3a32;
   --text: #e3ebe6; --text-2: #9bafa6; --text-dim: #7b8f86; --text-dim-on-tint: #7b8f86;

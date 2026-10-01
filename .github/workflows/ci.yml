@@ -181,7 +181,7 @@ jobs:
         # seconds. `--redact` so the log does not reprint what it just found.
         # Full history rather than the diff -- a secret committed and then
         # removed is still a secret that was published.
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -393,7 +393,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements*.txt
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
           # development runs -- a CI Node that differs from the one the
@@ -481,7 +481,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           # Vitest 5 requires ^22.12 || ^24 || >=26, and 24 is what
           # development runs -- a CI Node that differs from the one the
@@ -787,7 +787,7 @@ jobs:
         run: pip install -q -r requirements.txt --require-hashes
 
       - name: Collect every shard
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: mutation-report-shard-*
           path: data/shards

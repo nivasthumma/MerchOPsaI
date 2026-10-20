@@ -19,20 +19,20 @@
 # Regenerate:
 #   uv pip compile api/requirements.in --generate-hashes --python-version 3.12 \
 #       -o api/requirements.txt
-fastapi==0.141.1
-sqlalchemy==2.0.52
-psycopg2-binary==2.9.12
-pydantic==2.13.4
-pydantic-settings==2.15.0
+fastapi==0.143.3
+sqlalchemy==2.1.5
+psycopg2-binary==2.9.13
+pydantic==2.14.1
+pydantic-settings==2.16.0
 pyyaml==6.0.3
 # Shared rate-limit state. This bundle needs it more than the container
 # does: every Vercel invocation is its own process, so an in-process
 # counter there is not an approximate limit, it is no limit at all.
 # redis-py is pure Python and small; the bundle can afford it.
-redis==6.4.0
+redis==8.1.0
 
 # Personal data and the SSO client secret are encrypted at rest (ADR-0052).
 # A direct dependency since `app/crypto.py` imports it: it was present only
 # because something else happened to pull it in, which is not a dependency, it
 # is a coincidence that installs fine until the day it does not.
-cryptography==50.0.1
+cryptography==50.0.2

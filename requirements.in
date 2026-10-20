@@ -12,23 +12,23 @@
 # next one, because the next one resolved against whatever PyPI served that
 # morning, and a nightly failure could not be told apart from a supply-chain
 # event.
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
-sqlalchemy==2.0.52
-alembic==1.19.1
-psycopg2-binary==2.9.12
-pydantic==2.13.4
-pydantic-settings==2.15.0
-streamlit==1.62.0
+fastapi==0.143.3
+uvicorn[standard]==0.54.0
+sqlalchemy==2.1.5
+alembic==1.20.0
+psycopg2-binary==2.9.13
+pydantic==2.14.1
+pydantic-settings==2.16.0
+streamlit==1.66.0
 pytest==9.1.1
 pyyaml==6.0.3
-python-dotenv==1.2.3
-anthropic==1.0.0
+python-dotenv==1.2.4
+anthropic==1.15.0
 httpx==0.28.1
-redis==6.4.0
+redis==8.1.0
 
 # Personal data and the SSO client secret are encrypted at rest (ADR-0052).
 # A direct dependency since `app/crypto.py` imports it: it was present only
 # because something else happened to pull it in, which is not a dependency, it
 # is a coincidence that installs fine until the day it does not.
-cryptography==50.0.1
+cryptography==50.0.2
